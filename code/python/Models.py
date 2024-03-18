@@ -58,44 +58,36 @@ class FC(nn.Module):
         return x
 
 class VGG3(nn.Module):
-    def __init__(self, train_crit, test_crit, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, quantize_train=True, quantize_eval=True, error_model=None, train_model=None, extract_absfreq=None,  test_rtm = None, block_size=64, protectLayers=[]):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, block_size=64, protectLayers=[], err_shifts=[]):
         super(VGG3, self).__init__()
         self.name = "VGG3"
-        self.traincriterion = train_crit
-        self.testcriterion = test_crit
         self.quantization = quantMethod
         self.q_train = quantize_train
         self.q_test = quantize_eval
         self.error_model = error_model
-        self.an_sim = an_sim
-        self.array_size = array_size
-        self.mapping = mapping
-        self.mapping_distr = mapping_distr
-        self.sorted_mapping_idx = sorted_mapping_idx
-        self.performance_mode = performance_mode
-        self.train_model = train_model
-        self.extract_absfreq = extract_absfreq
         self.htanh = nn.Hardtanh()
-        self.block_size = block_size # 64
-        self.resetOffsets()
+        self.block_size = block_size
         self.protectLayers = protectLayers
+        self.err_shifts = err_shifts
 
-        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, lost_vals_r = self.lost_vals_r_conv1, lost_vals_l = self.lost_vals_l_conv1, block_size = self.block_size, bias=False, array_size=self.array_size)
+        self.resetOffsets()
+
+        # self.conv1_size = (1, 64)
+        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, lost_vals_r = self.lost_vals_r_conv1, lost_vals_l = self.lost_vals_l_conv1, block_size = self.block_size, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
-        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, lost_vals_r = self.lost_vals_r_conv2, lost_vals_l = self.lost_vals_l_conv2, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, lost_vals_r = self.lost_vals_r_conv2, lost_vals_l = self.lost_vals_l_conv2, block_size = self.block_size, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc1 = QuantizedLinear(7*7*64, 2048, layerNr=3, protectLayers = self.protectLayers, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, lost_vals_r = self.lost_vals_r_fc1, lost_vals_l = self.lost_vals_l_fc1, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.fc1 = QuantizedLinear(7*7*64, 2048, layerNr=3, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, lost_vals_r = self.lost_vals_r_fc1, lost_vals_l = self.lost_vals_l_fc1, block_size = self.block_size, bias=False)
         self.bn3 = nn.BatchNorm1d(2048)
         self.qact3 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc2 = QuantizedLinear(2048, 10, layerNr=4, protectLayers = self.protectLayers, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, performance_mode=self.performance_mode, sorted_mac_mapping_idx=self.sorted_mapping_idx, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, lost_vals_r = self.lost_vals_r_fc2, lost_vals_l = self.lost_vals_l_fc2, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.fc2 = QuantizedLinear(2048, 10, layerNr=4, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, lost_vals_r = self.lost_vals_r_fc2, lost_vals_l = self.lost_vals_l_fc2, block_size = self.block_size, bias=False)
         self.scale = Scale()
 
-    
     def getBlockSize(self):
         return self.block_size
     
@@ -105,19 +97,32 @@ class VGG3(nn.Module):
         # else:
         #     nr_blocks_conv1 = self.conv1_size
         # for conv 1 nr_blocks_conv1 has to be 1, because else it will set it to 0
+        # conv1_y = int(64/self.block_size)
         self.index_offset_conv1 = np.zeros((64, 1))
         self.lost_vals_r_conv1 = np.zeros((self.index_offset_conv1.shape[0], self.index_offset_conv1.shape[1]))
         self.lost_vals_l_conv1 = np.zeros((self.index_offset_conv1.shape[0], self.index_offset_conv1.shape[1]))
 
-        self.index_offset_conv2 = np.zeros((64, int(64/self.block_size)))
+        if self.block_size > 64:
+            conv2_y = 1
+        else:
+            conv2_y = int(64/self.block_size)
+        self.index_offset_conv2 = np.zeros((64, conv2_y))
         self.lost_vals_r_conv2 = np.zeros((self.index_offset_conv2.shape[0], self.index_offset_conv2.shape[1]))
         self.lost_vals_l_conv2 = np.zeros((self.index_offset_conv2.shape[0], self.index_offset_conv2.shape[1]))
 
-        self.index_offset_fc1 = np.zeros((2048, int(7*7*64/self.block_size)))
+        if self.block_size > 7*7*64:
+            fc1_y = 1
+        else:
+            fc1_y = int(7*7*64/self.block_size)
+        self.index_offset_fc1 = np.zeros((2048, fc1_y))
         self.lost_vals_r_fc1 = np.zeros((self.index_offset_fc1.shape[0], self.index_offset_fc1.shape[1]))
         self.lost_vals_l_fc1 = np.zeros((self.index_offset_fc1.shape[0], self.index_offset_fc1.shape[1]))
 
-        self.index_offset_fc2 = np.zeros((10, int(2048/self.block_size)))
+        if self.block_size > 2048:
+            fc2_y = 1
+        else:
+            fc2_y = int(2048/self.block_size)
+        self.index_offset_fc2 = np.zeros((10, fc2_y))
         self.lost_vals_r_fc2 = np.zeros((self.index_offset_fc2.shape[0], self.index_offset_fc2.shape[1]))
         self.lost_vals_l_fc2 = np.zeros((self.index_offset_fc2.shape[0], self.index_offset_fc2.shape[1]))
 
@@ -181,121 +186,60 @@ class VGG3(nn.Module):
 
 
 class VGG7(nn.Module):
-    def __init__(self, train_crit, test_crit, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, quantize_train=True, quantize_eval=True, error_model=None, train_model=None, extract_absfreq=None, test_rtm = None, block_size=64, protectLayers=[]):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, block_size=64, protectLayers=[], err_shifts=[]):
         super(VGG7, self).__init__()
         self.name = "VGG7"
-        self.traincriterion = train_crit
-        self.testcriterion = test_crit
         self.quantization = quantMethod
         self.q_train = quantize_train
         self.q_test = quantize_eval
         self.error_model = error_model
-        self.an_sim = an_sim
-        self.array_size = array_size
-        self.mapping = mapping
-        self.mapping_distr = mapping_distr
-        self.sorted_mapping_idx = sorted_mapping_idx
-        self.performance_mode = performance_mode
-        self.train_model = train_model
-        self.extract_absfreq = extract_absfreq
-        self.htanh = nn.Hardtanh()
         self.block_size = block_size
-        self.resetOffsets()
+        self.htanh = nn.Hardtanh()
         self.protectLayers = protectLayers
+        self.err_shifts = err_shifts
+
+        self.resetOffsets()
 
         #CNN
         # block 1
-        self.conv1 = QuantizedConv2d(3, 128, layerNr=1, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, lost_vals_r = self.lost_vals_r_conv1, lost_vals_l = self.lost_vals_l_conv1, block_size = self.block_size, bias=False, array_size=self.array_size)
+        self.conv1 = QuantizedConv2d(3, 128, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=1, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, lost_vals_r = self.lost_vals_r_conv1, lost_vals_l = self.lost_vals_l_conv1, block_size = self.block_size, bias=False)
         self.bn1 = nn.BatchNorm2d(128)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
         # block 2
-        self.conv2 = QuantizedConv2d(128, 128, layerNr=2, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx,
-        performance_mode=self.performance_mode,
-        error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, lost_vals_r = self.lost_vals_r_conv2, lost_vals_l = self.lost_vals_l_conv2, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.conv2 = QuantizedConv2d(128, 128, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=2, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, lost_vals_r = self.lost_vals_r_conv2, lost_vals_l = self.lost_vals_l_conv2, block_size = self.block_size, bias=False)
         self.bn2 = nn.BatchNorm2d(128)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
 
         # block 3
-        self.conv3 = QuantizedConv2d(128, 256, layerNr=3, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx,
-        performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv3, lost_vals_r = self.lost_vals_r_conv3, lost_vals_l = self.lost_vals_l_conv3, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.conv3 = QuantizedConv2d(128, 256, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=3, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv3, lost_vals_r = self.lost_vals_r_conv3, lost_vals_l = self.lost_vals_l_conv3, block_size = self.block_size, bias=False)
         self.bn3 = nn.BatchNorm2d(256)
         self.qact3 = QuantizedActivation(quantization=self.quantization)
 
         # block 4
-        self.conv4 = QuantizedConv2d(256, 256, layerNr=4, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx,
-        performance_mode=self.performance_mode, error_model=self.error_model,test_rtm = test_rtm, index_offset = self.index_offset_conv4, lost_vals_r = self.lost_vals_r_conv4, lost_vals_l = self.lost_vals_l_conv4, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.conv4 = QuantizedConv2d(256, 256, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=4, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv4, lost_vals_r = self.lost_vals_r_conv4, lost_vals_l = self.lost_vals_l_conv4, block_size = self.block_size, bias=False)
         self.bn4 = nn.BatchNorm2d(256)
         self.qact4 = QuantizedActivation(quantization=self.quantization)
 
         # block 5
-        self.conv5 = QuantizedConv2d(256, 512, layerNr=5, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx,
-        performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv5, lost_vals_r = self.lost_vals_r_conv5, lost_vals_l = self.lost_vals_l_conv5, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.conv5 = QuantizedConv2d(256, 512, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=5, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv5, lost_vals_r = self.lost_vals_r_conv5, lost_vals_l = self.lost_vals_l_conv5, block_size = self.block_size, bias=False)
         self.bn5 = nn.BatchNorm2d(512)
         self.qact5 = QuantizedActivation(quantization=self.quantization)
 
         # block 6
-        self.conv6 = QuantizedConv2d(512, 512, layerNr=6, protectLayers = self.protectLayers, kernel_size=3, padding=1, stride=1, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx,
-        performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv6, lost_vals_r = self.lost_vals_r_conv6, lost_vals_l = self.lost_vals_l_conv6, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.conv6 = QuantizedConv2d(512, 512, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=6, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv6, lost_vals_r = self.lost_vals_r_conv6, lost_vals_l = self.lost_vals_l_conv6, block_size = self.block_size, bias=False)
         self.bn6 = nn.BatchNorm2d(512)
         self.qact6 = QuantizedActivation(quantization=self.quantization)
 
         # block 7
-        self.fc1 = QuantizedLinear(8192, 1024, layerNr=7, protectLayers = self.protectLayers, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx,
-        performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, lost_vals_r = self.lost_vals_r_fc1, lost_vals_l = self.lost_vals_l_fc1, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.fc1 = QuantizedLinear(8192, 1024, protectLayers=self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, layerNr=7, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, lost_vals_r = self.lost_vals_r_fc1, lost_vals_l = self.lost_vals_l_fc1, block_size = self.block_size, bias=False)
         self.bn7 = nn.BatchNorm1d(1024)
         self.qact7 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc2 = QuantizedLinear(1024, 10, layerNr=8, protectLayers = self.protectLayers, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx,
-        performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, lost_vals_r = self.lost_vals_r_fc2, lost_vals_l = self.lost_vals_l_fc2, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.fc2 = QuantizedLinear(1024, 10, protectLayers=self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, layerNr=8, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, lost_vals_r = self.lost_vals_r_fc2, lost_vals_l = self.lost_vals_l_fc2, block_size = self.block_size, bias=False)
         self.scale = Scale(init_value=1e-3)
 
-
-    def getBlockSize(self):
-        return self.block_size
-    
-    
-    def resetOffsets(self):
-        # if self.conv1_size(0) >= 64:
-        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.block_size)
-        # else:
-        #     nr_blocks_conv1 = self.conv1_size
-        # for conv 1 nr_blocks_conv1 has to be 3, because else it will set it to 0
-        self.index_offset_conv1 = np.zeros((128, 3))
-        self.lost_vals_r_conv1 = np.zeros((self.index_offset_conv1.shape[0], self.index_offset_conv1.shape[1]))
-        self.lost_vals_l_conv1 = np.zeros((self.index_offset_conv1.shape[0], self.index_offset_conv1.shape[1]))
-
-        self.index_offset_conv2 = np.zeros((128, int(128/self.block_size)))
-        self.lost_vals_r_conv2 = np.zeros((self.index_offset_conv2.shape[0], self.index_offset_conv2.shape[1]))
-        self.lost_vals_l_conv2 = np.zeros((self.index_offset_conv2.shape[0], self.index_offset_conv2.shape[1]))
-
-        self.index_offset_conv3 = np.zeros((256, int(128/self.block_size)))
-        self.lost_vals_r_conv3 = np.zeros((self.index_offset_conv3.shape[0], self.index_offset_conv3.shape[1]))
-        self.lost_vals_l_conv3 = np.zeros((self.index_offset_conv3.shape[0], self.index_offset_conv3.shape[1]))
-
-        self.index_offset_conv4 = np.zeros((256, int(256/self.block_size)))
-        self.lost_vals_r_conv4 = np.zeros((self.index_offset_conv4.shape[0], self.index_offset_conv4.shape[1]))
-        self.lost_vals_l_conv4 = np.zeros((self.index_offset_conv4.shape[0], self.index_offset_conv4.shape[1]))
-
-        self.index_offset_conv5 = np.zeros((512, int(256/self.block_size)))
-        self.lost_vals_r_conv5 = np.zeros((self.index_offset_conv5.shape[0], self.index_offset_conv5.shape[1]))
-        self.lost_vals_l_conv5 = np.zeros((self.index_offset_conv5.shape[0], self.index_offset_conv5.shape[1]))
-
-        self.index_offset_conv6 = np.zeros((512, int(512/self.block_size)))
-        self.lost_vals_r_conv6 = np.zeros((self.index_offset_conv6.shape[0], self.index_offset_conv6.shape[1]))
-        self.lost_vals_l_conv6 = np.zeros((self.index_offset_conv6.shape[0], self.index_offset_conv6.shape[1]))
-
-        self.index_offset_fc1 = np.zeros((1024, int(8192/self.block_size)))
-        self.lost_vals_r_fc1 = np.zeros((self.index_offset_fc1.shape[0], self.index_offset_fc1.shape[1]))
-        self.lost_vals_l_fc1 = np.zeros((self.index_offset_fc1.shape[0], self.index_offset_fc1.shape[1]))
-
-        self.index_offset_fc2 = np.zeros((10, int(1024/self.block_size)))
-        self.lost_vals_r_fc2 = np.zeros((self.index_offset_fc2.shape[0], self.index_offset_fc2.shape[1]))
-        self.lost_vals_l_fc2 = np.zeros((self.index_offset_fc2.shape[0], self.index_offset_fc2.shape[1]))
-
-
     def forward(self, x):
-
         # block 1
         x = self.conv1(x)
         x = self.bn1(x)
@@ -346,6 +290,82 @@ class VGG7(nn.Module):
         x = self.scale(x)
 
         return x
+
+    def getBlockSize(self):
+        return self.block_size
+    
+    
+    def resetOffsets(self):
+        # if self.conv1_size(0) >= 64:
+        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.block_size)
+        # else:
+        #     nr_blocks_conv1 = self.conv1_size
+        # for conv 1 nr_blocks_conv1 has to be 3, because else it will set it to 0
+        # if self.block_size > 3:
+        #     conv1_y = 1
+        # else:
+        #     conv1_y = int(3/self.block_size)
+        conv1_y = int(128/self.block_size)
+        self.index_offset_conv1 = np.zeros((3, conv1_y))
+        # transposed for consistency with other layers
+        self.lost_vals_r_conv1 = np.zeros((self.index_offset_conv1.shape[0], self.index_offset_conv1.shape[1]))
+        self.lost_vals_l_conv1 = np.zeros((self.index_offset_conv1.shape[0], self.index_offset_conv1.shape[1]))
+
+        if self.block_size > 128:
+            conv2_y = 1
+        else:
+            conv2_y = int(128/self.block_size)
+        self.index_offset_conv2 = np.zeros((128, conv2_y))
+        self.lost_vals_r_conv2 = np.zeros((self.index_offset_conv2.shape[0], self.index_offset_conv2.shape[1]))
+        self.lost_vals_l_conv2 = np.zeros((self.index_offset_conv2.shape[0], self.index_offset_conv2.shape[1]))
+
+        if self.block_size > 128:
+            conv3_y = 1
+        else:
+            conv3_y = int(128/self.block_size)
+        self.index_offset_conv3 = np.zeros((256, conv3_y))
+        self.lost_vals_r_conv3 = np.zeros((self.index_offset_conv3.shape[0], self.index_offset_conv3.shape[1]))
+        self.lost_vals_l_conv3 = np.zeros((self.index_offset_conv3.shape[0], self.index_offset_conv3.shape[1]))
+
+        if self.block_size > 256:
+            conv4_y = 1
+        else:
+            conv4_y = int(256/self.block_size)
+        self.index_offset_conv4 = np.zeros((256, conv4_y))
+        self.lost_vals_r_conv4 = np.zeros((self.index_offset_conv4.shape[0], self.index_offset_conv4.shape[1]))
+        self.lost_vals_l_conv4 = np.zeros((self.index_offset_conv4.shape[0], self.index_offset_conv4.shape[1]))
+
+        if self.block_size > 256:
+            conv5_y = 1
+        else:
+            conv5_y = int(256/self.block_size)
+        self.index_offset_conv5 = np.zeros((512, conv5_y))
+        self.lost_vals_r_conv5 = np.zeros((self.index_offset_conv5.shape[0], self.index_offset_conv5.shape[1]))
+        self.lost_vals_l_conv5 = np.zeros((self.index_offset_conv5.shape[0], self.index_offset_conv5.shape[1]))
+        
+        if self.block_size > 512:
+            conv6_y = 1
+        else:
+            conv6_y = int(512/self.block_size)
+        self.index_offset_conv6 = np.zeros((512, conv6_y))
+        self.lost_vals_r_conv6 = np.zeros((self.index_offset_conv6.shape[0], self.index_offset_conv6.shape[1]))
+        self.lost_vals_l_conv6 = np.zeros((self.index_offset_conv6.shape[0], self.index_offset_conv6.shape[1]))
+        
+        if self.block_size > 8192:
+            fc1_y = 1
+        else:
+            fc1_y = int(8192/self.block_size)
+        self.index_offset_fc1 = np.zeros((1024, fc1_y))
+        self.lost_vals_r_fc1 = np.zeros((self.index_offset_fc1.shape[0], self.index_offset_fc1.shape[1]))
+        self.lost_vals_l_fc1 = np.zeros((self.index_offset_fc1.shape[0], self.index_offset_fc1.shape[1]))
+
+        if self.block_size > 1024:
+            fc2_y = 1
+        else:
+            fc2_y = int(1024/self.block_size)
+        self.index_offset_fc2 = np.zeros((10, fc2_y))
+        self.lost_vals_r_fc2 = np.zeros((self.index_offset_fc2.shape[0], self.index_offset_fc2.shape[1]))
+        self.lost_vals_l_fc2 = np.zeros((self.index_offset_fc2.shape[0], self.index_offset_fc2.shape[1]))
 
 
 class BasicBlock(nn.Module):

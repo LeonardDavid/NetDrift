@@ -41,8 +41,9 @@ class SymmetricBitErrorsBinarizedPM1:
         self.p = p_updated
     def resetErrorModel(self):
         self.p = 0
-    def applyErrorModel(self, input):
-        return self.method(input, self.p, self.p)
+    def applyErrorModel(self, input, index_offset, block_size):
+        return self.method(input, self.p, self.p, index_offset, block_size)
+        # return self.method(input, index_offset, block_size)
 
 class Quantization1:
     def __init__(self, method):
@@ -146,11 +147,17 @@ def main():
         # print("Mapping from distr idx: ", sorted_mac_mapping_idx)
 
     model = None
+    protectLayers = args.protect_layers
+    print(protectLayers)
+    err_shifts = args.err_shifts
+    print(err_shifts)
+    block_size = args.block_size # 64, 128, 256
     if args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=None, train_model=args.train_model, extract_absfreq=args.extract_absfreq).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=binarizepm1fi, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
     else:
         # model = nn_model().to(device)
-        model = nn_model(crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=None, train_model=args.train_model, extract_absfreq=args.extract_absfreq).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=binarizepm1fi, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
+    # print(model)
 
     # optimizer = optim.Adam(model.parameters(), lr=args.lr)
     optimizer = Clippy(model.parameters(), lr=args.lr)
@@ -208,12 +215,31 @@ def main():
     if args.load_model_path is not None:
             to_load = args.load_model_path
             print("Loaded model: ", to_load)
+            print("block_size: ", block_size)
+            print("-----------------------------")
             model.load_state_dict(torch.load(to_load, map_location='cuda:0'))
 
+    # if args.test_error is not None:
+    #     all_accuracies = test_error(model, device, test_loader)
+    #     to_dump_data = dump_exp_data(model, args, all_accuracies)
+    #     store_exp_data(to_dump_path, to_dump_data)
+
     if args.test_error is not None:
-        all_accuracies = test_error(model, device, test_loader)
+        all_accuracies = []
+        perror = args.perror
+        loops = args.loops
+        
+        for i in range(0, loops):
+            # print("\n")
+            print("Inference #" + str(i))
+            all_accuracies.append(test_error(model, device, test_loader, perror))
+            print("-----------------------------")
+
         to_dump_data = dump_exp_data(model, args, all_accuracies)
         store_exp_data(to_dump_path, to_dump_data)
+        print("-----------------------------")
+        print(all_accuracies)
+        print("-----------------------------")
 
     if args.test_error_distr is not None:
         # perform repeated experiments and return in tikz format
@@ -239,7 +265,7 @@ def main():
     if args.extract_absfreq_resnet is not None:
         ####
         # abs freq test resnet
-        print(model)
+        # print(model)
         # print("--")
         # print((model.layer1[1]))
         # iterate through resnet structure to access conv and linear layer data

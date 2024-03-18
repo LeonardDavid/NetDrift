@@ -57,14 +57,34 @@ if [ "$NN_MODEL" = "FMNIST" ]
 then
     MODEL="VGG3"
     DATASET="FMNIST"
-    declare -a PROTECT_LAYERS=(1 1 1 1)
+    if [[ $NR_UNPROC == *"ALL"* ]]; then
+        declare -a PROTECT_LAYERS=(0 0 0 0)
+    elif [[ $NR_UNPROC == *"CUSTOM"* ]]; then
+        declare -a PROTECT_LAYERS=(1 1 1 0)
+    elif [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
+        declare -a PROTECT_LAYERS=(1 1 1 1)
+        PROTECT_LAYERS[$NR_UNPROC]=0
+    fi
+    declare -a ERRSHIFTS=(0 0 0 0)
     MODEL_PATH="model_fmnist9108.pt"
 elif [ "$NN_MODEL" = "CIFAR" ]
 then
     MODEL="VGG7"
     DATASET="CIFAR10"
-    declare -a PROTECT_LAYERS=(1 1 1 1 1 1 1 1)
+    if [[ $NR_UNPROC == *"ALL"* ]]; then
+        declare -a PROTECT_LAYERS=(0 0 0 0 0 0 0 0)
+    elif [[ $NR_UNPROC == *"CUSTOM"* ]]; then
+        # declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 0)
+        # declare -a PROTECT_LAYERS=(1 0 1 0 1 0 1 0)
+        # declare -a PROTECT_LAYERS=(0 1 0 1 0 1 0 1)
+        declare -a PROTECT_LAYERS=(0 1 1 1 1 0 0 0)
+    elif [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
+        declare -a PROTECT_LAYERS=(1 1 1 1 1 1 1 1)
+        PROTECT_LAYERS[$NR_UNPROC]=0
+    fi
+    declare -a ERRSHIFTS=(0 0 0 0 0 0 0 0)
     MODEL_PATH="model_cifar8582.pt"
+    # MODEL_PATH="model_cifar8660.pt"
 elif [ "$NN_MODEL" = "RESNET" ]
 then 
     MODEL="ResNet"
@@ -96,11 +116,11 @@ STEP_SIZE=25
 # echo -e "${PROTECT_LAYERS[@]}"
 
 
-# declare -a PERRORS=(0.0)
+declare -a PERRORS=(0.0)
 # declare -a PERRORS=(0.0001)
 # declare -a PERRORS=(0.0000455)
 # declare -a PERRORS=(0.00001)
-declare -a PERRORS=(0.000001)
+# declare -a PERRORS=(0.000001)
 
 # declare -a PERRORS=(0.0001 0.0000455 0.00001 0.000001)
 
