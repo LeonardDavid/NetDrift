@@ -61,7 +61,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
         optimizer.zero_grad()
         output = model(data)
         # loss = F.nll_loss(output, target)
-        if model.name is "ResNet18":
+        if model.name == "ResNet18":
             loss = model.traincriterion.applyCriterion(output, target).mean()
         else:
             criterion = nn.CrossEntropyLoss(reduction="none")
@@ -91,7 +91,7 @@ def test(model, device, test_loader, pr=1):
             # print(test_loader)
             output = model(data)
             # print("-")
-            if model.name is "ResNet18":
+            if model.name == "ResNet18":
                 test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
             else:
                 test_loss += criterion(output, target).item()  # sum up batch loss
