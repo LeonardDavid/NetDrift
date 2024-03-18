@@ -5,7 +5,9 @@
 torch::Tensor binarizePM1FI_cuda(
     torch::Tensor input,
     float f01,
-    float f10
+    float f10,
+    std::vector<std::vector<double>> index_offset,
+    float block_size
   );
 
 #define CHECK_CUDA(x) AT_ASSERTM(x.type().is_cuda(), #x " must be a CUDA tensor")
@@ -15,10 +17,12 @@ torch::Tensor binarizePM1FI_cuda(
 torch::Tensor binarizePM1FI(
     torch::Tensor input,
     float f01,
-    float f10
+    float f10,
+    std::vector<std::vector<double>> index_offset,
+    float block_size
   ) {
   CHECK_INPUT(input);
-  return binarizePM1FI_cuda(input, f01, f10);
+  return binarizePM1FI_cuda(input, f01, f10, index_offset, block_size);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
