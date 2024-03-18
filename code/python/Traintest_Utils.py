@@ -61,9 +61,11 @@ def train(args, model, device, train_loader, optimizer, epoch):
         optimizer.zero_grad()
         output = model(data)
         # loss = F.nll_loss(output, target)
-        criterion = nn.CrossEntropyLoss(reduction="none")
-        loss = criterion(output, target).mean()
-        # loss = model.traincriterion.applyCriterion(output, target).mean()
+        if model.name is "ResNet18":
+            loss = model.traincriterion.applyCriterion(output, target).mean()
+        else:
+            criterion = nn.CrossEntropyLoss(reduction="none")
+            loss = criterion(output, target).mean()
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -89,9 +91,10 @@ def test(model, device, test_loader, pr=1):
             # print(test_loader)
             output = model(data)
             # print("-")
-            # if model.name
-            test_loss += criterion(output, target).item()  # sum up batch loss
-            # test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
+            if model.name is "ResNet18":
+                test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
+            else:
+                test_loss += criterion(output, target).item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
 
