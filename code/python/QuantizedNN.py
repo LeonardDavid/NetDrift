@@ -30,19 +30,41 @@ class Quantize(Function):
 quantize = Quantize.apply
 
 
+# class ErrorModel(Function):
+#     @staticmethod
+#     def forward(ctx, input, index_offset, block_size = 64, error_model=None):
+# 	# output = input.clone().detach()
+#         output = input
+#         output = error_model.applyErrorModel(input=output, index_offset=index_offset, block_size=block_size)
+#         return output
+
+#     @staticmethod
+#     def backward(ctx, grad_output):
+# 	# grad_input = grad_output.clone()
+#         grad_input = grad_output
+#         return grad_input, None
+
 class ErrorModel(Function):
     @staticmethod
-    def forward(ctx, input, index_offset, block_size = 64, error_model=None):
-	# output = input.clone().detach()
-        output = input
-        output = error_model.applyErrorModel(input=output, index_offset=index_offset, block_size=block_size)
+    def forward(ctx, input, index_offset, block_size=64, error_model=None):
+        output = input.clone().detach()
+        # print(index_offset)
+        # index_offset_tensor = torch.tensor(index_offset).clone().detach()
+        # print(index_offset_tensor)
+        # index_offset_clone = index_offset_tensor.clone().detach()
+        output = error_model.applyErrorModel(output, index_offset, block_size)
+        # print(output)
         return output
+    
+    # def forward(ctx, input, error_model=None):
+    #     output = input.clone().detach()
+    #     output = error_model.applyErrorModel(output)
+    #     return output
 
     @staticmethod
     def backward(ctx, grad_output):
-	# grad_input = grad_output.clone()
-        grad_input = grad_output
-        return grad_input, None
+        grad_input = grad_output.clone()
+        return grad_input, None, None, None
 
 apply_error_model = ErrorModel.apply
 
@@ -79,7 +101,7 @@ class QuantizedActivation(nn.Module):
         else:
             output = input
         if self.error_model is not None:
-            output = apply_error_model(output, self.error_model)
+            output = apply_error_model(output, index_offset_default, block_size_default, self.error_model)
         return output
 
 
@@ -142,11 +164,11 @@ class QuantizedLinear(nn.Linear):
                     # print(self.index_offset.shape[1])
 
                     err_shift = 0   # number of error shifts
-                    shift = 0          # number of shifts (used for reading)
-                    for i in range(0, self.index_offset.shape[0]):
-                        for j in range(0, self.index_offset.shape[1]):
+                    shift = 0       # number of shifts (used for reading)
+                    for i in range(0, self.index_offset.shape[0]):      #
+                        for j in range(0, self.index_offset.shape[1]):  #
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
-                            for k in range(1, self.block_size):
+                            for k in range(1, self.block_size):         #
                                 shift += 1
                                 if(random.uniform(0.0, 1.0) < self.error_model.p):
                                     err_shift += 1
@@ -155,21 +177,23 @@ class QuantizedLinear(nn.Linear):
                                         # right err_shift
                                         if (self.index_offset[i][j] < self.block_size/2): # +1
                                             self.index_offset[i][j] += 1
-                                        # if (self.index_offset[i][j] > 64/2):
+                                        # self.index_offset[i][j] += 1
+                                        # if (self.index_offset[i][j] > self.block_size/2): # +1
                                         #     self.lost_vals_r[i][j] += 1
-                                        #     quantized_weight[i][(j+1)*64 - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
+                                        #     quantized_weight[i][(j+1)*self.block_size - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
                                         # if (self.lost_vals_l[i][j] > 0):
                                         #     self.lost_vals_l[i][j] -= 1
                                     else:
                                         # left err_shift
                                         if (self.index_offset[i][j] < self.block_size/2): # -1
                                             self.index_offset[i][j] -= 1
-                                        # if(-self.index_offset[i][j] > 64/2):
+                                        # self.index_offset[i][j] -= 1
+                                        # if(-self.index_offset[i][j] > self.block_size/2): # +1
                                         #     self.lost_vals_l[i][j] += 1
-                                        #     quantized_weight[i][j*64 + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
+                                        #     quantized_weight[i][j*self.block_size + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
-                    
+
                     self.err_shifts[self.layerNR-1] += err_shift
 
                     # print("local err_shifts: " + str(err_shift) + "/" + str(shift))
@@ -180,8 +204,8 @@ class QuantizedLinear(nn.Linear):
 
                     # print(np.sum(self.lost_vals_r))
                     # print(np.sum(self.lost_vals_l))
-
-                quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
+                                        
+                quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.block_size, self.error_model)
             if self.an_sim is not None:
                 # compute weight and input shapes
                 wm_row = quantized_weight.shape[0]
@@ -379,10 +403,12 @@ class QuantizedConv2d(nn.Conv2d):
 
                     err_shift = 0   # number of error shifts
                     shift = 0       # number of shifts (used for reading)
+                    # iterate over all blocks (row-wise -> swap for loops for column-wise)
                     for i in range(0, self.index_offset.shape[0]):      # 
                         for j in range(0, self.index_offset.shape[1]):  # 
+                            # now, read every value from the block
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
-                            for k in range(1, self.block_size):         #
+                            for k in range(1, self.block_size):         # 
                                 shift += 1
                                 if(random.uniform(0.0, 1.0) < self.error_model.p):
                                     err_shift += 1
@@ -391,24 +417,26 @@ class QuantizedConv2d(nn.Conv2d):
                                         # right err_shift
                                         if (self.index_offset[i][j] < self.block_size/2): # +1
                                             self.index_offset[i][j] += 1
-                                        # if (self.index_offset[i][j] > 64/2):
+                                        # self.index_offset[i][j] += 1
+                                        # if (self.index_offset[i][j] > self.block_size/2): # +1
                                         #     self.lost_vals_r[i][j] += 1
-                                        #     quantized_weight[i][(j+1)*64 - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
+                                        #     quantized_weight[i][(j+1)*self.block_size - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
                                         # if (self.lost_vals_l[i][j] > 0):
                                         #     self.lost_vals_l[i][j] -= 1
                                     else:
                                         # left err_shift
                                         if (self.index_offset[i][j] < self.block_size/2): # -1
                                             self.index_offset[i][j] -= 1
-                                        # if(-self.index_offset[i][j] > 64/2):
+                                        # self.index_offset[i][j] -= 1
+                                        # if(-self.index_offset[i][j] > self.block_size/2): # +1
                                         #     self.lost_vals_l[i][j] += 1
-                                        #     quantized_weight[i][j*64 + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
+                                        #     quantized_weight[i][j*self.block_size + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
 
                     self.err_shifts[self.layerNR-1] += err_shift
 
-                    # print("total err err_shifts: " + str(err_shift) + "/" + str(shift))
+                    # print("total err_shifts: " + str(err_shift) + "/" + str(shift))
                         
                     # print(self.err_shifts)
 
@@ -419,6 +447,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # print(np.sum(self.lost_vals_l))
 
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
+
             if self.an_sim is not None:
                 # get tensor sizes
                 h = input.shape[2]

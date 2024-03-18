@@ -1,0 +1,10 @@
+Available GPUs:  [0]
+Currently used GPU:  0
+[0, 0, 0, 0]
+[0, 0, 0, 0]
+Successfully created the directory /mnt/c/Users/leona/Projects/TU-Dortmund/RTM/NetDrift/experiments/VGG3/results-18-03-2024-18:30:38
+Loaded model:  model_fmnist9108.pt
+block_size:  64
+-----------------------------
+Inference #0
+Error rate:  0.0
