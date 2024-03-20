@@ -1,2 +1,4 @@
 # code/cuda/*/build
 # code/cuda/*/dist
+
+RTM_results/
