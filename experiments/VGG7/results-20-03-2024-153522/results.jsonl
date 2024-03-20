@@ -1,0 +1,1 @@
+{"model": "VGG7", "batchsize": 256, "epochs": 1, "learning_rate": 0.001, "gamma": 0.5, "stepsize": 25, "test_error": [85.21]}

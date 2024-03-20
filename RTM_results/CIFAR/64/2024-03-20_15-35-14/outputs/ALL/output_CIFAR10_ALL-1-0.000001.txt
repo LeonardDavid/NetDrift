@@ -1,0 +1,20 @@
+Available GPUs:  [0]
+Currently used GPU:  0
+Files already downloaded and verified
+[0, 0, 0, 0, 0, 0, 0, 0]
+[0, 0, 0, 0, 0, 0, 0, 0]
+Successfully created the directory /mnt/c/Users/leona/projects/tu-dortmund/rtm/netdrift/experiments/VGG7/results-20-03-2024-15:35:22
+Loaded model:  model_cifar8582.pt
+block_size:  64
+-----------------------------
+Inference #0
+Error rate:  1e-06
+
+Accuracy: 85.21%
+
+total_err_shifts:  [0, 0, 1, 3, 5, 10, 349, 1]
+-----------------------------
+Successfully stored results in /mnt/c/Users/leona/projects/tu-dortmund/rtm/netdrift/experiments/VGG7/results-20-03-2024-15:35:22/results.jsonl
+-----------------------------
+[85.21]
+-----------------------------
