@@ -4,5 +4,7 @@
 RTM_results/
 experiments/
 
+data/imagenette2/train
+
 Dockerfile
 .dockerignore
