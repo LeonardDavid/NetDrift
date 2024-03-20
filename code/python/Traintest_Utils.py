@@ -13,8 +13,6 @@ import os
 from datetime import datetime
 sys.path.append("code/python/")
 
-from memory_profiler import profile
-
 from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data
 
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
