@@ -1,66 +1,96 @@
-# SPICE-Torch
-A framework for connecting SPICE simulations of analog computing neuron circuits with PyTorch accuracy evaluations for Binarized (and soon Quantized) Neural Networks.
+# NetDrift
 
-Tested setups:
-- Python 3.10.6 (pip + venv), PyTorch 1.13.1, GeForce RTX 3060 Ti 8GB (Driver Version: 525.60.13, CUDA Version: 12.0), Ubuntu 22.04.1
-- Python 3.6.9, PyTorch 1.5.0, GeForce GTX 1060 6GB (Driver Version: 440.100, CUDA Version: 10.2), Ubuntu 18.04.4
-- Python 3.6.13 (conda), 1.7.0+cu110, GeForce GTX 1080 8GB (Driver Version: 450.102.04, CUDA Version: 11.0), Ubuntu 18.04.6
-- Python 3.9.7, PyTorch 1.9.0, GeForce GTX 3080 10GB (Driver Version: 512.15, CUDA Version: 11.6)
-- Python 3.10.6, PyTorch 2.01+cu118, GeForce RTX 3060 12 GB (Driver Version: 531.14, CUDA Version: 11.71), Windows 10
+Prereqs:
+- Anaconda3 instalation (https://docs.anaconda.com/free/anaconda/install/linux/):
+- - curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+- - bash ~/Downloads/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+- - source <PATH_TO_CONDA>/bin/activate
+- - conda init
+- - source ~/.bashrc
 
-Supported features:
-- BNN models for FC, VGG3, VGG7, ResNet18
-- Datasets: FashionMNIST, KMNIST, SVHN, CIFAR10, IMAGENETTE
-- Error model application for Linear and Conv2d layers (direct mapping and distribution-based mapping)
-- Variable crossbar array size
-- Training with error models
-- Performance mode (MAC engine with error application are fused into one GPU-kernel)
+- Create conda environment:
+- - conda create -n netdrift python=3.10
+- - conda activate netdrift
 
-TODOs:
-- Optimize MAC engine for execution time
-- Support for QNNs
-- More NN models
+- Install nvidia-cuda-toolkit (version of CUDA has to correspond to pytorch CUDA major version)
+- - sudo apt-get update 
+- - sudo apt install nvidia-cuda-toolkit
+- or:
+- - conda install nvidia::cuda-toolkit
 
-## CUDA-based Error Model Application and Binarization/Quantization
+- Install pytorch version that corresponds to the installed CUDA major version
+- - pip install torch torchvision torchaudio
 
-First, install PyTorch. For fast binarization/quantization and error injection during training, CUDA support is needed. To enable it, install pybind11 and CUDA toolkit.
+xxx
+x Install pytorch 1.12 with CUDA 10.2
+x x pip install torch==1.12.0+cu102 torchvision==0.13.0+cu102 torchaudio===0.12.0 -f https://download.pytorch.org/whl/torch_stable.html
 
-Then, to install the CUDA-kernels, go to the folder ```code/cuda/``` and run
+The detected CUDA version (12.3) mismatches the version that was used to compile
+PyTorch (10.2). Please make sure to use the same CUDA versions.
+xxx
 
-```./install_kernels.sh```
+- others:
+- - pip install matplotlib
+- - pip install scipy
+=>
+requirements.txt
+- matplotlib
+- scipy
 
-After successful installation of all kernels, run the binarization/quantization-aware training with error injection for BNNs using
 
-```python3 run.py --model=VGG3 --dataset=FMNIST --batch-size=256 --epochs=5 --lr=0.001 --step-size=2 --gamma=0.5 --train-model=1 --save-model=vgg3_test```.
+Run:
 
-Here is a list of the command line parameters for running the error evaluations with SPICE-Torch:
-| Command line parameter | Options |
-| :------------- |:-------------|
-| --model      | FC, VGG3, VGG7, ResNet |
-| --dataset      | MNIST, FMNIST, QMNIST, SVHN, CIFAR10, IMAGENETTE |
-| --an-sim      | int, whether to turn on the mapping from SPICE, default: None |
-| --mapping      | string, loads a direct mapping from the specified path, default: None |
-| --mapping-distr      | string, loads a distribution-based mapping from the specified path, default: None |
-| --array-size      | int, specifies the size of the crossbar array, default: None |
-| --performance-mode      | int, specify whether to activate the faster and more memory-efficient performance mode (when using this sub-MAC results can only be changed in cuda-kernel!), default: None |
-| --print-accuracy      | int, specifies whether to print inference accuracy, default: None |
-| --test-error-distr      | int, specifies the number of repetitions to perform in accuracy evaluations for distribution based evaluation, default: None |
-| --train-model      | bool, whether to train a model, default: None|
-| --epochs      | int, number of epochs to train, default: 10|
-| --lr      | float, learning rate, default: 1.0|
-| --gamma      | float, learning rate step, default: 0.5|
-| --step-size      | int, learning rate step site, default: 5|
-| --batch-size      | int, specifies the batch size in training, default: 64|
-| --test-batch-size      | int, specifies the batch size in testing, default: 1000|
-| --save-model | string, saves a trained model with the specified name in the string, default:None |
-| --load-model-path | string, loads a model from the specified path in the string, default: None |
-| --load-training-state | string, saves a training state with the specified name in the string, default:None |
-| --save-training-state | string, loads a training state from the specified path in the string, default: None |
-| --gpu-num | int, specifies the GPU on which the training should be performed, default: 0 |
-| --profile-time | int, Specify whether to profile the execution time by specifying the repetitions, default: None |
-| --extract-absfreq | int, Specify whether to extract the absolute frequency of MAC values, default: None |
-| --extract-absfreq-resnet | int, Specify whether to extract the absolute frequency of MAC values for resnet, default: None |
+1. code/cuda/install_kernels.sh (if there are errors on windows, try changing from CRLF to LF)
+2. 
 
-More information on the command line parameters can be found [here](https://github.com/myay/IFneuronSPICE/blob/main/code/python/Utils.py#L55).
 
-Please contact me if you have any questions: mikail.yayla@tu-dortmund.de.
+TODO: 
+
+- !!!
+- sudo apt-get update 
+- sudo apt install nvidia-cuda-toolkit
+
+- home PC:
+- nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2019 NVIDIA Corporation
+Built on Sun_Jul_28_19:07:16_PDT_2019
+Cuda compilation tools, release 10.1, V10.1.243
+
+- server:
+- nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2019 NVIDIA Corporation
+Built on Sun_Jul_28_19:07:16_PDT_2019
+Cuda compilation tools, release 10.1, V10.1.243
+- !!!
+
+First, the custom NN needs to be implemented in a separate class in the file located at \texttt{code/python/Model.py}.\ak{Does this mean, taking the new model? We don't need to implement it from scratch.. The model is implemented by someone.}
+The adjacent file \texttt{QuantizedNN.py} contains the \texttt{QuantizedConv2D()} and \texttt{QuantizedLinear()} classes which are written specifically for Quantized and Binarized Neural Networks. \ak{We haven't specified these files and modules before..}
+These can be used as such in the custom NN, or used as a reference to create a specific convolutional Layer.
+It should be noted that the following parameters are required for RTM simulation:\ak{where are these parameters used? In which module?}
+\begin{itemize}
+    % \item \texttt{error_model}: name of the error model used
+    \item \texttt{test\_rtm}: flag whether to use RTM simulation (\texttt{True} by default);
+    \item \texttt{block\_size}: size of the nanowire (usually $n\le64$, see Section~\ref{subsec:mapping_weights});
+    \item \texttt{index\_offset}: array which stores the offsets of each block, depending on how many times a fault occurs in that block (initialised with zeros);
+    \item \texttt{protectLayers}: array that specifies which layers are protected against faults (1) and which are not (0). The size of this array is equal to the number of tested layers;
+    \item \texttt{err\_shifts}: array in which the amount of faults in each tested layer is summed up;
+\end{itemize}
+
+The simulation of the RTM faults described in Section~\ref{subsec:error_injection} begins after the line of code that reads \texttt{if(self.error\_model is not None)}.\ak{Maybe this is too low level.}
+The simulator stores an offset value for each block of the mapped weight tensor in the \texttt{index\_offset} array. 
+This value is increased or decreased when a misalignment fault occurs that over-shifts or under-shifts the block, respectively.
+
+A different mapping can be achieved by switching the order of the first two \texttt{for}-loops, which changes the implementation from row-wise to column-wise.
+Alternatively, a custom mapping can be designed as needed.
+
+Finally, we apply the error model to the weight tensor with the following code:
+\begin{verbatim}
+weight = apply_error_model(weight, self.index_offset,
+                           self.block_size, self.error_model)
+\end{verbatim}
+
+The error injection model is usable out of the box and should not require any modifications. \ak{Great! Was waiting to see this ;)}
+% However, if needed, it can be extended in \texttt{code/cuda/binarizationPM1FI}, or used as reference.
+However, if needed, it can be extended (or used as reference) under \texttt{code/cuda/binarizationPM1FI}.
+
+All the necessary initializations, i.e., variables, NN models, and functions to start the inference iteration are located in \texttt{run.py}, while helpful scripts can be written to automate multiple iterations, such as the ones used for running our experiments (\texttt{run\_auto.sh} and \texttt{run\_auto\_all.sh}).\ak{This seems not specific to custom NNs but to BNNs as well. Maybe some details from here can be moved to the high level desciption, e.g., in the openning para of Sec 3.}
