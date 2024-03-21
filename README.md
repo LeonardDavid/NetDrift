@@ -32,7 +32,8 @@ $ conda install nvidia::cuda-toolkit
 $ pip install torch torchvision torchaudio
 ```
 
-*Note that the major version of CUDA has to be the same as the version of CUDA in which Pytorch was compiled in*
+*Note: this installation assumes that the latest CUDA drivers are installed on the GPU.
+If the GPU is older and does not support the latest drivers, then make suret hat the major version of CUDA is to the same as the version of CUDA in which Pytorch was compiled in*
 
 - others:
 ```
