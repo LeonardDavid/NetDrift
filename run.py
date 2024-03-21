@@ -8,10 +8,8 @@ from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
 import time
-import json
 import sys
 import os
-import scipy
 
 from scipy.stats import norm
 import matplotlib.pyplot as plt
@@ -21,7 +19,7 @@ sys.path.append("code/python/")
 
 from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data, get_model_and_datasets, print_tikz_data, cuda_profiler
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
-from Models import FC, VGG3, VGG7, ResNet, BasicBlock
+from Models import VGG3, VGG7, ResNet, BasicBlock
 from Traintest_Utils import train, test, test_error, Clippy, Criterion, binary_hingeloss
 
 import binarizePM1
