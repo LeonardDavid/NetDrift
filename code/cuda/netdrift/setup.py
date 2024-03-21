@@ -1,15 +1,12 @@
 import setuptools
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-# with open("README.md", "r") as fh:
-#     long_description = fh.read()
-
 setuptools.setup(
-    name='mappingdirect',
+    name='netdrift',
     version="0.0.1",
-    author='Mikail Yayla',
-    author_email='mikail.yayla@tu-dortmund.de',
-    description='Mapping',
+    author='Mikail Yayla, Leonard David Bereholschi',
+    author_email='mikail.yayla@tu-dortmund.de, leonard.bereholschi@tu-dortmund.de',
+    description='RTM Fault Injection in BNN',
     # long_description=long_description,
     # long_description_content_type="text/markdown",
     # url="",
@@ -20,9 +17,9 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     ext_modules=[
-        CUDAExtension('mappingdirect', [
-            'mappingdirect.cpp',
-            'mappingdirect_kernel.cu',
+        CUDAExtension('netdrift', [
+            'netdrift.cpp',
+            'netdrift_kernel.cu',
         ]),
     ],
     cmdclass={

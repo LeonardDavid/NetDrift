@@ -19,7 +19,7 @@
 
 // for rng stuff: http://ianfinlayson.net/class/cpsc425/notes/cuda-random
 template <typename scalar_t>
-__global__ void binarizePM1FI_kernel(
+__global__ void netdrift_kernel(
     torch::PackedTensorAccessor<scalar_t,3,torch::RestrictPtrTraits,size_t> input,
     torch::PackedTensorAccessor<scalar_t,3,torch::RestrictPtrTraits,size_t> output,
     float f01,
@@ -68,7 +68,7 @@ __global__ void binarizePM1FI_kernel(
   }
 }
 
-torch::Tensor binarizePM1FI_cuda(
+torch::Tensor netdrift_cuda(
   torch::Tensor input,
   float f01,
   float f10,
@@ -171,8 +171,8 @@ torch::Tensor binarizePM1FI_cuda(
   cudaMalloc((void **) &d_index_offset_flat, total_size*sizeof(double));
   cudaMemcpy(d_index_offset_flat, index_offset_flat, (total_size*sizeof(double)), cudaMemcpyHostToDevice);
   
-  AT_DISPATCH_ALL_TYPES(input.type(), "binarizePM1FI_cuda", ([&] {
-    binarizePM1FI_kernel<scalar_t><<<blocks, threads>>>(
+  AT_DISPATCH_ALL_TYPES(input.type(), "netdrift_cuda", ([&] {
+    netdrift_kernel<scalar_t><<<blocks, threads>>>(
         input.packed_accessor<scalar_t,3,torch::RestrictPtrTraits,size_t>(),
         output.packed_accessor<scalar_t,3,torch::RestrictPtrTraits,size_t>(),
         f01,

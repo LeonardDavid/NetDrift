@@ -20,20 +20,20 @@ from datetime import datetime
 sys.path.append("code/python/")
 
 from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data, get_model_and_datasets, print_tikz_data, cuda_profiler
-
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
-
 from Models import FC, VGG3, VGG7, ResNet, BasicBlock
-
 from Traintest_Utils import train, test, test_error, Clippy, Criterion, binary_hingeloss
 
 import binarizePM1
-import binarizePM1FI
-import quantization
+import netdrift
 
-# from resnet18 import ResNet, BasicBlock
-
-class SymmetricBitErrorsBinarizedPM1:
+class Quantization1:
+    def __init__(self, method):
+        self.method = method
+    def applyQuantization(self, input):
+        return self.method(input)
+    
+class NetDriftModel:
     def __init__(self, method, p):
         self.method = method
         self.p = p
@@ -43,38 +43,16 @@ class SymmetricBitErrorsBinarizedPM1:
         self.p = 0
     def applyErrorModel(self, input, index_offset, block_size):
         return self.method(input, self.p, self.p, index_offset, block_size)
-        # return self.method(input, index_offset, block_size)
-
-class Quantization1:
-    def __init__(self, method):
-        self.method = method
-    def applyQuantization(self, input):
-        return self.method(input)
 
 binarizepm1 = Quantization1(binarizePM1.binarize)
-binarizepm1fi = SymmetricBitErrorsBinarizedPM1(binarizePM1FI.binarizeFI, 0.1)
+# TODO p has no effect here
+netdrift_model = NetDriftModel(netdrift.netdrift, 0.1)
 
-# crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
-# crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
 crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
 crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
 
 q_train = True # quantization during training
 q_eval = True # quantization during evaluation
-
-#python3 run.py --model=FC --dataset=FMNIST --load-model="model_fc_test.pt" --mapping=mapping_example/mapping.npy --array-size=32 --an-sim=1
-
-# capacitor model
-# t = - tau * torch.log(1-(a/v_o))
-
-# class Snn_RC:
-#     def __init__(self, method):
-#         self.r_l = method
-#         self.v_th = v_th
-#         self.
-#         self.c_mem = c_mem
-#     def applyQuantization(self, input):
-#         return self.method(input)
 
 def main():
     # Training settings
@@ -148,18 +126,18 @@ def main():
 
     model = None
     protectLayers = args.protect_layers
-    print(protectLayers)
     err_shifts = args.err_shifts
+    block_size = args.block_size # 2, 4, ... 64
+    
+    print(protectLayers)
     print(err_shifts)
-    block_size = args.block_size # 64, 128, 256
+
     if args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=binarizepm1fi, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
     else:
-        # model = nn_model().to(device)
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=binarizepm1fi, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
     # print(model)
 
-    # optimizer = optim.Adam(model.parameters(), lr=args.lr)
     optimizer = Clippy(model.parameters(), lr=args.lr)
 
     scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)

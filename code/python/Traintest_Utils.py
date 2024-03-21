@@ -21,6 +21,8 @@ import binarizePM1
 import binarizePM1FI
 import quantization
 
+import netdrift
+
 def binary_hingeloss(yhat, y, b=128):
     #print("yhat", yhat.mean(dim=1))
     #print("y", y)
