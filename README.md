@@ -44,6 +44,10 @@ $ pip install scipy
 $ pip install -r requirements_pip.txt
 $ conda create -n netdrift --file requirements_conda.txt
 ```
+or only this?
+```
+$ conda env create -f environment.yml
+```
 
 ## Run the Simulator
 
