@@ -1,7 +1,8 @@
 # NetDrift
 
 ## Prerequisites (Linux Ubuntu or WSL on Windows):
-- Anaconda3 instalation (from https://docs.anaconda.com/free/anaconda/install/linux/):
+
+### Anaconda3 instalation (from https://docs.anaconda.com/free/anaconda/install/linux/):
 
 ```
 $ curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
@@ -11,7 +12,13 @@ $ conda init
 $ source ~/.bashrc
 ```
 
-- Create conda environment:
+### Create conda environment from pre-made environment file:
+```
+$ conda env create -f environment.yml
+```
+
+### OR manually:
+- create conda environment:
 ```
 $ conda create -n netdrift python=3.10
 $ conda activate netdrift
@@ -39,10 +46,6 @@ If the GPU is older and does not support the latest drivers, then make suret hat
 ```
 $ pip install matplotlib
 $ pip install scipy
-```
-### or run:
-```
-$ conda env create -f environment.yml
 ```
 
 ## Run the Simulator
