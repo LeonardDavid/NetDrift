@@ -68,7 +68,7 @@ $ bash ./run_auto.sh CIFAR 1 64 ALL 0
 - `config`:
 - `gpu_num`:  
 
-
+# TODO
 First, the custom NN needs to be implemented in a separate class in the file located at \texttt{code/python/Model.py}.\ak{Does this mean, taking the new model? We don't need to implement it from scratch.. The model is implemented by someone.}
 The adjacent file \texttt{QuantizedNN.py} contains the \texttt{QuantizedConv2D()} and \texttt{QuantizedLinear()} classes which are written specifically for Quantized and Binarized Neural Networks. \ak{We haven't specified these files and modules before..}
 These can be used as such in the custom NN, or used as a reference to create a specific convolutional Layer.
