@@ -1,67 +1,70 @@
 # NetDrift
 
-Prereqs:
-- Anaconda3 instalation (https://docs.anaconda.com/free/anaconda/install/linux/):
-- - curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
-- - bash ~/Downloads/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
-- - source <PATH_TO_CONDA>/bin/activate
-- - conda init
-- - source ~/.bashrc
+## Prerequisites (Linux Ubuntu or WSL on Windows):
+- Anaconda3 instalation (from https://docs.anaconda.com/free/anaconda/install/linux/):
+
+```
+$ curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+$ bash ~/Downloads/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+$ source <PATH_TO_CONDA>/bin/activate
+$ conda init
+$ source ~/.bashrc
+```
 
 - Create conda environment:
-- - conda create -n netdrift python=3.10
-- - conda activate netdrift
+```
+$ conda create -n netdrift python=3.10
+$ conda activate netdrift
+```
 
-- Install nvidia-cuda-toolkit (version of CUDA has to correspond to pytorch CUDA major version)
-- - sudo apt-get update 
-- - sudo apt install nvidia-cuda-toolkit
-- or:
-- - conda install nvidia::cuda-toolkit
+- Install nvidia-cuda-toolkit 
+```
+$ sudo apt-get update 
+$ sudo apt install nvidia-cuda-toolkit
+```
+or:
+```
+$ conda install nvidia::cuda-toolkit
+```
 
-- Install pytorch version that corresponds to the installed CUDA major version
-- - pip install torch torchvision torchaudio
+- Install pytorch
+```
+$ pip install torch torchvision torchaudio
+```
 
-xxx
-x Install pytorch 1.12 with CUDA 10.2
-x x pip install torch==1.12.0+cu102 torchvision==0.13.0+cu102 torchaudio===0.12.0 -f https://download.pytorch.org/whl/torch_stable.html
-
-The detected CUDA version (12.3) mismatches the version that was used to compile
-PyTorch (10.2). Please make sure to use the same CUDA versions.
-xxx
+*Note that the major version of CUDA has to be the same as the version of CUDA in which Pytorch was compiled in*
 
 - others:
-- - pip install matplotlib
-- - pip install scipy
-=>
-requirements.txt
-- matplotlib
-- scipy
+```
+$ pip install matplotlib
+$ pip install scipy
+```
+### or run:
+```
+$ pip install -r requirements_pip.txt
+$ conda create -n netdrift --file requirements_conda.txt
+```
 
+## Run the Simulator
 
-Run:
+### before first run (or after any changes in any CUDA kernels)
+- if there are errors on windows, try changing from CRLF to LF
+```
+$ bash ./code/cuda/install_kernels.sh
+```
 
-1. code/cuda/install_kernels.sh (if there are errors on windows, try changing from CRLF to LF)
-2. 
+### Launch
+```
+$ bash ./run_auto.sh CIFAR 1 64 ALL 0
+```
 
+### Parameters:
+- `nn_model`: FMNIST, CIFAR, RESNET
+- `reps`:
+- `block_size`:
+- `config`:
+- `gpu_num`:  
 
-TODO: 
-
-- !!!
-- sudo apt-get update 
-- sudo apt install nvidia-cuda-toolkit
-
-- home PC:
-- nvcc: NVIDIA (R) Cuda compiler driver
-Copyright (c) 2005-2019 NVIDIA Corporation
-Built on Sun_Jul_28_19:07:16_PDT_2019
-Cuda compilation tools, release 10.1, V10.1.243
-
-- server:
-- nvcc: NVIDIA (R) Cuda compiler driver
-Copyright (c) 2005-2019 NVIDIA Corporation
-Built on Sun_Jul_28_19:07:16_PDT_2019
-Cuda compilation tools, release 10.1, V10.1.243
-- !!!
 
 First, the custom NN needs to be implemented in a separate class in the file located at \texttt{code/python/Model.py}.\ak{Does this mean, taking the new model? We don't need to implement it from scratch.. The model is implemented by someone.}
 The adjacent file \texttt{QuantizedNN.py} contains the \texttt{QuantizedConv2D()} and \texttt{QuantizedLinear()} classes which are written specifically for Quantized and Binarized Neural Networks. \ak{We haven't specified these files and modules before..}
