@@ -66,7 +66,7 @@ then
         PROTECT_LAYERS[$NR_UNPROC]=0
     fi
     declare -a ERRSHIFTS=(0 0 0 0)
-    MODEL_PATH="model_fmnist9108.pt"
+    MODEL_PATH="models/model_fmnist9108.pt"
 elif [ "$NN_MODEL" = "CIFAR" ]
 then
     MODEL="VGG7"
@@ -83,7 +83,7 @@ then
         PROTECT_LAYERS[$NR_UNPROC]=0
     fi
     declare -a ERRSHIFTS=(0 0 0 0 0 0 0 0)
-    MODEL_PATH="model_cifar8582.pt"
+    MODEL_PATH="models/model_cifar8582.pt"
     # MODEL_PATH="model_cifar8660.pt"
 elif [ "$NN_MODEL" = "RESNET" ]
 then 
@@ -101,7 +101,7 @@ then
         PROTECT_LAYERS[$NR_UNPROC]=0
     fi
     declare -a ERRSHIFTS=(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
-    MODEL_PATH="model_resnet7694.pt"
+    MODEL_PATH="models/model_resnet7694.pt"
 else
     echo -e "\n\033[0;31m$NN_MODEL not supported, check spelling & available models: FMNIST, CIFAR, RESNET\033[0m\n"
     exit
