@@ -158,7 +158,7 @@ do
                 
                 # echo $list
                 
-                python plot_new_table.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
+                python plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
 
                 # PROTECT_LAYERS[$layer]=1
             fi
