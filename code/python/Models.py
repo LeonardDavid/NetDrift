@@ -354,22 +354,28 @@ class BasicBlock(nn.Module):
         # else:
         #     nr_blocks_conv1 = self.conv1_size
         # for conv 1 nr_blocks_conv1 has to be 1, because else it will set it to 0
-        self.index_offset_conv1 = np.zeros((self.conv1_size_2, self.conv1_size_1))
+        # self.index_offset_conv1 = np.zeros((self.conv1_size_2, self.conv1_size_1))
+        
+        if self.block_size > 3*3*self.conv1_size_1: # kernel size: 3x3
+            conv1_y = 1
+        else:
+            conv1_y = int(3*3*self.conv1_size_1/self.block_size)
+        self.index_offset_conv1 = np.zeros((self.conv1_size_2, conv1_y))
 
     def resetConv2Offsets(self): 
         
-        if self.block_size > self.conv2_size_1:
+        if self.block_size > 3*3*self.conv2_size_1: # kernel size: 3x3
             conv2_y = 1
         else:
-            conv2_y = int(self.conv2_size_1/self.block_size)
+            conv2_y = int(3*3*self.conv2_size_1/self.block_size)
         self.index_offset_conv2 = np.zeros((self.conv2_size_2, conv2_y))
 
     def resetShortcutOffsets(self):
 
-        if self.block_size > self.shortcut_size_1:
+        if self.block_size > 1*1*self.shortcut_size_1: # kernel size: 1x1
             shortcut_y = 1
         else:
-            shortcut_y = int(self.shortcut_size_1/self.block_size)
+            shortcut_y = int(1*1*self.shortcut_size_1/self.block_size)
         self.index_offset_shortcut = np.zeros((self.shortcut_size_2, shortcut_y))
 
 
@@ -448,9 +454,15 @@ class ResNet(nn.Module):
         #     nr_blocks_conv1 = int(self.conv1_size(0)/self.block_size)
         # else:
         #     nr_blocks_conv1 = self.conv1_size
+        # conv1_y = int(64/self.block_size)
+        # self.index_offset_conv1 = np.zeros((3, conv1_y))
+
         # for conv 1 nr_blocks_conv1 has to be 3, because else it will set it to 0
-        conv1_y = int(64/self.block_size)
-        self.index_offset_conv1 = np.zeros((3, conv1_y))
+        if self.block_size > 3*3*64: # kernel size 3x3
+            conv1_y = 1
+        else:
+            conv1_y = int(3*3*64/self.block_size)
+        self.index_offset_conv1 = np.zeros((3, conv1_y)) # np.zeros((64, conv1_y))
 
     def resetLinearOffsets(self):
         self.index_offset_linear = np.zeros((self.linear_size_2, int(self.linear_size_1/self.block_size)))
