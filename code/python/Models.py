@@ -52,12 +52,18 @@ class VGG3(nn.Module):
         #     nr_blocks_conv1 = self.conv1_size
         # for conv 1 nr_blocks_conv1 has to be 1, because else it will set it to 0
         # conv1_y = int(64/self.block_size)
-        self.index_offset_conv1 = np.zeros((64, 1))
+        # self.index_offset_conv1 = np.zeros((64, 1))
 
-        if self.block_size > 64:
+        if self.block_size > 3*3: # kernel size 3x3
+            conv1_y = 1
+        else:
+            conv1_y = int(3*3/self.block_size)
+        self.index_offset_conv1 = np.zeros((64, conv1_y))
+
+        if self.block_size > 3*3*64: # kernel size 3x3
             conv2_y = 1
         else:
-            conv2_y = int(64/self.block_size)
+            conv2_y = int(3*3*64/self.block_size)
         self.index_offset_conv2 = np.zeros((64, conv2_y))
 
         if self.block_size > 7*7*64:
@@ -233,37 +239,43 @@ class VGG7(nn.Module):
         #     conv1_y = int(3/self.block_size)
 
         # transposed for consistency with other layers
-        conv1_y = int(128/self.block_size)
-        self.index_offset_conv1 = np.zeros((3, conv1_y))
+        # conv1_y = int(128/self.block_size)
+        # self.index_offset_conv1 = np.zeros((3, conv1_y))
 
-        if self.block_size > 128:
+        if self.block_size > 3*3*3: # kernel size 3x3
+            conv1_y = 1
+        else:
+            conv1_y = int(3*3*3/self.block_size)
+        self.index_offset_conv1 = np.zeros((128, conv1_y))
+
+        if self.block_size > 3*3*128: # kernel size 3x3
             conv2_y = 1
         else:
-            conv2_y = int(128/self.block_size)
+            conv2_y = int(3*3*128/self.block_size)
         self.index_offset_conv2 = np.zeros((128, conv2_y))
 
-        if self.block_size > 128:
+        if self.block_size > 3*3*128: # kernel size 3x3
             conv3_y = 1
         else:
-            conv3_y = int(128/self.block_size)
+            conv3_y = int(3*3*128/self.block_size)
         self.index_offset_conv3 = np.zeros((256, conv3_y))
 
-        if self.block_size > 256:
+        if self.block_size > 3*3*256: # kernel size 3x3
             conv4_y = 1
         else:
-            conv4_y = int(256/self.block_size)
+            conv4_y = int(3*3*256/self.block_size)
         self.index_offset_conv4 = np.zeros((256, conv4_y))
 
-        if self.block_size > 256:
+        if self.block_size > 3*3*256: # kernel size 3x3
             conv5_y = 1
         else:
-            conv5_y = int(256/self.block_size)
+            conv5_y = int(3*3*256/self.block_size)
         self.index_offset_conv5 = np.zeros((512, conv5_y))
         
-        if self.block_size > 512:
+        if self.block_size > 3*3*512: # kernel size 3x3
             conv6_y = 1
         else:
-            conv6_y = int(512/self.block_size)
+            conv6_y = int(3*3*512/self.block_size)
         self.index_offset_conv6 = np.zeros((512, conv6_y))
         
         if self.block_size > 8192:
