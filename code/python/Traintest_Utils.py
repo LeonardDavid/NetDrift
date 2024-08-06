@@ -12,6 +12,11 @@ sys.path.append("code/python/")
 from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 
+import wandb
+
+
+
+
 def binary_hingeloss(yhat, y, b=128):
     #print("yhat", yhat.mean(dim=1))
     #print("y", y)
@@ -72,7 +77,9 @@ def test(model, device, test_loader, pr=1):
     correct = 0
     criterion = nn.CrossEntropyLoss(reduction="sum")
     with torch.no_grad():
+        # print(test_loader)
         for data, target in test_loader:
+            # print("+")
             data, target = data.to(device), target.to(device)
             # print("+")
             # print(data)
@@ -86,6 +93,7 @@ def test(model, device, test_loader, pr=1):
                 test_loss += criterion(output, target).item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
+            # print("-")
 
     test_loss /= len(test_loader.dataset)
 
@@ -100,47 +108,46 @@ def test(model, device, test_loader, pr=1):
 
     return accuracy
 
-
 def test_error(model, device, test_loader, perror):
+    
     model.eval()
     set_layer_mode(model, "eval") # propagate informaton about eval to all layers
        
     # print("start")
     # print(model.printIndexOffsets())
 
-    # # update perror in every layer
-    # for layer in model.children():
-    #     if isinstance(layer, (QuantizedActivation, QuantizedLinear, QuantizedConv2d)):
-    #         if layer.error_model is not None:
-    #             layer.error_model.updateErrorModel(perror)
+    if model.name == "ResNet18":
+        for block in model.children():
+            if isinstance(block, (QuantizedActivation, QuantizedConv2d)):
+                if block.error_model is not None:
+                    block.error_model.updateErrorModel(perror)
+            if isinstance(block, (QuantizedLinear)):
+                if block.error_model is not None:
+                    block.error_model.updateErrorModel(perror)
+            if isinstance(block, nn.Sequential):
+                for layer in block.children():
+                    # if layer.error_model is not None:
+                    #     layer.error_model.updateErrorModel(perror)
+                    for inst in layer.children():
+                        if isinstance(inst, (QuantizedLinear, QuantizedConv2d)):
+                            if inst.error_model is not None:
+                                inst.error_model.updateErrorModel(perror)
+                        if isinstance(inst, nn.Sequential):
+                            for shortcut_stuff in inst.children():
+                                if isinstance(shortcut_stuff, (QuantizedLinear, QuantizedConv2d)):
+                                    if shortcut_stuff.error_model is not None:
+                                        shortcut_stuff.error_model.updateErrorModel(perror)
+    else:
+        # update perror in every layer
+        for layer in model.children():
+            if isinstance(layer, (QuantizedActivation, QuantizedLinear, QuantizedConv2d)):
+                if layer.error_model is not None:
+                    layer.error_model.updateErrorModel(perror)
 
-    # print("Error rate: ", perror)
-    # accuracy = test(model, device, test_loader)
-
-    for block in model.children():
-        if isinstance(block, (QuantizedActivation, QuantizedConv2d)):
-            if block.error_model is not None:
-                block.error_model.updateErrorModel(perror)
-        if isinstance(block, (QuantizedLinear)):
-            if block.error_model is not None:
-                block.error_model.updateErrorModel(perror)
-        if isinstance(block, nn.Sequential):
-            for layer in block.children():
-                # if layer.error_model is not None:
-                #     layer.error_model.updateErrorModel(perror)
-                for inst in layer.children():
-                    if isinstance(inst, (QuantizedLinear, QuantizedConv2d)):
-                        if inst.error_model is not None:
-                            inst.error_model.updateErrorModel(perror)
-                    if isinstance(inst, nn.Sequential):
-                        for shortcut_stuff in inst.children():
-                            if isinstance(shortcut_stuff, (QuantizedLinear, QuantizedConv2d)):
-                                if shortcut_stuff.error_model is not None:
-                                    shortcut_stuff.error_model.updateErrorModel(perror)
-    
     print("Error rate: ", perror)
+    
     accuracy = test(model, device, test_loader)
-
+    
     print("total_err_shifts: ", model.err_shifts)
         
     # print("end")

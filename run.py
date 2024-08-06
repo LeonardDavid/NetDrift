@@ -25,6 +25,25 @@ from Traintest_Utils import train, test, test_error, Clippy, Criterion, binary_h
 import binarizePM1
 import netdrift
 
+# import wandb
+
+# # start a new wandb run to track this script
+# wandb.init(
+#     # set the wandb project where this run will be logged
+#     project="RTM-BNN",
+
+#     # track hyperparameters and run metadata
+#     config={
+#     "architecture": "VGG3", # model.name,
+#     "dataset": "FMNIST", # model.dataset,
+#     "loops": 1,
+#     "block_size": 64,
+#     "config": "CUSTOM",
+#     "error_rate": 0.1, # perror,
+#     }
+# )
+
+
 class Quantization1:
     def __init__(self, method):
         self.method = method
@@ -70,6 +89,8 @@ def main():
     # which GPU is currently used
     print("Currently used GPU: ", torch.cuda.current_device())
 
+    print(args)
+
     train_kwargs = {'batch_size': args.batch_size}
     test_kwargs = {'batch_size': args.test_batch_size}
     if use_cuda:
@@ -83,6 +104,22 @@ def main():
 
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
+
+    # print("")
+    # print(train_kwargs)
+    # train_features, train_labels = next(iter(train_loader))
+    # print(f"Feature batch shape: {train_features.size()}")
+    # print(f"Labels batch shape: {train_labels.size()}")
+    # print(test_kwargs)
+    # test_features, test_labels = next(iter(test_loader))
+    # print(f"Feature batch shape: {test_features.size()}")
+    # print(f"Labels batch shape: {test_labels.size()}")
+    # print("")
+    # # img = train_features[0].squeeze()
+    # # label = train_labels[0]
+    # # plt.imshow(img, cmap="gray")
+    # # plt.show()
+    # # print(f"Label: {label}")
 
     mac_mapping = None
     mac_mapping_distr = None
@@ -216,6 +253,8 @@ def main():
         print("-----------------------------")
         print(all_accuracies)
         print("-----------------------------")
+
+        # wandb.log({"acc": all_accuracies})
 
     if args.test_error_distr is not None:
         # perform repeated experiments and return in tikz format

@@ -48,4 +48,3 @@ else
     # Break or exit the script
     exit 1
 fi
-

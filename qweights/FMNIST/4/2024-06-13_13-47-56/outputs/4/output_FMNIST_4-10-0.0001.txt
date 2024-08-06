@@ -1,0 +1,122 @@
+Available GPUs:  [0]
+Currently used GPU:  0
+Namespace(model='VGG3', dataset='FMNIST', performance_mode=None, train_model=None, load_model_path='models/model_fmnist9108.pt', gpu_num=0, batch_size=256, test_batch_size=10000, epochs=1, lr=0.001, gamma=0.5, step_size=25, no_cuda=False, dry_run=False, seed=1, log_interval=10, save_model=None, load_training_state=None, save_training_state=None, an_sim=None, mapping=None, mapping_distr=None, array_size=32, test_error=1, test_error_distr=None, print_accuracy=None, profile_time=None, extract_absfreq=None, extract_absfreq_resnet=None, test_rtm=1, perror=0.0001, loops=10, protect_layers=[1, 1, 1, 0], err_shifts=[0, 0, 0, 0], block_size=4)
+[1, 1, 1, 0]
+[0, 0, 0, 0]
+Successfully created the directory /home/bereholschi/MA_NetDrift/experiments/VGG3/results-13-06-2024-13:48:38
+Loaded model:  models/model_fmnist9108.pt
+block_size:  4
+-----------------------------
+Inference #0
+Error rate:  0.0001
+Linear 4
+Wrote content to shift1 file
+Wrote content to shift10 file
+
+Accuracy: 91.07%
+
+total_err_shifts:  [0, 0, 0, 2]
+-----------------------------
+Inference #1
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+Wrote content to shift2 file
+Wrote content to shift10 file
+
+Accuracy: 91.07%
+
+total_err_shifts:  [0, 0, 0, 7]
+-----------------------------
+Inference #2
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 91.07%
+
+total_err_shifts:  [0, 0, 0, 7]
+-----------------------------
+Inference #3
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 91.08%
+
+total_err_shifts:  [0, 0, 0, 8]
+-----------------------------
+Inference #4
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 91.04%
+
+total_err_shifts:  [0, 0, 0, 10]
+-----------------------------
+Inference #5
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 91.04%
+
+total_err_shifts:  [0, 0, 0, 12]
+-----------------------------
+Inference #6
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 91.00%
+
+total_err_shifts:  [0, 0, 0, 15]
+-----------------------------
+Inference #7
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 91.00%
+
+total_err_shifts:  [0, 0, 0, 16]
+-----------------------------
+Inference #8
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 90.99%
+
+total_err_shifts:  [0, 0, 0, 19]
+-----------------------------
+Inference #9
+Error rate:  0.0001
+Linear 4
+shift1 already exists, writing to shift2 file.
+shift2 already exists, skipping write.
+Wrote content to shift10 file
+
+Accuracy: 91.02%
+
+total_err_shifts:  [0, 0, 0, 22]
+-----------------------------
+Successfully stored results in /home/bereholschi/MA_NetDrift/experiments/VGG3/results-13-06-2024-13:48:38/results.jsonl
+-----------------------------
+[91.07, 91.07, 91.07, 91.08000000000001, 91.03999999999999, 91.03999999999999, 91.0, 91.0, 90.99000000000001, 91.02]
+-----------------------------

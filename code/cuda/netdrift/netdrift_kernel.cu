@@ -146,7 +146,7 @@ torch::Tensor netdrift_cuda(
 
   int threads_x = 1; // per block, 8
   // TODO maybe actually should be block_size??
-  int threads_y = 64; // per block, 8
+  int threads_y = block_size; // per block, 8
   int threads_z = 1; // per block, 8
 
   #if DEBUG_1D

@@ -37,6 +37,26 @@ class ErrorModel(Function):
 
 apply_error_model = ErrorModel.apply
 
+def read_data(filepath):
+    """
+    Reads a list of integers from a file and converts it to a PyTorch tensor.
+
+    Args:
+        filepath: Path to the file containing the data.
+
+    Returns:
+        A PyTorch tensor with the same structure as the data in the file.
+    """
+    with open(filepath, 'r') as f:
+        data = eval(f.read())  # Assuming the data is valid python expression
+
+    # Convert lists to tensors and combine them
+    inner_tensors = []
+    for outer_list in data:
+        inner_tensors.append(outer_list)  
+
+    return torch.tensor(inner_tensors)
+
 
 # add for compatibility to every apply_error_model parameters that do not use index_offset and block_size
 index_offset_default = np.zeros([2,2])
@@ -74,6 +94,15 @@ class QuantizedActivation(nn.Module):
             output = apply_error_model(output, index_offset_default, block_size_default, self.error_model)
         return output
 
+### read from file parameteres ### 
+
+# nr_flip = 1
+# edge_flag = False 
+# bitlen = "endlen1"
+# n_l_r = 1
+# folder = "q_out_endlen"
+
+###
 
 class QuantizedLinear(nn.Linear):
     def __init__(self, *args, **kwargs):
@@ -110,9 +139,58 @@ class QuantizedLinear(nn.Linear):
             else:
                 quantized_weight = self.weight
 
+            if self.protectLayers[self.layerNR-1]==0:
+                list_of_integers = quantized_weight.cpu().tolist()
+
+                try:
+                    with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
+                        f.write("[")
+
+                        # Write the list of integers to the file
+                        for integer in list_of_integers[:-1]:
+                            f.write(str(integer) + ',\n')
+
+                        f.write(str(list_of_integers[-1]) + "]")
+                except FileExistsError:
+                    print("orig already exists")
+
             if self.error_model is not None:
                 if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
-                    # print("Linear", self.layerNR)
+                    print("Linear", self.layerNR)
+
+                    ### read weight tensor from file
+
+                    # # file = "qweights/64/qweights_0.1/qweights_append_3.txt"
+                    # # file = "qweights/64/qweights_0.1/qweights_shift1_4.txt"
+
+                    # # file = "q/qweights_shift1_4_mod.txt"
+                    # # file = "q/qweights_append_4_lce_mod.txt"
+
+                    # file = "metrics/count_len/q_in/qweights_orig_"+str(self.layerNR)+".txt"
+                    # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    
+                    ###
+
+                    # if "endlen" in bitlen:
+                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
+                    # else:
+                    #     if edge_flag:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    #     else:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    # print(file)
+                    # data_tensor = read_data(file).cuda()
+
+                    # # print(data_tensor)
+                    # print(data_tensor.shape) 
+                    # # L3: [2048, 3136]
+                    # # L4: [10, 2048]
+
+                    # quantized_weight = quantize(data_tensor, self.quantization)
+
+                    ###
+                    
                     # print(self.block_size)
                     # print("")
                     # print(np.sum(self.index_offset))
@@ -168,8 +246,61 @@ class QuantizedLinear(nn.Linear):
 
                     # print(np.sum(self.index_offset))
                     # print(self.index_offset)
+                    # if self.protectLayers[self.layerNR-1]==0:
+                    #     with open("qweights_shift1_"+str(self.layerNR)+"_ind_off.txt", "w") as f:
+                    #         for i in range(0, self.index_offset.shape[0]):      # 
+                    #             for j in range(0, self.index_offset.shape[1]):  #
+                    #                 f.write(str(self.index_offset[i][j]) + " ")
+                    #             f.write("\n")
                                         
                 quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.block_size, self.error_model)
+
+                # if self.protectLayers[self.layerNR-1]==0:
+                #     list_of_integers = quantized_weight.cpu().tolist()
+
+                #     # Open a file in write mode
+                #     with open('qweights_shift1_'+str(self.layerNR)+'.txt', 'w') as f:
+                #         f.write("[")
+
+                #         # Write the list of integers to the file
+                #         for integer in list_of_integers[:-1]:
+                #             f.write(str(integer) + ',\n')
+
+                #         f.write(str(list_of_integers[-1]) + "]")
+
+                # if self.protectLayers[self.layerNR-1]==0:
+                #     list_of_integers = quantized_weight.cpu().tolist()
+                #     try:
+                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
+                #             f.write("[")
+                #             # Write the list of integers to the file
+                #             for integer in list_of_integers[:-1]:
+                #                 f.write(str(integer) + ',\n')
+                #             f.write(str(list_of_integers[-1]) + "]")
+                #             print("Wrote content to shift1 file")
+                #     except FileExistsError:
+                #         print("shift1 already exists, writing to shift2 file.")
+                #         try:
+                #             with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
+                #                 f.write("[")
+                #                 # Write the list of integers to the file
+                #                 for integer in list_of_integers[:-1]:
+                #                     f.write(str(integer) + ',\n')
+                #                 f.write(str(list_of_integers[-1]) + "]")
+                #                 print("Wrote content to shift2 file")
+                #         except FileExistsError:
+                #             print("shift2 already exists, skipping write.")
+                        
+                #     try:
+                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
+                #             f.write("[")
+                #             # Write the list of integers to the file
+                #             for integer in list_of_integers[:-1]:
+                #                 f.write(str(integer) + ',\n')
+                #             f.write(str(list_of_integers[-1]) + "]")
+                #             print("Wrote content to shift10 file")
+                #     except FileExistsError:
+                #         print("shift10 already exists, skipping write.")
 
                 output = F.linear(input, quantized_weight)
             return output
@@ -218,8 +349,7 @@ class QuantizedConv2d(nn.Conv2d):
     def forward(self, input):
         if self.bias is None:
             quantized_weight = None
-            check_q = check_quantization(self.quantize_train,
-             self.quantize_eval, self.training)
+            check_q = check_quantization(self.quantize_train, self.quantize_eval, self.training)
             if (check_q == True):
                 quantized_weight = quantize(self.weight, self.quantization)
                 # weight_b1 = quantized_weight.view(self.out_channels,-1).cuda()
@@ -230,26 +360,91 @@ class QuantizedConv2d(nn.Conv2d):
             else:
                 quantized_weight = self.weight
                 quantized_bias = self.bias
+
+
+            if self.protectLayers[self.layerNR-1]==0:
+                list_of_integers = quantized_weight.cpu().tolist()
+
+                try:
+                    with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
+                        f.write("[")
+
+                        # Write the list of integers to the file
+                        for integer in list_of_integers[:-1]:
+                            f.write(str(integer) + ',\n')
+
+                        f.write(str(list_of_integers[-1]) + "]")
+                except FileExistsError:
+                    print("orig already exists")
+
+            ###
+
+
+            # if self.protectLayers[self.layerNR-1]==0:
+            #     list_of_integers = quantized_weight.cpu().tolist()
+            #     try:
+            #         with open('qweights_initial0_'+str(self.layerNR)+'.txt', 'x') as f:
+            #             # Write the list of integers to the file
+            #             for integer in list_of_integers:
+            #                 f.write(str(integer) + '\n')
+            #             print("Wrote content to initial file")
+            #     except FileExistsError:
+            #         print("initial already exists, writing to after1 file.")
+            #         try:
+            #             with open('qweights_after1_'+str(self.layerNR)+'.txt', 'x') as f:
+            #                 # Write the list of integers to the file
+            #                 for integer in list_of_integers:
+            #                     f.write(str(integer) + '\n')
+            #                 print("Wrote content to after1 file")
+            #         except FileExistsError:
+            #             print("after1 exists, skipping write.")
+
+
             if self.error_model is not None:
 
                 if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
-                    # print("Convolution2D", self.layerNR)
+                    print("Convolution2D", self.layerNR)
+                    # print(quantized_weight.size())
                     # print(self.block_size)
                     # print("")
                     # print(np.sum(self.index_offset))
-
-                    # nr_elem=0
-                    # print(quantized_weight.shape[0])
-                    # print(quantized_weight.shape[1])
-                    # for i in range(0, quantized_weight.shape[0]):
-                    #     for j in range(0, quantized_weight.shape[1]):
-                    #         nr_elem += 1
-                    #         # print(quantized_weight[i][j])
-                    #     # print("\n")
-                    # print(nr_elem)
-
                     # print(self.index_offset.shape[0])
                     # print(self.index_offset.shape[1])
+
+                    ### read weight tensor from file
+
+                    # # file = "qweights/64/qweights_0.1/qweights_append_1.txt"
+                    # # file = "qweights/64/qweights_0.1/qweights_shift1_2.txt"
+                    # # file = "q/qweights_shift1_1.txt"
+
+                    # # file = "q/qweights_shift1_2_mod.txt"
+                    # # file = "q_index_offset/qweights_shift1_2_mod.txt"
+
+                    # file = "metrics/count_len/q_in/qweights_orig_"+str(self.layerNR)+".txt"
+                    # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    
+                    ###
+
+                    # if "endlen" in bitlen:
+                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
+                    # else:
+                    #     if edge_flag:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    #     else:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    # print(file)
+                    # data_tensor = read_data(file).cuda()
+
+                    # # print(data_tensor)
+                    # print(data_tensor.shape)
+                    # # L1: [64, 1, 3, 3]
+                    # # L2: [64, 64, 3, 3]
+
+                    # quantized_weight = quantize(data_tensor, self.quantization)
+
+                    ###
+
 
                     err_shift = 0   # number of error shifts
                     shift = 0       # number of shifts (used for reading)
@@ -291,8 +486,63 @@ class QuantizedConv2d(nn.Conv2d):
 
                     # print(np.sum(self.index_offset))
                     # print(self.index_offset)
+                    # if self.protectLayers[self.layerNR-1]==0:
+                    #     with open("qweights_shift1_"+str(self.layerNR)+"_ind_off.txt", "w") as f:
+                    #         for i in range(0, self.index_offset.shape[0]):      # 
+                    #             for j in range(0, self.index_offset.shape[1]):  #
+                    #                 f.write(str(self.index_offset[i][j]) + " ")
+                    #             f.write("\n")
 
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
+
+                # if self.protectLayers[self.layerNR-1]==0:
+                #     list_of_integers = quantized_weight.cpu().tolist()
+
+                #     # Open a file in write mode
+                #     with open('qweights_shift1_'+str(self.layerNR)+'.txt', 'w') as f:
+                #         f.write("[")
+                #         # Write the list of integers to the file
+                #         for integer in list_of_integers[:-1]:
+                #             f.write(str(integer) + ',\n')
+                #         f.write(str(list_of_integers[-1]) + "]")
+
+                ###
+
+                # if self.protectLayers[self.layerNR-1]==0:
+                #     list_of_integers = quantized_weight.cpu().tolist()
+                #     try:
+                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
+                #             f.write("[")
+                #             # Write the list of integers to the file
+                #             for integer in list_of_integers[:-1]:
+                #                 f.write(str(integer) + ',\n')
+                #             f.write(str(list_of_integers[-1]) + "]")
+                #             print("Wrote content to shift1 file")
+                #     except FileExistsError:
+                #         print("shift1 already exists, writing to shift2 file.")
+                #         try:
+                #             with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
+                #                 f.write("[")
+                #                 # Write the list of integers to the file
+                #                 for integer in list_of_integers[:-1]:
+                #                     f.write(str(integer) + ',\n')
+                #                 f.write(str(list_of_integers[-1]) + "]")
+                #                 print("Wrote content to shift2 file")
+                #         except FileExistsError:
+                #             print("shift2 already exists, skipping write.")
+                        
+                #     try:
+                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
+                #             f.write("[")
+                #             # Write the list of integers to the file
+                #             for integer in list_of_integers[:-1]:
+                #                 f.write(str(integer) + ',\n')
+                #             f.write(str(list_of_integers[-1]) + "]")
+                #             print("Wrote content to shift10 file")
+                #     except FileExistsError:
+                #         print("shift10 already exists, skipping write.")
+
+                
 
                 output = F.conv2d(input, quantized_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             return output

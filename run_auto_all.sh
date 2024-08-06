@@ -57,27 +57,37 @@ if [ "$NN_MODEL" = "FMNIST" ]
 then
     MODEL="VGG3"
     DATASET="FMNIST"
+    TEST_BATCH_SIZE=10000
     if [[ $NR_UNPROC == *"ALL"* ]]; then
         declare -a PROTECT_LAYERS=(0 0 0 0)
     elif [[ $NR_UNPROC == *"CUSTOM"* ]]; then
-        declare -a PROTECT_LAYERS=(1 1 1 0)
+        declare -a PROTECT_LAYERS=(0 1 1 1)
+        # declare -a PROTECT_LAYERS=(1 0 1 1)
+        # declare -a PROTECT_LAYERS=(1 1 0 1)
+        # declare -a PROTECT_LAYERS=(1 1 1 0)
     elif [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
         declare -a PROTECT_LAYERS=(1 1 1 1)
         PROTECT_LAYERS[$NR_UNPROC]=0
     fi
     declare -a ERRSHIFTS=(0 0 0 0)
-    MODEL_PATH="models/model_fmnist9108.pt"
+    # MODEL_PATH="models/model_fmnist9108.pt"
+    MODEL_PATH="models/model_fmnist5x5_9077.pt"
+    # MODEL_PATH="models/model_fmnist7x7_8880.pt"
 elif [ "$NN_MODEL" = "CIFAR" ]
 then
     MODEL="VGG7"
     DATASET="CIFAR10"
+    TEST_BATCH_SIZE=10000
     if [[ $NR_UNPROC == *"ALL"* ]]; then
         declare -a PROTECT_LAYERS=(0 0 0 0 0 0 0 0)
     elif [[ $NR_UNPROC == *"CUSTOM"* ]]; then
+        # declare -a PROTECT_LAYERS=(0 1 1 1 1 1 1 1)
+        declare -a PROTECT_LAYERS=(1 0 1 1 1 1 1 1)
+
         # declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 0)
         # declare -a PROTECT_LAYERS=(1 0 1 0 1 0 1 0)
         # declare -a PROTECT_LAYERS=(0 1 0 1 0 1 0 1)
-        declare -a PROTECT_LAYERS=(0 1 1 1 1 0 0 0)
+        # declare -a PROTECT_LAYERS=(0 1 1 1 1 0 0 0)
     elif [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
         declare -a PROTECT_LAYERS=(1 1 1 1 1 1 1 1)
         PROTECT_LAYERS[$NR_UNPROC]=0
@@ -89,13 +99,18 @@ elif [ "$NN_MODEL" = "RESNET" ]
 then 
     MODEL="ResNet"
     DATASET="IMAGENETTE"
+    TEST_BATCH_SIZE=256
     if [[ $NR_UNPROC == *"ALL"* ]]; then
         declare -a PROTECT_LAYERS=(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
     elif [[ $NR_UNPROC == *"CUSTOM"* ]]; then
+    
+        # declare -a PROTECT_LAYERS=(0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        declare -a PROTECT_LAYERS=(1 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+
         # declare -a PROTECT_LAYERS=(0 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 0 1 1 1)
         # declare -a PROTECT_LAYERS=(0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0)
         # declare -a PROTECT_LAYERS=(1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1)
-        declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 1 0 0 1 0 0 0 0 1 1 0 0 0 1)
+        # declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 1 0 0 1 0 0 0 0 1 1 0 0 0 1)
     elif [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
         declare -a PROTECT_LAYERS=(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
         PROTECT_LAYERS[$NR_UNPROC]=0
@@ -116,13 +131,32 @@ STEP_SIZE=25
 # echo -e "${PROTECT_LAYERS[@]}"
 
 
-# declare -a PERRORS=(0.0)
+declare -a PERRORS=(0.0)
+
+# declare -a PERRORS=(0.1 0.01 0.001 0.0001)
+
+# declare -a PERRORS=(0.1)
+# declare -a PERRORS=(0.1 0.1)
+# declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
+
+# declare -a PERRORS=(0.05)
+# declare -a PERRORS=(0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05)
+
+# declare -a PERRORS=(0.01)
+# declare -a PERRORS=(0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01)
+
+# declare -a PERRORS=(0.001)
 # declare -a PERRORS=(0.0001)
+
+# declare -a PERRORS=(0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001)
+
 # declare -a PERRORS=(0.0000455)
 # declare -a PERRORS=(0.00001)
-declare -a PERRORS=(0.000001)
+# declare -a PERRORS=(0.000001)
 
 # declare -a PERRORS=(0.0001 0.0000455 0.00001 0.000001)
+
+declare -a all_results  # Declare an array of arrays to store all results
 
 for p in "${PERRORS[@]}"
 do
@@ -148,7 +182,7 @@ do
                 fi
                 output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} | tee "$output_file"
+                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} | tee "$output_file"
                 
                 penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
                 # Remove square brackets and split values
@@ -158,11 +192,12 @@ do
                 
                 # echo $list
                 
-                python plot_new_table.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
+                python plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
 
                 # PROTECT_LAYERS[$layer]=1
             fi
         done
+        all_results+=("$list")
     else
         L=$NR_UNPROC
         echo -e "\n\033[0;33mUNprotected Layer: $L\033[0m\n"
@@ -178,7 +213,7 @@ do
         fi
         output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} | tee "$output_file"
+        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} | tee "$output_file"
         
         penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
         # Remove square brackets and split values
@@ -189,6 +224,8 @@ do
         # echo $list
         
         python plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
+        
+        all_results+=("$list")
     fi
 
     csv_file="$output_dir/table_$p.csv"
@@ -201,6 +238,31 @@ do
     unset list
     
 done
+
+# for list in "${all_results[@]}"
+# do
+#     echo $list
+# done
+
+# # Specify the output file
+# out_results="$output_dir/all_results.txt"
+# out_results_python="all_results.txt"
+
+# > "$out_results"
+# > "$out_results_python"
+
+# # Loop through the outer array
+# for outer_idx in "${!all_results[@]}"; do
+#   # Print each inner array element with a space separator
+#   echo "${all_results[$outer_idx]}" >> "$out_results"
+#   echo "${all_results[$outer_idx]}" >> "$out_results_python"
+# done
+
+# echo ""
+# echo "Average accuracies:"
+# echo ""
+
+# python calculate_avg.py
 
 
 if [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
