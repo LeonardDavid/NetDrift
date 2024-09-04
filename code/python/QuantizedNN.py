@@ -6,6 +6,8 @@ from torch.autograd import Function
 import numpy as np
 import random
 
+import metrics.count_len.count_len_endlen as endlen
+
 class Quantize(Function):
     @staticmethod
     def forward(ctx, input, quantization):
@@ -96,11 +98,13 @@ class QuantizedActivation(nn.Module):
 
 ### read from file parameteres ### 
 
-# nr_flip = 1
-# edge_flag = False 
-# bitlen = "endlen1"
-# n_l_r = 1
-# folder = "q_out_endlen"
+nr_flip = 1
+edge_flag = False 
+bitlen = "endlen1"
+n_l_r = 1
+folder = "q_out_fmnist3x3_endlen"
+# folder = "q_out_fmnist5x5_endlen"
+# folder = "q_out_fmnist7x7_endlen"
 
 ###
 
@@ -139,20 +143,20 @@ class QuantizedLinear(nn.Linear):
             else:
                 quantized_weight = self.weight
 
-            if self.protectLayers[self.layerNR-1]==0:
-                list_of_integers = quantized_weight.cpu().tolist()
+            # if self.protectLayers[self.layerNR-1]==0:
+            #     list_of_integers = quantized_weight.cpu().tolist()
 
-                try:
-                    with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
-                        f.write("[")
+            #     try:
+            #         with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
+            #             f.write("[")
 
-                        # Write the list of integers to the file
-                        for integer in list_of_integers[:-1]:
-                            f.write(str(integer) + ',\n')
+            #             # Write the list of integers to the file
+            #             for integer in list_of_integers[:-1]:
+            #                 f.write(str(integer) + ',\n')
 
-                        f.write(str(list_of_integers[-1]) + "]")
-                except FileExistsError:
-                    print("orig already exists")
+            #             f.write(str(list_of_integers[-1]) + "]")
+            #     except FileExistsError:
+            #         print("orig already exists")
 
             if self.error_model is not None:
                 if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
@@ -252,6 +256,22 @@ class QuantizedLinear(nn.Linear):
                     #             for j in range(0, self.index_offset.shape[1]):  #
                     #                 f.write(str(self.index_offset[i][j]) + " ")
                     #             f.write("\n")
+
+                    ### AT RUNTIME ###
+
+                    # # print(quantized_weight)
+                    # endlen.apply_1flip(array_type="1D", block_size=self.block_size, data=quantized_weight)
+                    # print("endlen flip applied")
+                    # # print(quantized_weight)
+
+                    bitflip_budget = 0.1 ## global
+                    ## local
+                    # print(quantized_weight)
+                    endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, bitflip_budget=bitflip_budget)
+                    print("endlen flip according to index_offset applied")
+                    # print(quantized_weight)
+
+                    ### AT RUNTIME ###
                                         
                 quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.block_size, self.error_model)
 
@@ -362,20 +382,20 @@ class QuantizedConv2d(nn.Conv2d):
                 quantized_bias = self.bias
 
 
-            if self.protectLayers[self.layerNR-1]==0:
-                list_of_integers = quantized_weight.cpu().tolist()
+            # if self.protectLayers[self.layerNR-1]==0:
+            #     list_of_integers = quantized_weight.cpu().tolist()
 
-                try:
-                    with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
-                        f.write("[")
+            #     try:
+            #         with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
+            #             f.write("[")
 
-                        # Write the list of integers to the file
-                        for integer in list_of_integers[:-1]:
-                            f.write(str(integer) + ',\n')
+            #             # Write the list of integers to the file
+            #             for integer in list_of_integers[:-1]:
+            #                 f.write(str(integer) + ',\n')
 
-                        f.write(str(list_of_integers[-1]) + "]")
-                except FileExistsError:
-                    print("orig already exists")
+            #             f.write(str(list_of_integers[-1]) + "]")
+            #     except FileExistsError:
+            #         print("orig already exists")
 
             ###
 
@@ -492,6 +512,22 @@ class QuantizedConv2d(nn.Conv2d):
                     #             for j in range(0, self.index_offset.shape[1]):  #
                     #                 f.write(str(self.index_offset[i][j]) + " ")
                     #             f.write("\n")
+
+                    ### AT RUNTIME ###
+
+                    # # print(quantized_weight)
+                    # endlen.apply_1flip(array_type="3D", block_size=self.block_size, data=quantized_weight)
+                    # print("endlen flip applied")
+                    # # print(quantized_weight)
+
+                    bitflip_budget = 0.1 ## global
+                    ## local
+                    # print(quantized_weight)
+                    endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, bitflip_budget=bitflip_budget)
+                    print("endlen flip according to index_offset applied")
+                    # print(quantized_weight)
+
+                    ### AT RUNTIME ###
 
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
 

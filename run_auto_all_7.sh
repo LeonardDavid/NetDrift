@@ -61,16 +61,18 @@ then
     if [[ $NR_UNPROC == *"ALL"* ]]; then
         declare -a PROTECT_LAYERS=(0 0 0 0)
     elif [[ $NR_UNPROC == *"CUSTOM"* ]]; then
-        # declare -a PROTECT_LAYERS=(0 1 1 1)
-        # declare -a PROTECT_LAYERS=(1 0 1 1)
+        # declare -a PROTECT_LAYERS=(0 1 0 1)
+        declare -a PROTECT_LAYERS=(0 0 1 0)
         # declare -a PROTECT_LAYERS=(1 1 0 1)
-        declare -a PROTECT_LAYERS=(1 1 1 0)
+        # declare -a PROTECT_LAYERS=(1 1 1 0)
     elif [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
         declare -a PROTECT_LAYERS=(1 1 1 1)
         PROTECT_LAYERS[$NR_UNPROC]=0
     fi
     declare -a ERRSHIFTS=(0 0 0 0)
-    MODEL_PATH="models/model_fmnist9108.pt"
+    # MODEL_PATH="models/model_fmnist9108.pt"
+    # MODEL_PATH="models/model_fmnist5x5_9077.pt"
+    MODEL_PATH="models/model_fmnist7x7_8880.pt"
 elif [ "$NN_MODEL" = "CIFAR" ]
 then
     MODEL="VGG7"
@@ -142,12 +144,12 @@ STEP_SIZE=25
 # declare -a PERRORS=(0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05)
 
 # declare -a PERRORS=(0.01)
-# declare -a PERRORS=(0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01)
+declare -a PERRORS=(0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01)
 
 # declare -a PERRORS=(0.001)
 # declare -a PERRORS=(0.0001)
 
-declare -a PERRORS=(0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001)
+# declare -a PERRORS=(0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001)
 # declare -a PERRORS=(0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001)
 
 # declare -a PERRORS=(0.0000455)

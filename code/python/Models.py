@@ -30,17 +30,17 @@ class VGG3(nn.Module):
 
         self.resetOffsets()
 
-        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=5, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size, bias=False)
+        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
-        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=5, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, block_size = self.block_size, bias=False)
+        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, block_size = self.block_size, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
         # ksize=3 => 7*7*64
         # ksize=5 => 5*5*64
         # ksize=7 => 4*4*64
-        self.fc1 = QuantizedLinear(5*5*64, 2048, layerNr=3, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, block_size = self.block_size, bias=False)
+        self.fc1 = QuantizedLinear(7*7*64, 2048, layerNr=3, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, block_size = self.block_size, bias=False)
         self.bn3 = nn.BatchNorm1d(2048)
         self.qact3 = QuantizedActivation(quantization=self.quantization)
 
@@ -56,13 +56,16 @@ class VGG3(nn.Module):
         # conv1_y = int(64/self.block_size)
         # self.index_offset_conv1 = np.zeros((64, 1))
 
-        if self.block_size > 3*3: # kernel size 3x3
+
+        ### kernel size 3x3 ###
+
+        if self.block_size > 3*3: 
             conv1_y = 1
         else:
             conv1_y = int(3*3/self.block_size)
         self.index_offset_conv1 = np.zeros((64, conv1_y))
 
-        if self.block_size > 3*3*64: # kernel size 3x3
+        if self.block_size > 3*3*64: 
             conv2_y = 1
         else:
             conv2_y = int(3*3*64/self.block_size)
@@ -79,6 +82,60 @@ class VGG3(nn.Module):
         else:
             fc2_y = int(2048/self.block_size)
         self.index_offset_fc2 = np.zeros((10, fc2_y))
+
+
+        ### kernel size 5x5 ###
+
+        # if self.block_size > 5*5: 
+        #     conv1_y = 1
+        # else:
+        #     conv1_y = int(5*5/self.block_size)
+        # self.index_offset_conv1 = np.zeros((64, conv1_y))
+
+        # if self.block_size > 5*5*64: 
+        #     conv2_y = 1
+        # else:
+        #     conv2_y = int(5*5*64/self.block_size)
+        # self.index_offset_conv2 = np.zeros((64, conv2_y))
+
+        # if self.block_size > 5*5*64:
+        #     fc1_y = 1
+        # else:
+        #     fc1_y = int(5*5*64/self.block_size)
+        # self.index_offset_fc1 = np.zeros((2048, fc1_y))
+
+        # if self.block_size > 2048:
+        #     fc2_y = 1
+        # else:
+        #     fc2_y = int(2048/self.block_size)
+        # self.index_offset_fc2 = np.zeros((10, fc2_y))
+
+
+        ### kernel size 7x7 ###
+
+        # if self.block_size > 7*7: 
+        #     conv1_y = 1
+        # else:
+        #     conv1_y = int(7*7/self.block_size)
+        # self.index_offset_conv1 = np.zeros((64, conv1_y))
+
+        # if self.block_size > 7*7*64: 
+        #     conv2_y = 1
+        # else:
+        #     conv2_y = int(7*7*64/self.block_size)
+        # self.index_offset_conv2 = np.zeros((64, conv2_y))
+
+        # if self.block_size > 4*4*64:
+        #     fc1_y = 1
+        # else:
+        #     fc1_y = int(4*4*64/self.block_size)
+        # self.index_offset_fc1 = np.zeros((2048, fc1_y))
+
+        # if self.block_size > 2048:
+        #     fc2_y = 1
+        # else:
+        #     fc2_y = int(2048/self.block_size)
+        # self.index_offset_fc2 = np.zeros((10, fc2_y))
 
     
     def getBlockSize(self):

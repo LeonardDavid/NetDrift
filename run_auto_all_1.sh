@@ -70,7 +70,7 @@ then
         PROTECT_LAYERS[$NR_UNPROC]=0
     fi
     declare -a ERRSHIFTS=(0 0 0 0)
-    # MODEL_PATH="models/model_fmnist9108.pt"
+    MODEL_PATH="models/model_fmnist9108.pt"
     # MODEL_PATH="models/model_fmnist5x5_9077.pt"
     # MODEL_PATH="models/model_fmnist7x7_8880.pt"
 elif [ "$NN_MODEL" = "CIFAR" ]
