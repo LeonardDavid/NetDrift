@@ -79,6 +79,8 @@ def test(model, device, test_loader, pr=1):
     with torch.no_grad():
         # print(test_loader)
         for data, target in test_loader:
+            # print(data)
+            # print(target)
             # print("+")
             data, target = data.to(device), target.to(device)
             # print("+")

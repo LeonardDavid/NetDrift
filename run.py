@@ -163,6 +163,8 @@ def main():
     protectLayers = args.protect_layers
     err_shifts = args.err_shifts
     block_size = args.block_size # 2, 4, ... 64
+    global_bitflip_budget = args.global_bitflip_budget
+    local_bitflip_budget = args.local_bitflip_budget
     
     print(protectLayers)
     print(err_shifts)
@@ -170,7 +172,7 @@ def main():
     if args.model == "ResNet":
         model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
     else:
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
     # print(model)
 
     optimizer = Clippy(model.parameters(), lr=args.lr)

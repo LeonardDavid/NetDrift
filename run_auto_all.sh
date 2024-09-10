@@ -64,7 +64,10 @@ then
         # declare -a PROTECT_LAYERS=(0 1 1 1)
         # declare -a PROTECT_LAYERS=(1 0 1 1)
         # declare -a PROTECT_LAYERS=(1 1 0 1)
-        declare -a PROTECT_LAYERS=(1 1 1 0)
+        # declare -a PROTECT_LAYERS=(1 1 1 0)
+
+        declare -a PROTECT_LAYERS=(0 0 0 0)
+
     elif [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then
         declare -a PROTECT_LAYERS=(1 1 1 1)
         PROTECT_LAYERS[$NR_UNPROC]=0
@@ -128,6 +131,9 @@ EPOCHS=1
 LR=0.001
 STEP_SIZE=25
 
+GLOBAL_BITFLIP_BUDGET=$6
+LOCAL_BITFLIP_BUDGET=$7
+
 # echo -e "${PROTECT_LAYERS[@]}"
 
 
@@ -135,9 +141,9 @@ STEP_SIZE=25
 
 # declare -a PERRORS=(0.1 0.01 0.001 0.0001)
 
-declare -a PERRORS=(0.1)
+# declare -a PERRORS=(0.1)
 # declare -a PERRORS=(0.1 0.1)
-# declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
+declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
 
 # declare -a PERRORS=(0.05)
 # declare -a PERRORS=(0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05)
@@ -182,7 +188,7 @@ do
                 fi
                 output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} | tee "$output_file"
+                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
                 
                 penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
                 # Remove square brackets and split values
@@ -213,7 +219,7 @@ do
         fi
         output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} | tee "$output_file"
+        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
         
         penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
         # Remove square brackets and split values

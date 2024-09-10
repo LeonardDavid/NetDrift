@@ -131,6 +131,8 @@ class QuantizedLinear(nn.Linear):
         self.block_size = kwargs.pop('block_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
         self.err_shifts = kwargs.pop('err_shifts', None)
+        self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
+        self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
         super(QuantizedLinear, self).__init__(*args, **kwargs)
 
     def forward(self, input):
@@ -176,22 +178,22 @@ class QuantizedLinear(nn.Linear):
                     
                     ###
 
-                    # if "endlen" in bitlen:
-                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
-                    # else:
-                    #     if edge_flag:
-                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    #     else:
-                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    # print(file)
-                    # data_tensor = read_data(file).cuda()
+                    if "endlen" in bitlen:
+                        file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
+                    else:
+                        if edge_flag:
+                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                        else:
+                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    print(file)
+                    data_tensor = read_data(file).cuda()
 
-                    # # print(data_tensor)
-                    # print(data_tensor.shape) 
-                    # # L3: [2048, 3136]
-                    # # L4: [10, 2048]
+                    # print(data_tensor)
+                    print(data_tensor.shape) 
+                    # L3: [2048, 3136]
+                    # L4: [10, 2048]
 
-                    # quantized_weight = quantize(data_tensor, self.quantization)
+                    quantized_weight = quantize(data_tensor, self.quantization)
 
                     ###
                     
@@ -264,11 +266,9 @@ class QuantizedLinear(nn.Linear):
                     # print("endlen flip applied")
                     # # print(quantized_weight)
 
-                    bitflip_budget = 0.1 ## global
-                    ## local
                     # print(quantized_weight)
-                    endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, bitflip_budget=bitflip_budget)
-                    print("endlen flip according to index_offset applied")
+                    # endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    # print("endlen flip according to index_offset applied")
                     # print(quantized_weight)
 
                     ### AT RUNTIME ###
@@ -364,6 +364,8 @@ class QuantizedConv2d(nn.Conv2d):
         self.block_size = kwargs.pop('block_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
         self.err_shifts = kwargs.pop('err_shifts', None)
+        self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
+        self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
         super(QuantizedConv2d, self).__init__(*args, **kwargs)
 
     def forward(self, input):
@@ -520,11 +522,10 @@ class QuantizedConv2d(nn.Conv2d):
                     # print("endlen flip applied")
                     # # print(quantized_weight)
 
-                    bitflip_budget = 0.1 ## global
-                    ## local
                     # print(quantized_weight)
-                    endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, bitflip_budget=bitflip_budget)
-                    print("endlen flip according to index_offset applied")
+                    if self.layerNR == 2:
+                        endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                        print("endlen flip according to index_offset applied")
                     # print(quantized_weight)
 
                     ### AT RUNTIME ###

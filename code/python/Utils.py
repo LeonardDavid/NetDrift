@@ -145,7 +145,8 @@ def parse_args(parser):
     parser.add_argument('--protect_layers', nargs='+', type=int, default=None, help='choose which layers to protect in array e.g.: 0 1 1 1 -> first layer unprotected')
     parser.add_argument('--err_shifts', nargs='+', type=int, default=None, help='stores the amount of err_shift occuring in each layer')
     parser.add_argument('--block_size', type=int, default=64, help='specify the block_size of the RTM nanowire')
-
+    parser.add_argument('--global_bitflip_budget', type=float, default=0.05, help='specify the global budget (i.e. 0.1 -> 10%) for flipping bits')
+    parser.add_argument('--local_bitflip_budget', type=float, default=0.1, help='specify the local budget (i.e. 0.1 -> 10%) for flipping bits')
 
 def dump_exp_data(model, args, all_accuracies):
     to_dump = dict()

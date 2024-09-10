@@ -284,7 +284,7 @@ def find(arr_tuples, block_gr):
     return pos_bitlen
 
 
-def find_with_bitflip_budget(arr_tuples, block_gr, ind_off_tuples, shape, block_size, bitflip_budget, total_elem):
+def find_with_bitflip_budget(arr_tuples, block_gr, ind_off_tuples, shape, block_size, total_elem, global_bitflip_budget, local_bitflip_budget):
 
     pos_bitlen = []
     position = 0
@@ -293,16 +293,14 @@ def find_with_bitflip_budget(arr_tuples, block_gr, ind_off_tuples, shape, block_
     ## global: 0.05
     ## local: 0.2
 
-    global_bitflip_budget = 0.05
-    local_bitflip_budget = 0.05
+    # global_bitflip_budget = 0.1
+    # local_bitflip_budget = 0.1
 
     print(global_bitflip_budget)
     print(local_bitflip_budget)
     print(total_elem)
     print("")
 
-    # for i in range(len(arr_tuples)):
-    # for k in range(len(ind_off_tuples)):
     k = 0
     while k < len(ind_off_tuples) and nr_flips_global < total_elem * global_bitflip_budget:
         # print(ind_off_tuples[k])
@@ -476,11 +474,15 @@ def apply_1flip(array_type, block_size, data):
     # print("")
 
 
-def apply_1flip_ind_off(array_type, block_size, data, index_offset, bitflip_budget):
+def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitflip_budget, local_bitflip_budget):
     total_flips = 0
     total_elem = len(index_offset)*len(index_offset[0])*block_size
     ind_off_shape = (len(index_offset), len(index_offset[0]))
-    
+
+    # print("")
+    # print(f"ind_off_avg: {np.mean(np.abs(index_offset))}")
+    # print("")
+
     # print(array_type)
     # print(data)
     # print("")
@@ -513,9 +515,10 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, bitflip_budg
     # Find blocks in which the most error shifts happened, to prioritize creation of larger bitgroups there (endlen bitflip in blocks with bigger numbers)
     ind_off_tuples = matrix2tuples(ind_off=index_offset)
     ind_off_tuples.sort(key=lambda x: x[0], reverse=True)
+    # ind_off_tuples.sort(key=lambda x: x[0])
     # print(ind_off_tuples)
 
-    pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, ind_off_tuples=ind_off_tuples, shape=ind_off_shape, block_size=block_size, bitflip_budget=bitflip_budget, total_elem=total_elem)
+    pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, ind_off_tuples=ind_off_tuples, shape=ind_off_shape, block_size=block_size, total_elem=total_elem, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget)
 
     total_flips += len(pos1)
     # print(pos1)
