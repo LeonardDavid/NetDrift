@@ -259,6 +259,19 @@ class QuantizedLinear(nn.Linear):
                     #                 f.write(str(self.index_offset[i][j]) + " ")
                     #             f.write("\n")
 
+
+                    # perform theoretical shift in case of an odd number of shifts (to help repair alternating structures):
+                    # this shifting should also include its own shift errors with the same probability
+                    # -> we leave it out for now, just for theoretical testing
+                    # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
+                    # this would add some overhead in practice
+
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if self.index_offset[i][j] % 2 != 0:
+                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+
+
                     ### AT RUNTIME ###
 
                     # # print(quantized_weight)
@@ -515,6 +528,21 @@ class QuantizedConv2d(nn.Conv2d):
                     #                 f.write(str(self.index_offset[i][j]) + " ")
                     #             f.write("\n")
 
+
+                    # perform theoretical shift in case of an odd number of shifts (to help repair alternating structures):
+                    # this shifting should also include its own shift errors with the same probability
+                    # -> we leave it out for now, just for theoretical testing
+                    # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
+                    # this would add some overhead in practice
+
+                    for i in range(0, self.index_offset.shape[0]):      # 
+                        for j in range(0, self.index_offset.shape[1]):  # 
+                            if self.index_offset[i][j] % 2 != 0:
+                                self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+
+                    # print(self.index_offset)
+
+
                     ### AT RUNTIME ###
 
                     # # print(quantized_weight)
@@ -522,11 +550,11 @@ class QuantizedConv2d(nn.Conv2d):
                     # print("endlen flip applied")
                     # # print(quantized_weight)
 
-                    # print(quantized_weight)
-                    if self.layerNR == 2:
-                        endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                        print("endlen flip according to index_offset applied")
-                    # print(quantized_weight)
+                    # # print(quantized_weight)
+                    # if self.layerNR == 2:
+                    #     endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     print("endlen flip according to index_offset applied")
+                    # # print(quantized_weight)
 
                     ### AT RUNTIME ###
 
