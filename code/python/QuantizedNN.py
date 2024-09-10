@@ -176,26 +176,26 @@ class QuantizedLinear(nn.Linear):
                     # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     
-                    ###
+                    ### ENDLEN ###
 
-                    if "endlen" in bitlen:
-                        file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
-                    else:
-                        if edge_flag:
-                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                        else:
-                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    print(file)
-                    data_tensor = read_data(file).cuda()
+                    # if "endlen" in bitlen:
+                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
+                    # else:
+                    #     if edge_flag:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    #     else:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    # print(file)
+                    # data_tensor = read_data(file).cuda()
 
-                    # print(data_tensor)
-                    print(data_tensor.shape) 
-                    # L3: [2048, 3136]
-                    # L4: [10, 2048]
+                    # # print(data_tensor)
+                    # print(data_tensor.shape) 
+                    # # L3: [2048, 3136]
+                    # # L4: [10, 2048]
 
-                    quantized_weight = quantize(data_tensor, self.quantization)
+                    # quantized_weight = quantize(data_tensor, self.quantization)
 
-                    ###
+                    ### ENDLEN ###
                     
                     # print(self.block_size)
                     # print("")
@@ -260,6 +260,8 @@ class QuantizedLinear(nn.Linear):
                     #             f.write("\n")
 
 
+                    ### ODD2EVEN ###
+
                     # perform theoretical shift in case of an odd number of shifts (to help repair alternating structures):
                     # this shifting should also include its own shift errors with the same probability
                     # -> we leave it out for now, just for theoretical testing
@@ -270,6 +272,8 @@ class QuantizedLinear(nn.Linear):
                     #     for j in range(0, self.index_offset.shape[1]):  # 
                     #         if self.index_offset[i][j] % 2 != 0:
                     #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+
+                    ### ODD2EVEN ###
 
 
                     ### AT RUNTIME ###
@@ -459,7 +463,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     
-                    ###
+                    ### ENDLEN ###
 
                     # if "endlen" in bitlen:
                     #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
@@ -478,7 +482,7 @@ class QuantizedConv2d(nn.Conv2d):
 
                     # quantized_weight = quantize(data_tensor, self.quantization)
 
-                    ###
+                    ### ENDLEN ###
 
 
                     err_shift = 0   # number of error shifts
@@ -529,18 +533,22 @@ class QuantizedConv2d(nn.Conv2d):
                     #             f.write("\n")
 
 
+                    ### ODD2EVEN ###
+
                     # perform theoretical shift in case of an odd number of shifts (to help repair alternating structures):
                     # this shifting should also include its own shift errors with the same probability
                     # -> we leave it out for now, just for theoretical testing
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    for i in range(0, self.index_offset.shape[0]):      # 
-                        for j in range(0, self.index_offset.shape[1]):  # 
-                            if self.index_offset[i][j] % 2 != 0:
-                                self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if self.index_offset[i][j] % 2 != 0:
+                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
                     # print(self.index_offset)
+
+                    ### ODD2EVEN ###
 
 
                     ### AT RUNTIME ###
@@ -557,6 +565,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # # print(quantized_weight)
 
                     ### AT RUNTIME ###
+
 
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
 
