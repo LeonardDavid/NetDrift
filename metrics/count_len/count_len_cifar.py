@@ -324,7 +324,7 @@ def flip_bits(positions, total_ones):
 
 # block_size = 12
 block_size = 64
-err = 0.001
+err = 0.01
 
 # for layer in range(2,3):
 for layer in range(1,9):
