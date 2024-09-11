@@ -260,6 +260,28 @@ class QuantizedLinear(nn.Linear):
                     #             f.write("\n")
 
 
+                    ### BINOMIAL CUTOFF ###
+
+                    # reset some index offset values above a certain threshold
+                    # quite theoretical as well, because this would mean that error correction is applied only to some blocks, but in practice it is either full ecc or no ecc
+                    # some possible thresholds: cut 80% of the amount of values starting from the middle (0, 1, -1, 2, -2 etc) and leave 20% on the edges
+                    # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
+                    # significant overhead to be reckoned with, only for counting (and creating histogram)
+
+                    before = np.sum(abs(self.index_offset))
+
+                    for i in range(0, self.index_offset.shape[0]):      # 
+                        for j in range(0, self.index_offset.shape[1]):  # 
+                            if abs(self.index_offset[i][j]) <= 2:
+                                self.index_offset[i][j] = 0
+
+                    after = np.sum(abs(self.index_offset))
+                    diff = before-after
+                    print(f"{diff} / {diff/before*100}")
+
+                    ### BINOMIAL CUTOFF ###
+
+
                     ### ODD2EVEN ###
 
                     # perform theoretical shift in case of an odd number of shifts (to help repair alternating structures):
@@ -531,6 +553,29 @@ class QuantizedConv2d(nn.Conv2d):
                     #             for j in range(0, self.index_offset.shape[1]):  #
                     #                 f.write(str(self.index_offset[i][j]) + " ")
                     #             f.write("\n")
+
+
+                    ### BINOMIAL CUTOFF ###
+
+                    # reset some index offset values above a certain threshold
+                    # quite theoretical as well, because this would mean that error correction is applied only to some blocks, but in practice it is either full ecc or no ecc
+                    # some possible thresholds: cut 80% of the amount of values starting from the middle (0, 1, -1, 2, -2 etc) and leave 20% on the edges
+                    # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
+                    # significant overhead to be reckoned with, only for counting (and creating histogram)
+
+                    before = np.sum(abs(self.index_offset))
+
+                    for i in range(0, self.index_offset.shape[0]):      # 
+                        for j in range(0, self.index_offset.shape[1]):  # 
+                            if abs(self.index_offset[i][j]) <= 2:
+                                self.index_offset[i][j] = 0
+
+                    after = np.sum(abs(self.index_offset))
+                    # print(f"{before} - {after}")
+                    diff = before-after
+                    print(f"{diff} / {diff/before*100}")
+
+                    ### BINOMIAL CUTOFF ###
 
 
                     ### ODD2EVEN ###
