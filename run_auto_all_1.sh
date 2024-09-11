@@ -142,7 +142,7 @@ LOCAL_BITFLIP_BUDGET=$7
 
 # declare -a PERRORS=(0.1)
 # declare -a PERRORS=(0.1 0.1)
-declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
+# declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
 
 # declare -a PERRORS=(0.05)
 # declare -a PERRORS=(0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05)
@@ -153,7 +153,7 @@ declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
 # declare -a PERRORS=(0.001)
 # declare -a PERRORS=(0.0001)
 
-# declare -a PERRORS=(0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001)
+declare -a PERRORS=(0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001)
 # declare -a PERRORS=(0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001)
 
 # declare -a PERRORS=(0.0000455)
@@ -252,7 +252,8 @@ done
 
 # Specify the output file
 out_results="$output_dir/all_results.txt"
-out_results_python="all_results_1-$GLOBAL_BITFLIP_BUDGET-$LOCAL_BITFLIP_BUDGET.txt"
+# out_results_python="all_results_1-$GLOBAL_BITFLIP_BUDGET-$LOCAL_BITFLIP_BUDGET.txt"
+out_results_python="all_results_1.txt"
 
 echo "" > "$out_results_python"
 

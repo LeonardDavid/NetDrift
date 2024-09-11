@@ -268,16 +268,16 @@ class QuantizedLinear(nn.Linear):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    before = np.sum(abs(self.index_offset))
+                    # before = np.sum(abs(self.index_offset))
 
-                    for i in range(0, self.index_offset.shape[0]):      # 
-                        for j in range(0, self.index_offset.shape[1]):  # 
-                            if abs(self.index_offset[i][j]) <= 2:
-                                self.index_offset[i][j] = 0
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if abs(self.index_offset[i][j]) <= 2:
+                    #             self.index_offset[i][j] = 0
 
-                    after = np.sum(abs(self.index_offset))
-                    diff = before-after
-                    print(f"{diff} / {diff/before*100}")
+                    # after = np.sum(abs(self.index_offset))
+                    # diff = before-after
+                    # print(f"{diff} / {diff/before*100}")
 
                     ### BINOMIAL CUTOFF ###
 
@@ -290,10 +290,10 @@ class QuantizedLinear(nn.Linear):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                    for i in range(0, self.index_offset.shape[0]):      # 
+                        for j in range(0, self.index_offset.shape[1]):  # 
+                            if self.index_offset[i][j] % 2 != 0:
+                                self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
                     ### ODD2EVEN ###
 
@@ -563,17 +563,17 @@ class QuantizedConv2d(nn.Conv2d):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    before = np.sum(abs(self.index_offset))
+                    # before = np.sum(abs(self.index_offset))
 
-                    for i in range(0, self.index_offset.shape[0]):      # 
-                        for j in range(0, self.index_offset.shape[1]):  # 
-                            if abs(self.index_offset[i][j]) <= 2:
-                                self.index_offset[i][j] = 0
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if abs(self.index_offset[i][j]) <= 2:
+                    #             self.index_offset[i][j] = 0
 
-                    after = np.sum(abs(self.index_offset))
-                    # print(f"{before} - {after}")
-                    diff = before-after
-                    print(f"{diff} / {diff/before*100}")
+                    # after = np.sum(abs(self.index_offset))
+                    # # print(f"{before} - {after}")
+                    # diff = before-after
+                    # print(f"{diff} / {diff/before*100}")
 
                     ### BINOMIAL CUTOFF ###
 
@@ -586,10 +586,10 @@ class QuantizedConv2d(nn.Conv2d):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                    for i in range(0, self.index_offset.shape[0]):      # 
+                        for j in range(0, self.index_offset.shape[1]):  # 
+                            if self.index_offset[i][j] % 2 != 0:
+                                self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
                     # print(self.index_offset)
 

@@ -199,13 +199,19 @@ block_size = 64
 err = 0.1
 
 # for layer in range(2,3):
-for layer in range(1,5):
+# for layer in range(1,5):
+for layer in range(1,9):
 
     # layer = 4
-    if layer == 1 or layer == 2:
-        array_type = "3D"
-    elif layer == 3 or layer == 4:
+    # if layer == 1 or layer == 2:
+    #     array_type = "3D"
+    # elif layer == 3 or layer == 4:
+    #     array_type = "1D"
+
+    if layer == 7 or layer == 8:
         array_type = "1D"
+    else:
+        array_type = "3D"
 
     print("==========================================")
     print(f"Layer {layer}")
