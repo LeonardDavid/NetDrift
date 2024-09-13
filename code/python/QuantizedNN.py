@@ -307,6 +307,24 @@ class QuantizedLinear(nn.Linear):
                     ### ODD2EVEN ###
 
 
+                    ### EVEN2ODD ###
+
+                    # perform theoretical shift in case of an odd number of shifts (to help repair alternating structures):
+                    # this shifting should also include its own shift errors with the same probability
+                    # -> we leave it out for now, just for theoretical testing
+                    # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
+                    # this would add some overhead in practice
+
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if self.index_offset[i][j] % 2 == 0:
+                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+
+                    # print(self.index_offset)
+
+                    ### EVEN2ODD ###
+
+
                     ### AT RUNTIME ###
 
                     # # print(quantized_weight)
@@ -616,6 +634,24 @@ class QuantizedConv2d(nn.Conv2d):
                     # print(self.index_offset)
 
                     ### ODD2EVEN ###
+
+
+                    ### EVEN2ODD ###
+
+                    # perform theoretical shift in case of an odd number of shifts (to help repair alternating structures):
+                    # this shifting should also include its own shift errors with the same probability
+                    # -> we leave it out for now, just for theoretical testing
+                    # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
+                    # this would add some overhead in practice
+
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if self.index_offset[i][j] % 2 == 0:
+                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+
+                    # print(self.index_offset)
+
+                    ### EVEN2ODD ###
 
 
                     ### AT RUNTIME ###
