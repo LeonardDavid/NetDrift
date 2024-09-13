@@ -172,7 +172,17 @@ def main():
     if args.model == "ResNet":
         model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
     else:
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
+        if args.model == "VGG3":
+            bitflips = [[] for _ in range(4)] 
+            err_shifts_ind = [[] for _ in range(4)] 
+        elif args.model == "VGG7":
+            bitflips = [[] for _ in range(8)] 
+            err_shifts_ind = [[] for _ in range(8)] 
+        else:
+            bitflips = []
+            err_shifts_ind = []
+
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts, err_shifts_ind=err_shifts_ind, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
     # print(model)
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
@@ -253,6 +263,12 @@ def main():
         to_dump_data = dump_exp_data(model, args, all_accuracies)
         store_exp_data(to_dump_path, to_dump_data)
         print("-----------------------------")
+        print("total_err_shifts: ", model.err_shifts)
+        print("err_shifts_indiv: ")
+        print(model.err_shifts_ind)
+        print("bitflips: ")
+        print(model.bitflips)
+        print("accuracies:")
         print(all_accuracies)
         print("-----------------------------")
 

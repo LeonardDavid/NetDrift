@@ -149,9 +149,7 @@ def test_error(model, device, test_loader, perror):
     print("Error rate: ", perror)
     
     accuracy = test(model, device, test_loader)
-    
-    print("total_err_shifts: ", model.err_shifts)
-        
+            
     # print("end")
     # print(model.printIndexOffsets())
 

@@ -135,11 +135,11 @@ LOCAL_BITFLIP_BUDGET=$7
 # echo -e "${PROTECT_LAYERS[@]}"
 
 
-declare -a PERRORS=(0.0)
+# declare -a PERRORS=(0.0)
 
 # declare -a PERRORS=(0.1 0.01 0.001 0.0001)
 
-# declare -a PERRORS=(0.1)
+declare -a PERRORS=(0.1)
 # declare -a PERRORS=(0.1 0.1)
 # declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
 
@@ -160,6 +160,21 @@ declare -a PERRORS=(0.0)
 # declare -a PERRORS=(0.000001)
 
 # declare -a PERRORS=(0.0001 0.0000455 0.00001 0.000001)
+
+
+# out_out_bitflips="$output_dir/all_bitflips.txt"
+out_bitflips="all_bitflips_5.txt"
+
+echo "" > "$out_bitflips"
+
+> "$out_bitflips"
+# out_out_err_shifts="$output_dir/all_err_shifts.txt"
+out_err_shifts="all_err_shifts_5.txt"
+
+echo "" > "$out_err_shifts"
+
+> "$out_err_shifts"
+
 
 declare -a all_results  # Declare an array of arrays to store all results
 
@@ -189,6 +204,12 @@ do
 
                 python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
                 
+                err_shifts_line=$(tail -n 6 "$output_file" | head -n 1)
+                echo $err_shifts_line >> "$out_err_shifts"
+
+                bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
+                echo $bitflips_line >> "$out_bitflips"
+
                 penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
                 # Remove square brackets and split values
                 values=$(echo "$penultimate_line" | tr -d '[]')
@@ -220,6 +241,12 @@ do
 
         python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
         
+        err_shifts_line=$(tail -n 6 "$output_file" | head -n 1)
+        echo $err_shifts_line >> "$out_err_shifts"
+
+        bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
+        echo $bitflips_line >> "$out_bitflips"
+
         penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
         # Remove square brackets and split values
         values=$(echo "$penultimate_line" | tr -d '[]')
@@ -270,6 +297,18 @@ echo "Average accuracies:"
 echo ""
 
 python calculate_avg.py 5
+
+echo ""
+echo "Average bitflips:"
+echo ""
+
+python calculate_avg_bitflips.py 5
+
+echo ""
+echo "Average err_shifts:"
+echo ""
+
+python calculate_avg_err_shifts.py 5
 
 
 if [[ $NR_UNPROC =~ ^[0-9]+$ ]]; then

@@ -134,6 +134,8 @@ class QuantizedLinear(nn.Linear):
         self.block_size = kwargs.pop('block_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
         self.err_shifts = kwargs.pop('err_shifts', None)
+        self.err_shifts_ind = kwargs.pop('err_shifts_ind', None)
+        self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
         super(QuantizedLinear, self).__init__(*args, **kwargs)
@@ -181,25 +183,27 @@ class QuantizedLinear(nn.Linear):
                     
                     ### ENDLEN ###
 
-                    if "endlen" in bitlen:
-                        file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
-                    else:
-                        if edge_flag:
-                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                        else:
-                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    print(file)
-                    data_tensor = read_data(file).cuda()
+                    # if "endlen" in bitlen:
+                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
+                    # else:
+                    #     if edge_flag:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    #     else:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    # print(file)
+                    # data_tensor = read_data(file).cuda()
 
-                    # print(data_tensor)
-                    print(data_tensor.shape) 
-                    # L3: [2048, 3136]
-                    # L4: [10, 2048]
+                    # # print(data_tensor)
+                    # print(data_tensor.shape) 
+                    # # L3: [2048, 3136]
+                    # # L4: [10, 2048]
 
-                    quantized_weight = quantize(data_tensor, self.quantization)
+                    # quantized_weight = quantize(data_tensor, self.quantization)
 
                     ### ENDLEN ###
-                    
+
+                    quantized_weight_init = quantized_weight
+
                     # print(self.block_size)
                     # print("")
                     # print(np.sum(self.index_offset))
@@ -249,6 +253,8 @@ class QuantizedLinear(nn.Linear):
                                         #     self.lost_vals_r[i][j] -= 1
 
                     self.err_shifts[self.layerNR-1] += err_shift
+                    self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    # print(self.err_shifts_ind)
 
                     # print("local err_shifts: " + str(err_shift) + "/" + str(shift))
                     # print(self.err_shifts)
@@ -293,10 +299,10 @@ class QuantizedLinear(nn.Linear):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    for i in range(0, self.index_offset.shape[0]):      # 
-                        for j in range(0, self.index_offset.shape[1]):  # 
-                            if self.index_offset[i][j] % 2 != 0:
-                                self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if self.index_offset[i][j] % 2 != 0:
+                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
 
                     ### ODD2EVEN ###
 
@@ -314,9 +320,18 @@ class QuantizedLinear(nn.Linear):
                     # print(quantized_weight)
 
                     ### AT RUNTIME ###
-                                        
+
                 quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.block_size, self.error_model)
 
+                if self.protectLayers[self.layerNR-1]==0:
+                    # print(quantized_weight_init)
+                    # print("")
+                    # print(quantized_weight)
+                    differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
+                    self.bitflips[self.layerNR-1].append(differences)
+                    # print(differences)
+                    # print(self.bitflips)
+                
                 # if self.protectLayers[self.layerNR-1]==0:
                 #     list_of_integers = quantized_weight.cpu().tolist()
 
@@ -406,6 +421,8 @@ class QuantizedConv2d(nn.Conv2d):
         self.block_size = kwargs.pop('block_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
         self.err_shifts = kwargs.pop('err_shifts', None)
+        self.err_shifts_ind = kwargs.pop('err_shifts_ind', None)
+        self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
         super(QuantizedConv2d, self).__init__(*args, **kwargs)
@@ -424,7 +441,6 @@ class QuantizedConv2d(nn.Conv2d):
             else:
                 quantized_weight = self.weight
                 quantized_bias = self.bias
-
 
             # if self.protectLayers[self.layerNR-1]==0:
             #     list_of_integers = quantized_weight.cpu().tolist()
@@ -490,25 +506,26 @@ class QuantizedConv2d(nn.Conv2d):
                     
                     ### ENDLEN ###
 
-                    if "endlen" in bitlen:
-                        file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
-                    else:
-                        if edge_flag:
-                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                        else:
-                            file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    print(file)
-                    data_tensor = read_data(file).cuda()
+                    # if "endlen" in bitlen:
+                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
+                    # else:
+                    #     if edge_flag:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    #     else:
+                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
+                    # print(file)
+                    # data_tensor = read_data(file).cuda()
 
-                    # print(data_tensor)
-                    print(data_tensor.shape)
-                    # L1: [64, 1, 3, 3]
-                    # L2: [64, 64, 3, 3]
+                    # # print(data_tensor)
+                    # print(data_tensor.shape)
+                    # # L1: [64, 1, 3, 3]
+                    # # L2: [64, 64, 3, 3]
 
-                    quantized_weight = quantize(data_tensor, self.quantization)
+                    # quantized_weight = quantize(data_tensor, self.quantization)
 
                     ### ENDLEN ###
 
+                    quantized_weight_init = quantized_weight
 
                     err_shift = 0   # number of error shifts
                     shift = 0       # number of shifts (used for reading)
@@ -544,6 +561,8 @@ class QuantizedConv2d(nn.Conv2d):
                                         #     self.lost_vals_r[i][j] -= 1
 
                     self.err_shifts[self.layerNR-1] += err_shift
+                    self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    # print(self.err_shifts_ind)
 
                     # print("local err_shifts: " + str(err_shift) + "/" + str(shift))
                     # print(self.err_shifts)
@@ -589,10 +608,10 @@ class QuantizedConv2d(nn.Conv2d):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    for i in range(0, self.index_offset.shape[0]):      # 
-                        for j in range(0, self.index_offset.shape[1]):  # 
-                            if self.index_offset[i][j] % 2 != 0:
-                                self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    # for i in range(0, self.index_offset.shape[0]):      # 
+                    #     for j in range(0, self.index_offset.shape[1]):  # 
+                    #         if self.index_offset[i][j] % 2 != 0:
+                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
 
                     # print(self.index_offset)
 
@@ -613,9 +632,17 @@ class QuantizedConv2d(nn.Conv2d):
                     # # print(quantized_weight)
 
                     ### AT RUNTIME ###
-
-
+                
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
+
+                if self.protectLayers[self.layerNR-1]==0:
+                    # print(quantized_weight_init)
+                    # print("")
+                    # print(quantized_weight)
+                    differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
+                    self.bitflips[self.layerNR-1].append(differences)
+                    # print(differences)
+                    # print(self.bitflips)
 
                 # if self.protectLayers[self.layerNR-1]==0:
                 #     list_of_integers = quantized_weight.cpu().tolist()

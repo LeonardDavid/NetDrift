@@ -16,7 +16,7 @@ class Scale(nn.Module):
 
 
 class VGG3(nn.Module):
-    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, block_size=64, protectLayers=[], err_shifts=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, block_size=64, protectLayers=[], err_shifts=[], err_shifts_ind=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1):
         super(VGG3, self).__init__()
         self.name = "VGG3"
         self.quantization = quantMethod
@@ -27,26 +27,28 @@ class VGG3(nn.Module):
         self.block_size = block_size
         self.protectLayers = protectLayers
         self.err_shifts = err_shifts
+        self.err_shifts_ind = err_shifts_ind
+        self.bitflips = bitflips
         self.global_bitflip_budget = global_bitflip_budget
         self.local_bitflip_budget = local_bitflip_budget
 
         self.resetOffsets()
 
-        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
+        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size, err_shifts_ind=self.err_shifts_ind, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
-        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, block_size = self.block_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
+        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, block_size = self.block_size, err_shifts_ind=self.err_shifts_ind, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
         # ksize=3 => 7*7*64
         # ksize=5 => 5*5*64
         # ksize=7 => 4*4*64
-        self.fc1 = QuantizedLinear(7*7*64, 2048, layerNr=3, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, block_size = self.block_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
+        self.fc1 = QuantizedLinear(7*7*64, 2048, layerNr=3, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, block_size = self.block_size, err_shifts_ind=self.err_shifts_ind, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
         self.bn3 = nn.BatchNorm1d(2048)
         self.qact3 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc2 = QuantizedLinear(2048, 10, layerNr=4, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, block_size = self.block_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
+        self.fc2 = QuantizedLinear(2048, 10, layerNr=4, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, block_size = self.block_size, err_shifts_ind=self.err_shifts_ind, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, bias=False)
         self.scale = Scale()
     
     def resetOffsets(self):
