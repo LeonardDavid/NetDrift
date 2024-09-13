@@ -135,13 +135,13 @@ LOCAL_BITFLIP_BUDGET=$7
 # echo -e "${PROTECT_LAYERS[@]}"
 
 
-declare -a PERRORS=(0.0)
+# declare -a PERRORS=(0.0)
 
 # declare -a PERRORS=(0.1 0.01 0.001 0.0001)
 
 # declare -a PERRORS=(0.1)
 # declare -a PERRORS=(0.1 0.1)
-# declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
+declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
 
 # declare -a PERRORS=(0.05)
 # declare -a PERRORS=(0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05)

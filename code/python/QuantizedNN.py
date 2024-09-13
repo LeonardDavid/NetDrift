@@ -102,11 +102,12 @@ nr_flip = 1
 edge_flag = False 
 bitlen = "endlen1"
 n_l_r = 1
-# folder = "q_out_fmnist3x3_endlen"
+
+folder = "q_out_fmnist3x3_endlen"
 # folder = "q_out_fmnist5x5_endlen"
 # folder = "q_out_fmnist7x7_endlen"
 
-folder = "q_out_cifar3x3_endlen"
+# folder = "q_out_cifar3x3_endlen"
 
 ###
 
@@ -292,10 +293,10 @@ class QuantizedLinear(nn.Linear):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    for i in range(0, self.index_offset.shape[0]):      # 
+                        for j in range(0, self.index_offset.shape[1]):  # 
+                            if self.index_offset[i][j] % 2 != 0:
+                                self.index_offset[i][j] += np.sign(self.index_offset[i][j])
 
                     ### ODD2EVEN ###
 
@@ -588,10 +589,10 @@ class QuantizedConv2d(nn.Conv2d):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    for i in range(0, self.index_offset.shape[0]):      # 
+                        for j in range(0, self.index_offset.shape[1]):  # 
+                            if self.index_offset[i][j] % 2 != 0:
+                                self.index_offset[i][j] += np.sign(self.index_offset[i][j])
 
                     # print(self.index_offset)
 
