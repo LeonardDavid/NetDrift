@@ -296,9 +296,9 @@ def find_with_bitflip_budget(arr_tuples, block_gr, ind_off_tuples, shape, block_
     # global_bitflip_budget = 0.1
     # local_bitflip_budget = 0.1
 
-    print(global_bitflip_budget)
-    print(local_bitflip_budget)
-    print(total_elem)
+    # print(global_bitflip_budget)
+    # print(local_bitflip_budget)
+    # print(total_elem)
     print("")
 
     k = 0

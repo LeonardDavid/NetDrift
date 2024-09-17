@@ -138,6 +138,8 @@ class QuantizedLinear(nn.Linear):
         self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
+        self.nr_run = 1
+        self.q_weight = None
         super(QuantizedLinear, self).__init__(*args, **kwargs)
 
     def forward(self, input):
@@ -168,6 +170,7 @@ class QuantizedLinear(nn.Linear):
             if self.error_model is not None:
                 if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
                     print("Linear", self.layerNR)
+                    # print(self.nr_run)
 
                     ### read weight tensor from file
 
@@ -204,27 +207,11 @@ class QuantizedLinear(nn.Linear):
 
                     quantized_weight_init = quantized_weight
 
-                    # print(self.block_size)
-                    # print("")
-                    # print(np.sum(self.index_offset))
-
-                    # nr_elem=0
-                    # print(quantized_weight.shape[0])
-                    # print(quantized_weight.shape[1])
-                    # for i in range(0, quantized_weight.shape[0]):
-                    #     for j in range(0, quantized_weight.shape[1]):
-                    #         nr_elem += 1
-                    #         # print(quantized_weight[i][j])
-                    #     # print("\n")
-                    # print(nr_elem)
-
-                    # print(self.index_offset.shape[0])
-                    # print(self.index_offset.shape[1])
-
                     err_shift = 0   # number of error shifts
                     shift = 0       # number of shifts (used for reading)
                     for i in range(0, self.index_offset.shape[0]):      #
                         for j in range(0, self.index_offset.shape[1]):  #
+                            # # self.index_offset[i][j] += 1
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
                             for k in range(1, self.block_size):         #
                                 shift += 1
@@ -317,8 +304,8 @@ class QuantizedLinear(nn.Linear):
 
                     # for i in range(0, self.index_offset.shape[0]):      # 
                     #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 == 0:
-                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    #         if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
+                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
                     # print(self.index_offset)
 
@@ -333,13 +320,22 @@ class QuantizedLinear(nn.Linear):
                     # # print(quantized_weight)
 
                     # print(quantized_weight)
-                    # endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                    # print("endlen flip according to index_offset applied")
+                    if self.nr_run == 1:
+                        endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                        print("endlen flip according to index_offset applied")
+                        self.q_weight = quantized_weight
+                    else:
+                        quantized_weight = self.q_weight
                     # print(quantized_weight)
 
                     ### AT RUNTIME ###
 
+
+                    self.nr_run += 1
+
+
                 quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.block_size, self.error_model)
+
 
                 if self.protectLayers[self.layerNR-1]==0:
                     # print(quantized_weight_init)
@@ -443,6 +439,8 @@ class QuantizedConv2d(nn.Conv2d):
         self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
+        self.nr_run = 1
+        self.q_weight = None
         super(QuantizedConv2d, self).__init__(*args, **kwargs)
 
     def forward(self, input):
@@ -502,6 +500,8 @@ class QuantizedConv2d(nn.Conv2d):
 
                 if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
                     print("Convolution2D", self.layerNR)
+                    # print(self.nr_run)
+
                     # print(quantized_weight.size())
                     # print(self.block_size)
                     # print("")
@@ -550,6 +550,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # iterate over all blocks (row-wise -> swap for loops for column-wise)
                     for i in range(0, self.index_offset.shape[0]):      # 
                         for j in range(0, self.index_offset.shape[1]):  # 
+                            # # self.index_offset[i][j] += 1
                             # now, read every value from the block
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
                             for k in range(1, self.block_size):         # 
@@ -646,8 +647,8 @@ class QuantizedConv2d(nn.Conv2d):
 
                     # for i in range(0, self.index_offset.shape[0]):      # 
                     #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 == 0:
-                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    #         if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
+                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
                     # print(self.index_offset)
 
@@ -660,16 +661,23 @@ class QuantizedConv2d(nn.Conv2d):
                     # endlen.apply_1flip(array_type="3D", block_size=self.block_size, data=quantized_weight)
                     # print("endlen flip applied")
                     # # print(quantized_weight)
-
-                    # # print(quantized_weight)
-                    # if self.layerNR == 2:
-                    #     endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                    #     print("endlen flip according to index_offset applied")
-                    # # print(quantized_weight)
+                    
+                    # print(quantized_weight)
+                    if self.nr_run == 1:
+                        endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                        print("endlen flip according to index_offset applied")
+                        self.q_weight = quantized_weight
+                    else:
+                        quantized_weight = self.q_weight
+                    # print(quantized_weight)
 
                     ### AT RUNTIME ###
-                
+
+                    self.nr_run += 1
+
+
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
+                
 
                 if self.protectLayers[self.layerNR-1]==0:
                     # print(quantized_weight_init)
@@ -684,7 +692,7 @@ class QuantizedConv2d(nn.Conv2d):
                 #     list_of_integers = quantized_weight.cpu().tolist()
 
                 #     # Open a file in write mode
-                #     with open('qweights_shift1_'+str(self.layerNR)+'.txt', 'w') as f:
+                #     with open('qweights_shift_'+str(self.layerNR)+'.txt', 'w') as f:
                 #         f.write("[")
                 #         # Write the list of integers to the file
                 #         for integer in list_of_integers[:-1]:
