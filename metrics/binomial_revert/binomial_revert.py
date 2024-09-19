@@ -55,8 +55,11 @@ def revert_elements_2d_mid_separate(arr):
     num_elements_to_revert_negative = int(len(negative_elements) * 0.8)
     num_elements_to_revert_positive = int(len(positive_elements) * 0.8)
 
+    # sorted_negative_elements = np.sort(negative_elements)[::-1]
+    # sorted_positive_elements = np.sort(positive_elements)
+
     # Find the indices of the elements to revert
-    indices_to_revert_negative = np.argsort(negative_elements)[:num_elements_to_revert_negative]
+    indices_to_revert_negative = np.argsort(negative_elements)[-num_elements_to_revert_negative:]
     indices_to_revert_positive = np.argsort(positive_elements)[:num_elements_to_revert_positive]
 
     for idx in indices_to_revert_negative:
@@ -83,7 +86,7 @@ def revert_elements_2d_edges_separate(arr):
     # Calculate the number of bins to revert (80% of the total bins for each side)
     num_bins_to_revert_negative = int(len(unique_negative_elements) * 0.8)
     num_bins_to_revert_positive = int(len(unique_positive_elements) * 0.8)
-    
+
     # Sort the unique elements to find the edges of the binomial curve
     sorted_unique_negative_elements = np.sort(unique_negative_elements)
     sorted_unique_positive_elements = np.sort(unique_positive_elements)
@@ -105,6 +108,7 @@ def revert_elements_2d_edges_separate(arr):
 
 if __name__ == '__main__':
     file_path = "ind_off/ind_off_4_init.txt"
+    # file_path = "ind_off/ind_off_4_run2.txt"
     with open(file_path, 'r') as file:
         arr = np.loadtxt(file)
 
