@@ -272,6 +272,7 @@ class QuantizedLinear(nn.Linear):
                     #         if abs(self.index_offset[i][j]) >= 2:
                     #             self.index_offset[i][j] = 0
 
+                    # if self.nr_run == 1:
                     # # 80/20 from middle (total elements)
                     self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
                     # # 80/20 from edges (total bins)
@@ -619,6 +620,7 @@ class QuantizedConv2d(nn.Conv2d):
                     #         if abs(self.index_offset[i][j]) <= 2:
                     #             self.index_offset[i][j] = 0
                     
+                    # if self.nr_run == 1:
                     # # 80/20 from middle (total elements)
                     self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
                     # # 80/20 from edges (total bins)

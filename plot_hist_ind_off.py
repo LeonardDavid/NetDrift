@@ -43,14 +43,21 @@ for layer in range(1,5):
     # print(width)
 
     for i, (filename, data) in enumerate(data_dict.items()):
-        hist, _ = np.histogram(data, bins=bin_edges)
+        # Clip data to the range -10 to 10
+        data_clipped = np.clip(data, -10, 10)
+        
+        # Calculate histogram
+        hist, _ = np.histogram(data_clipped, bins=bin_edges)
+        
+        # plot the histogram
         plt.bar(bin_centers + (i-len(data_dict)/2+0.5)*width, hist, width=width, alpha=0.5, label=filename)
 
     # Add labels and legend
     plt.xlabel('Value')
     plt.ylabel('Frequency')
     plt.title('Histogram of 2D Arrays from Multiple Files')
-    plt.xticks(np.arange(-10, 11, 1))  # Set x-axis ticks to show all integer values from -10 to 10
+    # plt.xticks(np.arange(-11, 12, 1))  # Set x-axis ticks to show all integer values from -10 to 10
+    plt.xticks(np.arange(-10, 11, 1), labels=['more-', *map(str, range(-9, 10)), 'more+'])  # Set x-axis ticks to show all integer values from -10 to 10 and "more"
     plt.legend(loc='upper right')
 
     # Show the plot
