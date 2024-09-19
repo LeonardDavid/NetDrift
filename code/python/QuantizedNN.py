@@ -257,7 +257,7 @@ class QuantizedLinear(nn.Linear):
                                 f.write("\n")
 
 
-                    ### BINOMIAL CUTOFF ###
+                    ### BINOMIAL REVERT ###
 
                     # reset some index offset values above a certain threshold
                     # quite theoretical as well, because this would mean that error correction is applied only to some blocks, but in practice it is either full ecc or no ecc
@@ -287,7 +287,7 @@ class QuantizedLinear(nn.Linear):
                                 f.write(str(self.index_offset[i][j]) + " ")
                             f.write("\n")
 
-                    ### BINOMIAL CUTOFF ###
+                    ### BINOMIAL REVERT ###
 
 
                     ### ODD2EVEN ###
@@ -603,7 +603,7 @@ class QuantizedConv2d(nn.Conv2d):
                                 f.write("\n")
 
 
-                    ### BINOMIAL CUTOFF ###
+                    ### BINOMIAL REVERT ###
 
                     # reset some index offset values above a certain threshold
                     # quite theoretical as well, because this would mean that error correction is applied only to some blocks, but in practice it is either full ecc or no ecc
@@ -634,7 +634,7 @@ class QuantizedConv2d(nn.Conv2d):
                                 f.write(str(self.index_offset[i][j]) + " ")
                             f.write("\n")
 
-                    ### BINOMIAL CUTOFF ###
+                    ### BINOMIAL REVERT ###
 
 
                     ### ODD2EVEN ###
