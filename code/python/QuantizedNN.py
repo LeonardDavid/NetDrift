@@ -7,6 +7,7 @@ import numpy as np
 import random
 
 import metrics.count_len.count_len_endlen as endlen
+import metrics.binomial_revert.binomial_revert as bin_revert
 
 class Quantize(Function):
     @staticmethod
@@ -248,12 +249,12 @@ class QuantizedLinear(nn.Linear):
 
                     # print(np.sum(self.index_offset))
                     # print(self.index_offset)
-                    # if self.protectLayers[self.layerNR-1]==0:
-                    #     with open("qweights_shift1_"+str(self.layerNR)+"_ind_off.txt", "w") as f:
-                    #         for i in range(0, self.index_offset.shape[0]):      # 
-                    #             for j in range(0, self.index_offset.shape[1]):  #
-                    #                 f.write(str(self.index_offset[i][j]) + " ")
-                    #             f.write("\n")
+                    if self.nr_run==1:
+                        with open("ind_off/ind_off_"+str(self.layerNR)+"_init.txt", "w") as f:
+                            for i in range(0, self.index_offset.shape[0]):      # 
+                                for j in range(0, self.index_offset.shape[1]):  #
+                                    f.write(str(self.index_offset[i][j]) + " ")
+                                f.write("\n")
 
 
                     ### BINOMIAL CUTOFF ###
@@ -264,16 +265,27 @@ class QuantizedLinear(nn.Linear):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    # before = np.sum(abs(self.index_offset))
+                    before = np.sum(abs(self.index_offset))
 
                     # for i in range(0, self.index_offset.shape[0]):      # 
                     #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if abs(self.index_offset[i][j]) <= 2:
+                    #         if abs(self.index_offset[i][j]) >= 2:
                     #             self.index_offset[i][j] = 0
 
-                    # after = np.sum(abs(self.index_offset))
-                    # diff = before-after
-                    # print(f"{diff} / {diff/before*100}")
+                    # # 80/20 from middle (total elements)
+                    self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                    # # 80/20 from edges (total bins)
+                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+
+                    after = np.sum(abs(self.index_offset))
+                    diff = before-after
+                    print(f"{diff} / {diff/before*100}")
+
+                    with open("ind_off/ind_off_"+str(self.layerNR)+"_run"+str(self.nr_run)+".txt", "w") as f:
+                        for i in range(0, self.index_offset.shape[0]):      # 
+                            for j in range(0, self.index_offset.shape[1]):  #
+                                f.write(str(self.index_offset[i][j]) + " ")
+                            f.write("\n")
 
                     ### BINOMIAL CUTOFF ###
 
@@ -319,14 +331,14 @@ class QuantizedLinear(nn.Linear):
                     # print("endlen flip applied")
                     # # print(quantized_weight)
 
-                    # print(quantized_weight)
-                    if self.nr_run == 1:
-                        endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                        print("endlen flip according to index_offset applied")
-                        self.q_weight = quantized_weight
-                    else:
-                        quantized_weight = self.q_weight
-                    # print(quantized_weight)
+                    # # print(quantized_weight)
+                    # if self.nr_run == 1:
+                    #     endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     print("endlen flip according to index_offset applied")
+                    #     self.q_weight = quantized_weight
+                    # else:
+                    #     quantized_weight = self.q_weight
+                    # # print(quantized_weight)
 
                     ### AT RUNTIME ###
 
@@ -338,13 +350,8 @@ class QuantizedLinear(nn.Linear):
 
 
                 if self.protectLayers[self.layerNR-1]==0:
-                    # print(quantized_weight_init)
-                    # print("")
-                    # print(quantized_weight)
                     differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                     self.bitflips[self.layerNR-1].append(differences)
-                    # print(differences)
-                    # print(self.bitflips)
                 
                 # if self.protectLayers[self.layerNR-1]==0:
                 #     list_of_integers = quantized_weight.cpu().tolist()
@@ -588,12 +595,12 @@ class QuantizedConv2d(nn.Conv2d):
 
                     # print(np.sum(self.index_offset))
                     # print(self.index_offset)
-                    # if self.protectLayers[self.layerNR-1]==0:
-                    #     with open("qweights_shift1_"+str(self.layerNR)+"_ind_off.txt", "w") as f:
-                    #         for i in range(0, self.index_offset.shape[0]):      # 
-                    #             for j in range(0, self.index_offset.shape[1]):  #
-                    #                 f.write(str(self.index_offset[i][j]) + " ")
-                    #             f.write("\n")
+                    if self.nr_run==1:
+                        with open("ind_off/ind_off_"+str(self.layerNR)+"_init.txt", "w") as f:
+                            for i in range(0, self.index_offset.shape[0]):      # 
+                                for j in range(0, self.index_offset.shape[1]):  #
+                                    f.write(str(self.index_offset[i][j]) + " ")
+                                f.write("\n")
 
 
                     ### BINOMIAL CUTOFF ###
@@ -604,17 +611,28 @@ class QuantizedConv2d(nn.Conv2d):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    # before = np.sum(abs(self.index_offset))
+                    before = np.sum(abs(self.index_offset))
 
                     # for i in range(0, self.index_offset.shape[0]):      # 
                     #     for j in range(0, self.index_offset.shape[1]):  # 
                     #         if abs(self.index_offset[i][j]) <= 2:
                     #             self.index_offset[i][j] = 0
+                    
+                    # # 80/20 from middle (total elements)
+                    self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                    # # 80/20 from edges (total bins)
+                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
 
-                    # after = np.sum(abs(self.index_offset))
-                    # # print(f"{before} - {after}")
-                    # diff = before-after
-                    # print(f"{diff} / {diff/before*100}")
+                    after = np.sum(abs(self.index_offset))
+                    # print(f"{before} - {after}")
+                    diff = before-after
+                    print(f"{diff} / {diff/before*100}")
+
+                    with open("ind_off/ind_off_"+str(self.layerNR)+"_run"+str(self.nr_run)+".txt", "w") as f:
+                        for i in range(0, self.index_offset.shape[0]):      # 
+                            for j in range(0, self.index_offset.shape[1]):  #
+                                f.write(str(self.index_offset[i][j]) + " ")
+                            f.write("\n")
 
                     ### BINOMIAL CUTOFF ###
 
@@ -662,14 +680,14 @@ class QuantizedConv2d(nn.Conv2d):
                     # print("endlen flip applied")
                     # # print(quantized_weight)
                     
-                    # print(quantized_weight)
-                    if self.nr_run == 1:
-                        endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                        print("endlen flip according to index_offset applied")
-                        self.q_weight = quantized_weight
-                    else:
-                        quantized_weight = self.q_weight
-                    # print(quantized_weight)
+                    # # print(quantized_weight)
+                    # if self.nr_run == 1:
+                    #     endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     print("endlen flip according to index_offset applied")
+                    #     self.q_weight = quantized_weight
+                    # else:
+                    #     quantized_weight = self.q_weight
+                    # # print(quantized_weight)
 
                     ### AT RUNTIME ###
 
@@ -680,13 +698,9 @@ class QuantizedConv2d(nn.Conv2d):
                 
 
                 if self.protectLayers[self.layerNR-1]==0:
-                    # print(quantized_weight_init)
-                    # print("")
-                    # print(quantized_weight)
                     differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                     self.bitflips[self.layerNR-1].append(differences)
-                    # print(differences)
-                    # print(self.bitflips)
+
 
                 # if self.protectLayers[self.layerNR-1]==0:
                 #     list_of_integers = quantized_weight.cpu().tolist()
