@@ -274,9 +274,9 @@ class QuantizedLinear(nn.Linear):
 
                     # if self.nr_run == 1:
                     # # 80/20 from middle (total elements)
-                    self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                    # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
                     # # 80/20 from edges (total bins)
-                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+                    self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
 
                     after = np.sum(abs(self.index_offset))
                     diff = before-after
@@ -622,9 +622,9 @@ class QuantizedConv2d(nn.Conv2d):
                     
                     # if self.nr_run == 1:
                     # # 80/20 from middle (total elements)
-                    self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                    # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
                     # # 80/20 from edges (total bins)
-                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+                    self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
 
                     after = np.sum(abs(self.index_offset))
                     # print(f"{before} - {after}")
