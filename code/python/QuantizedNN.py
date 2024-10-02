@@ -212,7 +212,7 @@ class QuantizedLinear(nn.Linear):
                     shift = 0       # number of shifts (used for reading)
                     for i in range(0, self.index_offset.shape[0]):      #
                         for j in range(0, self.index_offset.shape[1]):  #
-                            # # self.index_offset[i][j] += 1
+                            # self.index_offset[i][j] = -4
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
                             for k in range(1, self.block_size):         #
                                 shift += 1
@@ -241,7 +241,10 @@ class QuantizedLinear(nn.Linear):
                                         #     self.lost_vals_r[i][j] -= 1
 
                     self.err_shifts[self.layerNR-1] += err_shift
-                    self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    ## !! ##
+                    # self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    ## !! ##
+
                     # print(self.err_shifts_ind)
 
                     # print("local err_shifts: " + str(err_shift) + "/" + str(shift))
@@ -265,22 +268,22 @@ class QuantizedLinear(nn.Linear):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    before = np.sum(abs(self.index_offset))
+                    # before = np.sum(abs(self.index_offset))
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if abs(self.index_offset[i][j]) >= 2:
-                    #             self.index_offset[i][j] = 0
+                    # # for i in range(0, self.index_offset.shape[0]):      # 
+                    # #     for j in range(0, self.index_offset.shape[1]):  # 
+                    # #         if abs(self.index_offset[i][j]) >= 2:
+                    # #             self.index_offset[i][j] = 0
 
-                    # if self.nr_run == 1:
-                    # # 80/20 from middle (total elements)
-                    # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
-                    # # 80/20 from edges (total bins)
-                    self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+                    # # if self.nr_run == 1:
+                    # # # 80/20 from middle (total elements)
+                    # # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                    # # # 80/20 from edges (total bins)
+                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
 
-                    after = np.sum(abs(self.index_offset))
-                    diff = before-after
-                    print(f"{diff} / {diff/before*100}")
+                    # after = np.sum(abs(self.index_offset))
+                    # diff = before-after
+                    # print(f"{diff} / {diff/before*100}")
 
                     # if self.nr_run in (1, 5, 10):
                     #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
@@ -303,7 +306,7 @@ class QuantizedLinear(nn.Linear):
                     # for i in range(0, self.index_offset.shape[0]):      # 
                     #     for j in range(0, self.index_offset.shape[1]):  # 
                     #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
                     ### ODD2EVEN ###
 
@@ -354,6 +357,16 @@ class QuantizedLinear(nn.Linear):
                 if self.protectLayers[self.layerNR-1]==0:
                     differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                     self.bitflips[self.layerNR-1].append(differences)
+
+                    ## remove/add back line 'self.err_shifts_ind[self.layerNR-1].append(err_shift)' ##
+                    affected_racetracks = np.count_nonzero(self.index_offset)
+                    # print(differences)
+                    # print(affected_racetracks)
+                    # print(differences/affected_racetracks)
+                    # print(len(self.index_offset)*len(self.index_offset[0]))
+                    self.err_shifts_ind[self.layerNR-1].append(differences/affected_racetracks)
+                    ## !! ##
+
                 
                 # if self.protectLayers[self.layerNR-1]==0:
                 #     list_of_integers = quantized_weight.cpu().tolist()
@@ -559,7 +572,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # iterate over all blocks (row-wise -> swap for loops for column-wise)
                     for i in range(0, self.index_offset.shape[0]):      # 
                         for j in range(0, self.index_offset.shape[1]):  # 
-                            # # self.index_offset[i][j] += 1
+                            # self.index_offset[i][j] = -4
                             # now, read every value from the block
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
                             for k in range(1, self.block_size):         # 
@@ -589,7 +602,10 @@ class QuantizedConv2d(nn.Conv2d):
                                         #     self.lost_vals_r[i][j] -= 1
 
                     self.err_shifts[self.layerNR-1] += err_shift
-                    self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    ## !! ##
+                    # self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    ## !! ##
+
                     # print(self.err_shifts_ind)
 
                     # print("local err_shifts: " + str(err_shift) + "/" + str(shift))
@@ -613,23 +629,23 @@ class QuantizedConv2d(nn.Conv2d):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    before = np.sum(abs(self.index_offset))
+                    # before = np.sum(abs(self.index_offset))
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if abs(self.index_offset[i][j]) <= 2:
-                    #             self.index_offset[i][j] = 0
+                    # # for i in range(0, self.index_offset.shape[0]):      # 
+                    # #     for j in range(0, self.index_offset.shape[1]):  # 
+                    # #         if abs(self.index_offset[i][j]) <= 2:
+                    # #             self.index_offset[i][j] = 0
                     
-                    # if self.nr_run == 1:
-                    # # 80/20 from middle (total elements)
-                    # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
-                    # # 80/20 from edges (total bins)
-                    self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+                    # # if self.nr_run == 1:
+                    # # # 80/20 from middle (total elements)
+                    # # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                    # # # 80/20 from edges (total bins)
+                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
 
-                    after = np.sum(abs(self.index_offset))
-                    # print(f"{before} - {after}")
-                    diff = before-after
-                    print(f"{diff} / {diff/before*100}")
+                    # after = np.sum(abs(self.index_offset))
+                    # # print(f"{before} - {after}")
+                    # diff = before-after
+                    # print(f"{diff} / {diff/before*100}")
 
                     # if self.nr_run in (1, 5, 10):
                     #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
@@ -652,7 +668,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # for i in range(0, self.index_offset.shape[0]):      # 
                     #     for j in range(0, self.index_offset.shape[1]):  # 
                     #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
                     # print(self.index_offset)
 
@@ -704,6 +720,15 @@ class QuantizedConv2d(nn.Conv2d):
                 if self.protectLayers[self.layerNR-1]==0:
                     differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                     self.bitflips[self.layerNR-1].append(differences)
+
+                    ## remove/add back line 'self.err_shifts_ind[self.layerNR-1].append(err_shift)' ##
+                    affected_racetracks = np.count_nonzero(self.index_offset)
+                    # print(differences)
+                    # print(affected_racetracks)
+                    # print(differences/affected_racetracks)
+                    # print(len(self.index_offset)*len(self.index_offset[0]))
+                    self.err_shifts_ind[self.layerNR-1].append(differences/affected_racetracks)
+                    ## !! ##
 
 
                 # if self.protectLayers[self.layerNR-1]==0:
