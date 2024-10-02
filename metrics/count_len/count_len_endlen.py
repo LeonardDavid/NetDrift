@@ -221,7 +221,31 @@ def create_tuples(block_gr, endlen_gr):
 
 
 def sort_tuples(arr_tuples):
-    # Sorts a list of tuples (index, endlen, flips) by endlen descending, then flips ascending
+    # Sorts a list of tuples (index, endlen, flips) by endlen descending, then by flips ascending
+
+    for line in arr_tuples:
+        line.sort(key=lambda x: (-x[1], x[2]))
+
+    return arr_tuples
+
+
+def create_tuples_ind_off(block_gr, endlen_gr, index_offset):
+    # format: (index, endlen, flips, index_offset)
+
+    arr_tuples = []
+
+    for i in range(len(endlen_gr)):
+        line_tuples = []
+        for j in range(len(endlen_gr[i])):
+            line_tuples.append((j+1, endlen_gr[i][j], abs(block_gr[i][j+1])))
+        arr_tuples.append(line_tuples)
+    
+    return arr_tuples
+
+
+def sort_tuples_ind_off(arr_tuples):
+    # Sorts a list of tuples (index, endlen, flips, index_offset) 
+    # by endlen descending, then by index_offset ascending
 
     for line in arr_tuples:
         line.sort(key=lambda x: (-x[1], x[2]))
@@ -479,7 +503,11 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitfl
     total_elem = len(index_offset)*len(index_offset[0])*block_size
     ind_off_shape = (len(index_offset), len(index_offset[0]))
 
+
+    print(global_bitflip_budget)
+    print(local_bitflip_budget)
     # print("")
+    # print(index_offset)
     # print(f"ind_off_avg: {np.mean(np.abs(index_offset))}")
     # print("")
 
@@ -512,10 +540,22 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitfl
     #     print("")
     # print("")
 
-    # Find blocks in which the most error shifts happened, to prioritize creation of larger bitgroups there (endlen bitflip in blocks with bigger numbers)
+
     ind_off_tuples = matrix2tuples(ind_off=index_offset)
-    ind_off_tuples.sort(key=lambda x: x[0], reverse=True)
-    # ind_off_tuples.sort(key=lambda x: x[0])
+    
+    # # Find blocks in which the most error shifts happened, 
+    # # to prioritize creation of larger bitgroups there (endlen bitflip in blocks with bigger numbers)
+    
+    # ind_off_tuples.sort(key=lambda x: x[0], reverse=True)
+    
+    # # Find blocks in which the fewest error shifts happened (except 0), 
+    # # to prioritize creation of larger bitgroups there (endlen bitflip in blocks with smaller numbers - except 0)
+    
+    ind_off_tuples.sort(key=lambda x: x[0])
+    ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0] # remove index offsets that are 0, to not flip bits there
+    # ind_off_tuples = [t for t in ind_off_tuples if t[0]%2 != 0] # remove index offsets that are even (includes 0), to not flip bits there
+    # ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0 and t[0]%2 == 0] # remove index offsets that are odd, to not flip bits there
+    
     # print(ind_off_tuples)
 
     pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, ind_off_tuples=ind_off_tuples, shape=ind_off_shape, block_size=block_size, total_elem=total_elem, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget)
@@ -555,8 +595,8 @@ if __name__ == '__main__':
 
     # min_bitgroup_size = 0 # which sizes of bit groups to include in metric, set to 0 for all sizes (including groups of 1 bit)
 
-    # block_size = 12
-    block_size = 64
+    block_size = 12
+    # block_size = 64
     err = 0.1
 
     for layer in range(2,3):
@@ -581,7 +621,9 @@ if __name__ == '__main__':
         test_flag = False
         print_flag = False
 
-        _1flip_flag = True
+        _1flip_flag = False
+        _1flip_flag_offset = True
+
         _1eflip_flag = False
         _2flip_flag = False
         _2eflip_flag = False
@@ -679,6 +721,17 @@ if __name__ == '__main__':
                 for len_gr in block_groups:
                     print(len_gr)
                 print("")
+
+        elif _1flip_flag_offset:
+            print(in_file1)
+            data = load_data_from_file(in_file1)
+
+            glb_bb = 0.01
+            loc_bb = 1.0
+
+            ind_off = np.array([[0,-1,-2],[0,1,0]])
+
+            apply_1flip_ind_off(array_type=array_type, block_size=block_size, data=data, index_offset=ind_off, global_bitflip_budget=glb_bb, local_bitflip_budget=loc_bb)
 
 
         ###################
