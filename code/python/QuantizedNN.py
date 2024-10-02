@@ -355,9 +355,11 @@ class QuantizedLinear(nn.Linear):
 
 
                 if self.protectLayers[self.layerNR-1]==0:
+                    ## absolute # of bitflips
                     differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                     self.bitflips[self.layerNR-1].append(differences)
 
+                    ## relative # of bitflips
                     ## remove/add back line 'self.err_shifts_ind[self.layerNR-1].append(err_shift)' ##
                     affected_racetracks = np.count_nonzero(self.index_offset)
                     # print(differences)
@@ -718,9 +720,11 @@ class QuantizedConv2d(nn.Conv2d):
                 
 
                 if self.protectLayers[self.layerNR-1]==0:
+                    ## absolute # of bitflips
                     differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                     self.bitflips[self.layerNR-1].append(differences)
 
+                    ## relative # of bitflips
                     ## remove/add back line 'self.err_shifts_ind[self.layerNR-1].append(err_shift)' ##
                     affected_racetracks = np.count_nonzero(self.index_offset)
                     # print(differences)
