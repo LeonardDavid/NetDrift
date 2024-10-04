@@ -552,8 +552,8 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitfl
     # # to prioritize creation of larger bitgroups there (endlen bitflip in blocks with smaller numbers - except 0)
     
     ind_off_tuples.sort(key=lambda x: x[0])
-    ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0] # remove index offsets that are 0, to not flip bits there
-    # ind_off_tuples = [t for t in ind_off_tuples if t[0]%2 != 0] # remove index offsets that are even (includes 0), to not flip bits there
+    # ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0] # remove index offsets that are 0, to not flip bits there
+    ind_off_tuples = [t for t in ind_off_tuples if t[0]%2 != 0] # remove index offsets that are even (includes 0), to not flip bits there
     # ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0 and t[0]%2 == 0] # remove index offsets that are odd, to not flip bits there
     
     # print(ind_off_tuples)
@@ -595,24 +595,26 @@ if __name__ == '__main__':
 
     # min_bitgroup_size = 0 # which sizes of bit groups to include in metric, set to 0 for all sizes (including groups of 1 bit)
 
-    block_size = 12
-    # block_size = 64
+    # block_size = 12
+    block_size = 64
     err = 0.1
 
-    for layer in range(2,3):
-    # for layer in range(1,5):
+    # for layer in range(2,3):
+    for layer in range(1,5):
 
-        layer = 4
-        if layer == 1 or layer == 2:
+        # layer = 2
+        if layer == 1 or layer == 2 or layer==0:
             array_type = "3D"
         elif layer == 3 or layer == 4:
             array_type = "1D"
 
+            
         print("==========================================")
         print(f"Layer {layer}")
         print("")
 
         total_flips = 0
+
 
         #################
         ### variables ###
@@ -621,8 +623,9 @@ if __name__ == '__main__':
         test_flag = False
         print_flag = False
 
-        _1flip_flag = False
-        _1flip_flag_offset = True
+        _1flip_flag = True
+        _1flip_flag_col = True
+        _1flip_flag_offset = False
 
         _1eflip_flag = False
         _2flip_flag = False
@@ -630,11 +633,15 @@ if __name__ == '__main__':
         _3flip_flag = False
         _3eflip_flag = False
 
-        bitlen1 = "endlen1"
         
-        bitlen2 = "endlen2"
-
-        bitlen3 = "endlen3"
+        if _1flip_flag_col:
+            bitlen1 = "endlen1_col"
+            bitlen2 = "endlen2_col"
+            bitlen3 = "endlen3_col"
+        else:
+            bitlen1 = "endlen1"
+            bitlen2 = "endlen2"
+            bitlen3 = "endlen3"
 
         #############
         ### files ###
@@ -666,8 +673,32 @@ if __name__ == '__main__':
             print(in_file1)
             data = load_data_from_file(in_file1)
 
+            # column-wise blockhyp
+            if _1flip_flag_col:
+                
+                # for conv layers: reshape to 1D-type array and transpose (cols->rows), 
+                # to execute same steps for blockhyp but for the cols
+                if layer == 1 or layer == 2 or layer==0:
+                    array_type = "1D"
+                    
+                    data_initial_shape = np.shape(data)
+                    data = np.reshape(data,(data_initial_shape[0],-1)).T
+
+                    print(f"{data_initial_shape} -> Reshape + Transpose -> {np.shape(data)}")
+
+                # for linear layers: already 1D-type array, therefore only transpose (cols->rows), 
+                # to execute same steps for blockhyp but for the cols
+                elif layer == 3 or layer == 4:
+                    array_type = "1D"
+
+                    data_initial_shape = np.shape(data)
+                    data = np.transpose(data)
+
+                    print(f"{data_initial_shape} -> Transpose -> {np.shape(data)}")
+
+                            
             total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
-            
+
             # count lengths of bit groups in each block
             block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
             
@@ -699,20 +730,85 @@ if __name__ == '__main__':
             total_flips += len(pos1)
             if print_flag:
                 print(pos1)
+            print("")
             print(len(pos1))
             print("")
 
             # flip positions of ones found previously
             flip_bits(data=data, positions=pos1, shape=total_ones, array_type=array_type)
+
+            # column-wise blcokhyp
+            if _1flip_flag_col:
+
+                # transpose back (rows->cols), and reshape to original 3D shape
+                if layer == 1 or layer == 2 or layer == 0:
+                    array_type = "3D"
+
+                    data_before_shape = np.shape(data)
+                    data = np.reshape(data.T, data_initial_shape)
                     
-            with open(out_file_flip1, "w") as f:
-                f.write("[")
+                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+                    
+                    print(f"{data_before_shape} -> Transpose + Reshape -> {np.shape(data)}")
 
-                # Write the list of integers to the file
-                for integer in data[:-1]:
-                    f.write(str(integer) + ',\n')
 
-                f.write(str(data[-1]) + "]")
+                    with open(out_file_flip1, 'w') as f:
+                        f.write('[')
+
+                        for i in range(data.shape[0]):
+                            f.write('[')
+                            for j in range(data.shape[1]):
+                                f.write('[')
+                                for k in range(data.shape[2]):
+                                    # Convert the subarray to a comma-separated string
+                                    subarray_str = ','.join(map(str, data[i, j, k]))
+                                    # Write the subarray string to the file
+                                    f.write('[' + subarray_str + ']')
+                                    if k < data.shape[2] - 1:
+                                        f.write(',')
+                                f.write(']')
+                                if j < data.shape[1] - 1:
+                                    f.write(',')
+                            f.write(']')
+                            if i < data.shape[0] - 1:
+                                f.write(',\n')
+
+                        f.write(']')
+
+                # only transpose back to original shape (rows->cols)
+                elif layer == 3 or layer == 4:
+                    array_type = "1D"
+
+                    data_before_shape = np.shape(data)
+                    data = np.transpose(data)
+
+                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+                    
+                    print(f"{data_before_shape} -> Transpose -> {np.shape(data)}")
+
+
+                    with open(out_file_flip1, 'w') as f:
+                        f.write('[')
+
+                        for i in range(data.shape[0]):
+                            # Convert the subarray to a comma-separated string
+                            subarray_str = ','.join(map(str, data[i]))
+                            # Write the subarray string to the file
+                            f.write('[' + subarray_str + ']')
+                            if i < data.shape[0] - 1:
+                                f.write(',\n')
+
+                        f.write(']')
+
+            else:
+                with open(out_file_flip1, "w") as f:
+                    f.write("[")
+
+                    # Write the list of integers to the file
+                    for integer in data[:-1]:
+                        f.write(str(integer) + ',\n')
+
+                    f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
             block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
@@ -732,7 +828,6 @@ if __name__ == '__main__':
             ind_off = np.array([[0,-1,-2],[0,1,0]])
 
             apply_1flip_ind_off(array_type=array_type, block_size=block_size, data=data, index_offset=ind_off, global_bitflip_budget=glb_bb, local_bitflip_budget=loc_bb)
-
 
         ###################
         ### clean edges ###

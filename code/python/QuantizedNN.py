@@ -102,11 +102,17 @@ class QuantizedActivation(nn.Module):
 nr_flip = 1
 edge_flag = False 
 bitlen = "endlen1"
+# bitlen = "endlen1_col"
 n_l_r = 1
 
 folder = "q_out_fmnist3x3_endlen"
+# folder = "q_out_fmnist3x3_endlen_col"
+
 # folder = "q_out_fmnist5x5_endlen"
+# folder = "q_out_fmnist5x5_endlen_col"
+
 # folder = "q_out_fmnist7x7_endlen"
+# folder = "q_out_fmnist7x7_endlen_col"
 
 # folder = "q_out_cifar3x3_endlen"
 
@@ -336,14 +342,14 @@ class QuantizedLinear(nn.Linear):
                     # print("endlen flip applied")
                     # # print(quantized_weight)
 
-                    # print(quantized_weight)
-                    if self.nr_run == 1:
-                        endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                        print("endlen flip according to index_offset applied")
-                        self.q_weight = quantized_weight
-                    else:
-                        quantized_weight = self.q_weight
-                    # print(quantized_weight)
+                    # # print(quantized_weight)
+                    # if self.nr_run == 1:
+                    #     endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     print("endlen flip according to index_offset applied")
+                    #     self.q_weight = quantized_weight
+                    # else:
+                    #     quantized_weight = self.q_weight
+                    # # print(quantized_weight)
 
                     ### AT RUNTIME ###
 
@@ -366,6 +372,11 @@ class QuantizedLinear(nn.Linear):
                     # print(affected_racetracks)
                     # print(differences/affected_racetracks)
                     # print(len(self.index_offset)*len(self.index_offset[0]))
+
+                    # only if running baseline benchmark with error rate 0.0
+                    if affected_racetracks == 0 :
+                        affected_racetracks = 1
+
                     self.err_shifts_ind[self.layerNR-1].append(differences/affected_racetracks)
                     ## !! ##
 
@@ -702,14 +713,14 @@ class QuantizedConv2d(nn.Conv2d):
                     # print("endlen flip applied")
                     # # print(quantized_weight)
                     
-                    # print(quantized_weight)
-                    if self.nr_run == 1:
-                        endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                        print("endlen flip according to index_offset applied")
-                        self.q_weight = quantized_weight
-                    else:
-                        quantized_weight = self.q_weight
-                    # print(quantized_weight)
+                    # # print(quantized_weight)
+                    # if self.nr_run == 1:
+                    #     endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     print("endlen flip according to index_offset applied")
+                    #     self.q_weight = quantized_weight
+                    # else:
+                    #     quantized_weight = self.q_weight
+                    # # print(quantized_weight)
 
                     ### AT RUNTIME ###
 
@@ -731,6 +742,11 @@ class QuantizedConv2d(nn.Conv2d):
                     # print(affected_racetracks)
                     # print(differences/affected_racetracks)
                     # print(len(self.index_offset)*len(self.index_offset[0]))
+
+                    # only if running baseline benchmark with error rate 0.0
+                    if affected_racetracks == 0 :
+                        affected_racetracks = 1
+
                     self.err_shifts_ind[self.layerNR-1].append(differences/affected_racetracks)
                     ## !! ##
 
