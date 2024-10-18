@@ -97,7 +97,16 @@ class QuantizedActivation(nn.Module):
             output = apply_error_model(output, index_offset_default, block_size_default, self.error_model)
         return output
 
-### read from file parameteres ### 
+### read from file parameters ### 
+
+ratio_blocks = "ecc"
+# ratio_blocks = "ecc_ind_off"
+
+folder_ecc = "q_out_A"
+# folder_ecc = "q_out_B"
+# folder_ecc = "q_out_C"
+# folder_ecc = "q_out_D"
+# folder_ecc = "q_out_E"
 
 nr_flip = 1
 edge_flag = False 
@@ -191,6 +200,28 @@ class QuantizedLinear(nn.Linear):
                     # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     
+
+                    ### RATIO_BLOCKS_ECC ###
+
+                    if "ecc" in ratio_blocks:
+                        file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
+                    elif "ecc_ind_off" in ratio_blocks:
+                        file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
+                    else:
+                        file = "none"
+                    print(file)
+                    data_tensor = read_data(file).cuda()
+
+                    # print(data_tensor)
+                    print(data_tensor.shape) 
+                    # L3: [2048, 3136]
+                    # L4: [10, 2048]
+
+                    quantized_weight = quantize(data_tensor, self.quantization)
+
+                    ### RATIO_BLOCKS_ECC ###
+
+
                     ### ENDLEN ###
 
                     # if "endlen" in bitlen:
@@ -557,6 +588,27 @@ class QuantizedConv2d(nn.Conv2d):
                     # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     
+                    ### RATIO_BLOCKS_ECC ###
+
+                    if "ecc" in ratio_blocks:
+                        file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
+                    elif "ecc_ind_off" in ratio_blocks:
+                        file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
+                    else:
+                        file = "none"
+                    print(file)
+                    data_tensor = read_data(file).cuda()
+
+                    # print(data_tensor)
+                    print(data_tensor.shape) 
+                    # L3: [2048, 3136]
+                    # L4: [10, 2048]
+
+                    quantized_weight = quantize(data_tensor, self.quantization)
+
+                    ### RATIO_BLOCKS_ECC ###
+
+
                     ### ENDLEN ###
 
                     # if "endlen" in bitlen:

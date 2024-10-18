@@ -80,13 +80,14 @@ block_size = 64
 err = 0.1
 
 
-# for layer in range(1,5):
-for layer in range(4,5):
+for layer in range(1,5):
+# for layer in range(2,3):
     print("")
     # file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_append_"+str(layer)+".txt"
     # file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_shift1_"+str(layer)+".txt"
     # file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_shift10_"+str(layer)+".txt"
-    file = "q_in/qweights_shift1_4_init.txt"
+    # file = "q_in/qweights_shift1_4_init.txt"
+    file = "q_in/qweights_orig_"+str(layer)+".txt"
     print(file)
 
     if layer == 1 or layer == 2:
@@ -125,11 +126,11 @@ for layer in range(4,5):
                 # print("")
                 
                 lower = 0.9
-                upper = 1
+                upper = 1.4
                 ratio = total_ones[i][j]/total_neg_ones[i][j]
 
                 if ratio < lower or ratio >= upper:
-                    print(str(i) + "-" + str(j) + ": " + str(total_ones[i][j]) + " / " + str(total_neg_ones[i][j]) + " = " + str(ratio))
+                    # print(str(i) + "-" + str(j) + ": " + str(total_ones[i][j]) + " / " + str(total_neg_ones[i][j]) + " = " + str(ratio))
                     # print(data[i])
 
                     if array_type == "3D":
@@ -155,8 +156,10 @@ for layer in range(4,5):
                         # print(positions)
                         
                         ratio_new = ratio
+                        interrupt = 0
 
-                        while ratio_new <= lower or ratio_new >= upper:
+                        while ratio_new <= lower or ratio_new >= upper or interrupt<5:
+                            interrupt += 1
                             for pos in positions:
                                 # print(data[i][pos[0]][pos[1]][pos[2]])
                                 if ratio_new <= lower:
@@ -168,7 +171,7 @@ for layer in range(4,5):
                                         # neg_ones -= 1
                                         # ones += 1
                                         # ratio_new = ones/neg_ones
-                                        print("flipped @ " + str(pos) + " from -1 to 1 => " + str(ratio_new))
+                                        # print("flipped @ " + str(pos) + " from -1 to 1 => " + str(ratio_new))
                                         flips += 1
                                 elif ratio_new >= upper:
                                     if data[i][pos[0]][pos[1]][pos[2]] == 1.0:
@@ -179,12 +182,13 @@ for layer in range(4,5):
                                         # ones -= 1
                                         # neg_ones += 1
                                         # ratio_new = ones/neg_ones
-                                        print("flipped @ " + str(pos) + " from 1 to -1 => " + str(ratio_new))
+                                        # print("flipped @ " + str(pos) + " from 1 to -1 => " + str(ratio_new))
                                         flips += 1
                                 else:
                                     continue
+                            
                                                 
-                        print("")
+                        # print("")
 
                     elif array_type == "1D":
                         positions = []
@@ -206,8 +210,10 @@ for layer in range(4,5):
                         # neg_ones = total_neg_ones[i][j]
                         
                         ratio_new = ratio
+                        interrupt = 0
 
-                        while ratio_new <= lower or ratio_new >= upper:
+                        while ratio_new <= lower or ratio_new >= upper or interrupt<5:
+                            interrupt += 1
                             for pos in positions:
                                 # print(data[i][pos[0]][pos[1]][pos[2]])
                                 if ratio_new <= lower:
@@ -219,7 +225,7 @@ for layer in range(4,5):
                                         # neg_ones -= 1
                                         # ones += 1
                                         # ratio_new = ones/neg_ones
-                                        print("flipped @ " + str(pos) + " from -1 to 1 => " + str(ratio_new))
+                                        # print("flipped @ " + str(pos) + " from -1 to 1 => " + str(ratio_new))
                                         flips += 1
                                 elif ratio_new >= upper:
                                     if data[i][pos] == 1.0:
@@ -230,37 +236,35 @@ for layer in range(4,5):
                                         # ones -= 1
                                         # neg_ones += 1
                                         # ratio_new = ones/neg_ones
-                                        print("flipped @ " + str(pos) + " from 1 to -1 => " + str(ratio_new))
+                                        # print("flipped @ " + str(pos) + " from 1 to -1 => " + str(ratio_new))
                                         flips += 1
                                 else:
                                     continue
                                                 
-                        print("")
+                        # print("")
                     else:
                         continue
 
-        print("")
+        # print("")
+    print(f"ratios € [{lower}, {upper}]")
     print("flips: " + str(flips))
 
     total_ratios = np.divide(total_ones, total_neg_ones)
     total_ratios = np.around(total_ratios, decimals=2)
 
-    # out_file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/ratios_append_"+str(layer)+".txt"
-    # out_file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/ratios_shift1_"+str(layer)+".txt"
-    # out_file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/ratios_shift10_"+str(layer)+".txt"
-    out_ratio_mod = "q_out/qweights_shift1_4_ratios_mod.txt"
-    with open(out_ratio_mod, "w") as f:
-        # f.write("[")
-        for line in total_ratios:
-            # f.write("[")
-            for value in line:
-                f.write(str(value) + " ")
-            f.write("\n")
-            # f.write("]\n")
-        # f.write("]")
+    # out_ratio_mod = "q_out/qweights_ratio_ratio_"+str(layer)+".txt"
+    # with open(out_ratio_mod, "w") as f:
+    #     # f.write("[")
+    #     for line in total_ratios:
+    #         # f.write("[")
+    #         for value in line:
+    #             f.write(str(value) + " ")
+    #         f.write("\n")
+    #         # f.write("]\n")
+    #     # f.write("]")
 
 
-    out_file_mod = "q_out/qweights_shift1_4_mod.txt"
+    out_file_mod = "q_out/qweights_ratio_ecc"+str(layer)+".txt"
     with open(out_file_mod, "w") as f:
         f.write("[")
 

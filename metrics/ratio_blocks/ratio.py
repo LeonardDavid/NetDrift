@@ -26,12 +26,13 @@ def calculate_ratio(data, arr_type):
 # file = "qweights/32/qweights_0.01/qweights_shift1_4.txt" # 1s: 10100 | -1s: 10380 | 1/-1 ratio: 0.9730250481695568
 
 
-block_size = 2
-err = 0.0001
+block_size = 64
+err = 0.1
 
 for layer in range(1,5):
   print("")
-  file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_shift1_"+str(layer)+".txt"
+  # file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_shift1_"+str(layer)+".txt"
+  file = "q_in/qweights_orig_"+str(layer)+".txt"
   print(file)
 
   if layer == 1 or layer == 2:

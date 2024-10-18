@@ -1,16 +1,5 @@
 import numpy as np
 
-def calculate_ratio(data, arr_type):
-  count_ones = 0
-  count_neg_ones = 0
-  if arr_type is "3D":
-    count_ones = sum(item == 1 for row in data for element in row for item in element)
-    count_neg_ones = sum(item == -1 for row in data for element in row for item in element)
-  elif arr_type is "1D":
-    count_ones = sum(item == 1 for item in data)
-    count_neg_ones = sum(item == -1 for item in data)
-
-  return count_ones, count_neg_ones
 
 def load_data_from_file(filename):
   """
@@ -37,32 +26,14 @@ def load_data_from_file(filename):
   return data.tolist()
 
 
-block_size = 64
-err = 0.1
-
-
-# for layer in range(1,5):
-for layer in range(1,5):
-    print("")
-    # file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_append_"+str(layer)+".txt"
-    # file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_shift1_"+str(layer)+".txt"
-    file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/qweights_shift10_"+str(layer)+".txt"
-    print(file)
-
-    if layer == 1 or layer == 2:
-        array_type = "3D"
-    elif layer == 3 or layer == 4:
-        array_type = "1D" 
-
+def count(data, array_type):
+   
     total_ones = []
     total_neg_ones = []
 
-
-    data = load_data_from_file(file)
-
     for row in data:
 
-        if array_type is "3D":
+        if array_type == "3D":
             nr_elem = len(row) * 9 # 64 kernels of 3x3 elements
 
             count = 0
@@ -78,7 +49,7 @@ for layer in range(1,5):
                             count_ones[int((count-1) / block_size)] += 1
                         elif weight == -1:
                             count_neg_ones[int((count-1) / block_size)] += 1
-        elif array_type is "1D":
+        elif array_type == "1D":
             nr_elem = len(row)
 
             count = 0
@@ -94,52 +65,65 @@ for layer in range(1,5):
                     count_neg_ones[int((count-1) / block_size)] += 1
 
         # print(count_ones)
-        # print(count_neg_ones)
-
-        # ratios = np.divide(count_ones, count_neg_ones)
-        # Round the result to 2 decimal places using np.around()
-        # ratios = np.around(ratios, decimals=2)
-        # print(ratios)
-        # Try-except block to handle division by zero
-        # try:
-        #     ratios = np.divide(count_ones, count_neg_ones)
-        #     # Round the result to 2 decimal places using np.around()
-        #     ratios = np.around(ratios, decimals=2)
-        #     # print(ratios)
-        # except ZeroDivisionError:
-        #     print("Error: Division by zero encountered.")
-            
+        # print(count_neg_ones)            
 
         total_ones.append(count_ones)
         total_neg_ones.append(count_neg_ones)
 
         # print(total_ones)
         # print(total_neg_ones)
+        
+    return total_ones, total_neg_ones
+
+
+block_size = 64
+err = 0.1
+
+for layer in range(1,9):
+# for layer in range(1,5):
+    print("")
+
+    file = "q_in/qweights_orig_"+str(layer)+".txt"
+    print(file)
+    data = load_data_from_file(file)
+
+    # if layer == 1 or layer == 2:
+    #     array_type = "3D"
+    # elif layer == 3 or layer == 4:
+    #     array_type = "1D" 
+
+    if layer == 7 or layer == 8:
+        array_type = "1D"
+    else:
+        array_type = "3D" 
+
+    total_ones, total_neg_ones = count(data, array_type)
 
     total_ratios = np.divide(total_ones, total_neg_ones)
     # Round the result to 2 decimal places using np.around()
     total_ratios = np.around(total_ratios, decimals=2)
     # np.set_printoptions(threshold=np.inf)
 
-    # out_file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/ratios_append_"+str(layer)+".txt"
-    # out_file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/ratios_shift1_"+str(layer)+".txt"
-    out_file = "qweights/" + str(block_size) + "/qweights_"+ str(err) +"/ratios_shift10_"+str(layer)+".txt"
-    with open(out_file, "w") as f:
-        # f.write("[")
-        for line in total_ratios:
-            # f.write("[")
-            for value in line:
-                f.write(str(value) + " ")
-            f.write("\n")
-            # f.write("]\n")
-        # f.write("]")
+    # print global ratios
+    _p1s = np.sum(total_ones)
+    _m1s = np.sum(total_neg_ones)
 
-    # try:
-    #     total_ratios = np.divide(total_ones, total_neg_ones)
-    #     # Round the result to 2 decimal places using np.around()
-    #     total_ratios = np.around(total_ratios, decimals=2)
-    #     print(total_ratios)
-    # except ZeroDivisionError:
-    #     print("Error: Division by zero encountered.")
+    if _m1s == 0:
+        total_ratio="inf"
+    else:
+        total_ratio="{:.2f}".format(_p1s/_m1s)
+    print("1s: " + str(_p1s) + " | -1s: " + str(_m1s) + " | 1/-1 ratio: " + str(total_ratio))
+    print("")
 
+    # # print ratios per racetrack/block
+    # out_file = "q_out/ratios_orig"+str(layer)+".txt"
+    # with open(out_file, "w") as f:
+    #     # f.write("[")
+    #     for line in total_ratios:
+    #         # f.write("[")
+    #         for value in line:
+    #             f.write(str(value) + " ")
+    #         f.write("\n")
+    #         # f.write("]\n")
+    #     # f.write("]")
 

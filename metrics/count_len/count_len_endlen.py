@@ -190,7 +190,7 @@ def count_len(array_type, data, shape, block_size):
     return block_gr
 
 
-def sum_endlen(block_gr):
+def  sum_endlen(block_gr):
     # using a sliding window of size 3, sum up lengths form block_gr, alternating the signs
 
     endlen_gr = []
