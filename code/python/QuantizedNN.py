@@ -6,6 +6,7 @@ from torch.autograd import Function
 import numpy as np
 import random
 
+import metrics.ratio_blocks_ecc_ind_off.ratio_blocks_ecc_ind_off as ratio_blocks_io
 import metrics.count_len.count_len_endlen as endlen
 import metrics.binomial_revert.binomial_revert as bin_revert
 
@@ -203,21 +204,21 @@ class QuantizedLinear(nn.Linear):
 
                     ### RATIO_BLOCKS_ECC ###
 
-                    if "ecc" in ratio_blocks:
-                        file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
-                    elif "ecc_ind_off" in ratio_blocks:
-                        file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
-                    else:
-                        file = "none"
-                    print(file)
-                    data_tensor = read_data(file).cuda()
+                    # if "ecc" in ratio_blocks:
+                    #     file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
+                    # elif "ecc_ind_off" in ratio_blocks:
+                    #     file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
+                    # else:
+                    #     file = "none"
+                    # print(file)
+                    # data_tensor = read_data(file).cuda()
 
-                    # print(data_tensor)
-                    print(data_tensor.shape) 
-                    # L3: [2048, 3136]
-                    # L4: [10, 2048]
+                    # # print(data_tensor)
+                    # print(data_tensor.shape) 
+                    # # L3: [2048, 3136]
+                    # # L4: [10, 2048]
 
-                    quantized_weight = quantize(data_tensor, self.quantization)
+                    # quantized_weight = quantize(data_tensor, self.quantization)
 
                     ### RATIO_BLOCKS_ECC ###
 
@@ -368,11 +369,29 @@ class QuantizedLinear(nn.Linear):
 
                     ### AT RUNTIME ###
 
+                    ### #RATIO_BLOCKS_IND_OFF# ###
+                    # print(quantized_weight)
+                    ## global_bitflip_budget    <=> lower ##
+                    ## local_bitflip_budget     <=> upper ##
+                    if self.nr_run <= 10:
+                        ratio_blocks_io.apply_ratio_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                        print("ratio_blocks flip according to index_offset applied")
+                        self.q_weight = quantized_weight
+                    else:
+                        quantized_weight = self.q_weight
+                    # print(quantized_weight)
+                    ### #RATIO_BLOCKS_IND_OFF# ###
+
+
+                    ### #ENDLEN# ###
                     # # print(quantized_weight)
                     # endlen.apply_1flip(array_type="1D", block_size=self.block_size, data=quantized_weight)
                     # print("endlen flip applied")
                     # # print(quantized_weight)
-
+                    ### #ENDLEN# ###     
+                    
+                               
+                    ### #ENDLEN IND_OFF# ###
                     # # print(quantized_weight)
                     # if self.nr_run == 1:
                     #     endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
@@ -381,6 +400,7 @@ class QuantizedLinear(nn.Linear):
                     # else:
                     #     quantized_weight = self.q_weight
                     # # print(quantized_weight)
+                    ### #ENDLEN IND_OFF# ###
 
                     ### AT RUNTIME ###
 
@@ -590,21 +610,21 @@ class QuantizedConv2d(nn.Conv2d):
                     
                     ### RATIO_BLOCKS_ECC ###
 
-                    if "ecc" in ratio_blocks:
-                        file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
-                    elif "ecc_ind_off" in ratio_blocks:
-                        file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
-                    else:
-                        file = "none"
-                    print(file)
-                    data_tensor = read_data(file).cuda()
+                    # if "ecc" in ratio_blocks:
+                    #     file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
+                    # elif "ecc_ind_off" in ratio_blocks:
+                    #     file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
+                    # else:
+                    #     file = "none"
+                    # print(file)
+                    # data_tensor = read_data(file).cuda()
 
-                    # print(data_tensor)
-                    print(data_tensor.shape) 
-                    # L3: [2048, 3136]
-                    # L4: [10, 2048]
+                    # # print(data_tensor)
+                    # print(data_tensor.shape) 
+                    # # L1: [64, 1, 3, 3]
+                    # # L2: [64, 64, 3, 3]
 
-                    quantized_weight = quantize(data_tensor, self.quantization)
+                    # quantized_weight = quantize(data_tensor, self.quantization)
 
                     ### RATIO_BLOCKS_ECC ###
 
@@ -760,11 +780,29 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### AT RUNTIME ###
 
+                    ### #RATIO_BLOCKS_IND_OFF# ###
+                    # print(quantized_weight)
+                    ## global_bitflip_budget    <=> lower ##
+                    ## local_bitflip_budget     <=> upper ##
+                    if self.nr_run <= 10:
+                        ratio_blocks_io.apply_ratio_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                        print("ratio_blocks flip according to index_offset applied")
+                        self.q_weight = quantized_weight
+                    else:
+                        quantized_weight = self.q_weight
+                    # print(quantized_weight)
+                    ### #RATIO_BLOCKS_IND_OFF# ###
+
+
+                    ### #ENDLEN# ###
                     # # print(quantized_weight)
                     # endlen.apply_1flip(array_type="3D", block_size=self.block_size, data=quantized_weight)
                     # print("endlen flip applied")
                     # # print(quantized_weight)
+                    ### #ENDLEN# ###
+
                     
+                    ### #ENDLEN IND_OFF# ###
                     # # print(quantized_weight)
                     # if self.nr_run == 1:
                     #     endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
@@ -773,6 +811,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # else:
                     #     quantized_weight = self.q_weight
                     # # print(quantized_weight)
+                    ### #ENDLEN IND_OFF# ###
 
                     ### AT RUNTIME ###
 
