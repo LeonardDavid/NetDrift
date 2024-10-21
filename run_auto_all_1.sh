@@ -141,7 +141,7 @@ LOCAL_BITFLIP_BUDGET=$7
 # declare -a PERRORS=(0.1 0.01 0.001 0.0001)
 
 # declare -a PERRORS=(0.1)
-# declare -a PERRORS=(0.1 0.1)
+# declare -a PERRORS=(0.1 0.1 0.1)
 declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
 
 # declare -a PERRORS=(0.05)

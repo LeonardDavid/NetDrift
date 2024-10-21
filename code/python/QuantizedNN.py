@@ -102,11 +102,11 @@ class QuantizedActivation(nn.Module):
 ratio_blocks = "ecc"
 # ratio_blocks = "ecc_ind_off"
 
-folder_ecc = "q_out_A"
+# folder_ecc = "q_out_A"
 # folder_ecc = "q_out_B"
 # folder_ecc = "q_out_C"
 # folder_ecc = "q_out_D"
-# folder_ecc = "q_out_E"
+folder_ecc = "q_out_E"
 
 nr_flip = 1
 edge_flag = False 
