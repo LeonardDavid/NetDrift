@@ -5,7 +5,7 @@ def revert_elements_2d_mid(arr):
     flat_arr = arr.flatten()
     
     # Calculate the number of elements to revert (80% of the total elements)
-    num_elements_to_revert = int(len(flat_arr) * 0.8)
+    num_elements_to_revert = int(len(flat_arr) * 0.5)
     print(len(flat_arr))
     print(num_elements_to_revert)
     
@@ -25,7 +25,7 @@ def revert_elements_2d_edges(arr):
     
     # Calculate the number of bins to revert (80% of the total bins)
     unique_elements, counts = np.unique(flat_arr, return_counts=True)
-    num_bins_to_revert = int(len(unique_elements) * 0.8)
+    num_bins_to_revert = int(len(unique_elements) * 0.5)
     
     # Calculate the number of bins to revert from each side (40% from the left and 40% from the right)
     num_bins_each_side = num_bins_to_revert // 2
@@ -52,8 +52,8 @@ def revert_elements_2d_mid_separate(arr):
     positive_elements = flat_arr[flat_arr > 0]
     
     # Calculate the number of elements to revert for negative and positive elements (except 0)
-    num_elements_to_revert_negative = int(len(negative_elements) * 0.8)
-    num_elements_to_revert_positive = int(len(positive_elements) * 0.8)
+    num_elements_to_revert_negative = int(len(negative_elements) * 0.5)
+    num_elements_to_revert_positive = int(len(positive_elements) * 0.5)
 
     # sorted_negative_elements = np.sort(negative_elements)[::-1]
     # sorted_positive_elements = np.sort(positive_elements)
@@ -84,8 +84,8 @@ def revert_elements_2d_edges_separate(arr):
     unique_positive_elements, counts_positive = np.unique(positive_elements, return_counts=True)
     
     # Calculate the number of bins to revert (80% of the total bins for each side)
-    num_bins_to_revert_negative = int(len(unique_negative_elements) * 0.8)
-    num_bins_to_revert_positive = int(len(unique_positive_elements) * 0.8)
+    num_bins_to_revert_negative = int(len(unique_negative_elements) * 0.5)
+    num_bins_to_revert_positive = int(len(unique_positive_elements) * 0.5)
 
     # Sort the unique elements to find the edges of the binomial curve
     sorted_unique_negative_elements = np.sort(unique_negative_elements)
