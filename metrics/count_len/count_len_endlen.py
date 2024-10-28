@@ -308,7 +308,63 @@ def find(arr_tuples, block_gr):
     return pos_bitlen
 
 
-def find_with_bitflip_budget(arr_tuples, block_gr, ind_off_tuples, shape, block_size, total_elem, global_bitflip_budget, local_bitflip_budget):
+def find_with_bitflip_budget(arr_tuples, block_gr, block_size, total_elem, global_bitflip_budget, local_bitflip_budget):
+
+    pos_bitlen = []
+    position = 0
+    nr_flips_global = 0
+
+    i = 0
+    
+    while i < len(arr_tuples) and nr_flips_global < total_elem * global_bitflip_budget:
+        # print(arr_tuples[i])
+        # for j in range(len(arr_tuples[i])):
+            # print(f"({arr_tuples[i][j][0]}, {arr_tuples[i][j][1]}, {arr_tuples[i][j][2]})")
+
+        pos = []
+        nr_flips_local = 0
+
+        while len(arr_tuples[i]) > 0 and nr_flips_local < block_size * local_bitflip_budget:
+            # print(f"({arr_tuples[i][0][0]}, {arr_tuples[i][0][1]}, {arr_tuples[i][0][2]})")
+            
+            # first tuple  always contains the maximum (it has been sorted previously)
+            index = arr_tuples[i][0][0]
+            nr_flips_local += arr_tuples[i][0][2]
+
+            pos.append(index) # store index from tuple for now, expand to all pos_bitlen later
+            arr_tuples[i].remove(arr_tuples[i][0]) # remove tuple after storing it
+
+            # find and remove neighbouring tuples
+            found = list(filter(lambda t: t[0] in [index-1, index+1], arr_tuples[i]))
+            for tuple in found:
+                arr_tuples[i].remove(tuple)
+            # print(f"results: {results}")
+
+            
+        # print(nr_flips_local)
+        nr_flips_global += nr_flips_local
+
+        # store all indices that need to be flipped, according to the chosen indexes previously
+        pos.sort()
+        for j in range(len(block_gr[i])):
+            position += abs(block_gr[i][j])
+            for p in range(len(pos)):
+                if j == pos[p]:
+                    p_back = 0
+                    while p_back <= abs(block_gr[i][j])-1:
+                        pos_bitlen.append(position-p_back)
+                        p_back += 1
+        
+        i += 1
+        # print("")
+        
+    # print(nr_flips_global)
+                
+    pos_bitlen.sort() # sort array so that flip() function can work properly
+    return pos_bitlen
+
+
+def find_with_bitflip_budget_ind_off(arr_tuples, block_gr, ind_off_tuples, shape, block_size, total_elem, global_bitflip_budget, local_bitflip_budget):
 
     pos_bitlen = []
     position = 0
@@ -546,19 +602,19 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitfl
     # # Find blocks in which the most error shifts happened, 
     # # to prioritize creation of larger bitgroups there (endlen bitflip in blocks with bigger numbers)
     
-    # ind_off_tuples.sort(key=lambda x: x[0], reverse=True)
+    ind_off_tuples.sort(key=lambda x: x[0], reverse=True)
     
     # # Find blocks in which the fewest error shifts happened (except 0), 
     # # to prioritize creation of larger bitgroups there (endlen bitflip in blocks with smaller numbers - except 0)
     
-    ind_off_tuples.sort(key=lambda x: x[0])
-    # ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0] # remove index offsets that are 0, to not flip bits there
-    ind_off_tuples = [t for t in ind_off_tuples if t[0]%2 != 0] # remove index offsets that are even (includes 0), to not flip bits there
+    # ind_off_tuples.sort(key=lambda x: x[0])
+    ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0] # remove index offsets that are 0, to not flip bits there
+    # ind_off_tuples = [t for t in ind_off_tuples if t[0]%2 != 0] # remove index offsets that are even (includes 0), to not flip bits there
     # ind_off_tuples = [t for t in ind_off_tuples if t[0] != 0 and t[0]%2 == 0] # remove index offsets that are odd, to not flip bits there
     
     # print(ind_off_tuples)
 
-    pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, ind_off_tuples=ind_off_tuples, shape=ind_off_shape, block_size=block_size, total_elem=total_elem, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget)
+    pos1 = find_with_bitflip_budget_ind_off(arr_tuples=array_tuples, block_gr=block_groups, ind_off_tuples=ind_off_tuples, shape=ind_off_shape, block_size=block_size, total_elem=total_elem, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget)
 
     total_flips += len(pos1)
     # print(pos1)
@@ -599,7 +655,12 @@ if __name__ == '__main__':
     block_size = 64
     err = 0.1
 
-    # for layer in range(2,3):
+    gbb = 0.03  # global bitflip budget
+    lbb = 1   # local bitflip budget
+
+    total_elems = [0, 576, 36864, 6422528, 20480]
+
+    # for layer in range(1,3):
     for layer in range(1,5):
 
         # layer = 2
@@ -608,7 +669,8 @@ if __name__ == '__main__':
         elif layer == 3 or layer == 4:
             array_type = "1D"
 
-            
+        total_elem = total_elems[layer]
+
         print("==========================================")
         print(f"Layer {layer}")
         print("")
@@ -624,7 +686,8 @@ if __name__ == '__main__':
         print_flag = False
 
         _1flip_flag = True
-        _1flip_flag_col = True
+        _1flip_flag_budget = True
+        _1flip_flag_col = False
         _1flip_flag_offset = False
 
         _1eflip_flag = False
@@ -698,6 +761,8 @@ if __name__ == '__main__':
 
                             
             total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+            # total_elem = len(total_ones) * len(total_ones[0]) * block_size
+            
 
             # count lengths of bit groups in each block
             block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
@@ -725,7 +790,11 @@ if __name__ == '__main__':
                     print(tuples)
                 print("")
 
-            pos1 = find(arr_tuples=array_tuples, block_gr=block_groups)
+            if _1flip_flag_budget:
+                print(total_elem)
+                pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, block_size=block_size, total_elem=total_elem, global_bitflip_budget=gbb, local_bitflip_budget=lbb)
+            else:
+                pos1 = find(arr_tuples=array_tuples, block_gr=block_groups)
 
             total_flips += len(pos1)
             if print_flag:
