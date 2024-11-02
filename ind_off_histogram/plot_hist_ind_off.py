@@ -12,7 +12,8 @@ for layer in range(1,5):
     # folder = "edges_8020/"
     # folder = "mid_8020/"
     # folder = "edges_5050/"
-    folder = "mid_5050/"
+    # folder = "mid_5050/"
+    folder = "ind_off_init/"
 
     # Directory containing the files
     directory = folder + str(layer)

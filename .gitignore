@@ -9,4 +9,4 @@ experiments/
 Dockerfile
 .dockerignore
 
-:Zone.Identifier
+.Identifier

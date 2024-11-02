@@ -294,12 +294,12 @@ class QuantizedLinear(nn.Linear):
 
                     # # print(np.sum(self.index_offset))
                     # # print(self.index_offset)
-                    if self.nr_run==1:
-                        with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
-                            for i in range(0, self.index_offset.shape[0]):      # 
-                                for j in range(0, self.index_offset.shape[1]):  #
-                                    f.write(str(self.index_offset[i][j]) + " ")
-                                f.write("\n")
+                    # if self.nr_run==1:
+                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
+                    #         for i in range(0, self.index_offset.shape[0]):      # 
+                    #             for j in range(0, self.index_offset.shape[1]):  #
+                    #                 f.write(str(self.index_offset[i][j]) + " ")
+                    #             f.write("\n")
 
 
                     ### BINOMIAL REVERT ###
@@ -327,12 +327,12 @@ class QuantizedLinear(nn.Linear):
                     # diff = before-after
                     # print(f"{diff} / {diff/before*100}")
 
-                    if self.nr_run in (1, 10):
-                        with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
-                            for i in range(0, self.index_offset.shape[0]):      # 
-                                for j in range(0, self.index_offset.shape[1]):  #
-                                    f.write(str(self.index_offset[i][j]) + " ")
-                                f.write("\n")
+                    # if self.nr_run in (1, 10):
+                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
+                    #         for i in range(0, self.index_offset.shape[0]):      # 
+                    #             for j in range(0, self.index_offset.shape[1]):  #
+                    #                 f.write(str(self.index_offset[i][j]) + " ")
+                    #             f.write("\n")
 
                     ### BINOMIAL REVERT ###
 
@@ -702,12 +702,12 @@ class QuantizedConv2d(nn.Conv2d):
 
                     # # print(np.sum(self.index_offset))
                     # # print(self.index_offset)
-                    if self.nr_run==1:
-                        with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
-                            for i in range(0, self.index_offset.shape[0]):      # 
-                                for j in range(0, self.index_offset.shape[1]):  #
-                                    f.write(str(self.index_offset[i][j]) + " ")
-                                f.write("\n")
+                    # if self.nr_run==1:
+                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
+                    #         for i in range(0, self.index_offset.shape[0]):      # 
+                    #             for j in range(0, self.index_offset.shape[1]):  #
+                    #                 f.write(str(self.index_offset[i][j]) + " ")
+                    #             f.write("\n")
 
 
                     ### BINOMIAL REVERT ###
@@ -736,12 +736,12 @@ class QuantizedConv2d(nn.Conv2d):
                     # diff = before-after
                     # print(f"{diff} / {diff/before*100}")
 
-                    if self.nr_run in (1, 10):
-                        with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
-                            for i in range(0, self.index_offset.shape[0]):      # 
-                                for j in range(0, self.index_offset.shape[1]):  #
-                                    f.write(str(self.index_offset[i][j]) + " ")
-                                f.write("\n")
+                    # if self.nr_run in (1, 10):
+                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
+                    #         for i in range(0, self.index_offset.shape[0]):      # 
+                    #             for j in range(0, self.index_offset.shape[1]):  #
+                    #                 f.write(str(self.index_offset[i][j]) + " ")
+                    #             f.write("\n")
 
                     ### BINOMIAL REVERT ###
 
