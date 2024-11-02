@@ -91,10 +91,10 @@ err = 0.1
 # index_offset = np.loadtxt("q_index_offset/qweights_shift1_2_ind_off.txt")
 
 # for layer in range(1,5):
-for layer in range(2,3):
+for layer in range(1,2):
     print("")
     
-    layer = 2
+    layer = 1
     if layer == 1 or layer == 2:
         array_type = "3D"
     elif layer == 3 or layer == 4:

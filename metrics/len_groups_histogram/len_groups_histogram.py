@@ -95,7 +95,7 @@ def count(data, arr_type):
 block_size = 64
 err = 0.1
 
-min_bitgroup_size = 0 # which sizes of bit groups to include in metric, set to 0 for all sizes (including groups of 1 bit)
+min_bitgroup_size = 1 # which sizes of bit groups to include in metric, set to 0 for all sizes (including groups of 1 bit)
 
 # Assuming your file is named "data.txt" and is in the same directory
 # index_offset = np.loadtxt("q_index_offset/qweights_shift1_2_ind_off.txt")
@@ -104,7 +104,7 @@ min_bitgroup_size = 0 # which sizes of bit groups to include in metric, set to 0
 for layer in range(2,3):
     print("")
     
-    layer = 4
+    layer = 1
     if layer == 1 or layer == 2:
         array_type = "3D"
     elif layer == 3 or layer == 4:

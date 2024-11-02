@@ -65,7 +65,7 @@ def read_data_from_file(filename):
   return data
 
 def main():
-  layer = 3
+  layer = 1
   if layer == 1 or layer == 2:
     arr_type = "3D"
   elif layer == 3 or layer == 4:
