@@ -58,10 +58,12 @@ $ bash ./code/cuda/install_kernels.sh
 
 ### Launch
 ```
-$ bash ./run_auto.sh {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+$ bash ./run_auto.sh {arr_perrors} PERRORS {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 ### Arguments:
+- `{arr_perrors}`: Array of misalignment fault rates to be tested (floats)
+- **`PERRORS`**: REQUIRED: array termination token
 - `nn_model`: FMNIST, CIFAR, RESNET
 - `loops`: amount of loops (0, 100]
 - `rt_size`: racetrack/nanowire size (typically 64)
@@ -75,19 +77,19 @@ $ bash ./run_auto.sh {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_co
 
 ### Example in a table TODO
 ```
-$ bash ./run_auto.sh FMNIST 10 64 CUSTOM 0
+$ bash ./run_auto.sh 0.01 0.001 PERRORS FMNIST 10 64 CUSTOM 0
 ```
-Executes FMNIST for 10 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
+Executes at misalignment fault rates of 10% and 1% (separate runs): FMNIST for 10 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
 
 ```
-$ bash ./run_auto.sh CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
+$ bash ./run_auto.sh 0.1 PERRORS CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
 ```
-Executes CIFAR for 10 iterations with racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
+Executes at misalignment fault rates of 10%: CIFAR for 10 iterations with racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
 
 ```
-$ bash ./run_auto.sh RESNET 10 64 INDIV 0
+$ bash ./run_auto.sh 0.05 PERRORS RESNET 10 64 INDIV 0
 ```
-Executes RESNET for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
+Executes at misalignment fault rates of 5%: RESNET for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
 
 # TODO
 First, the custom NN needs to be implemented in a separate class in the file located at \texttt{code/python/Model.py}.\ak{Does this mean, taking the new model? We don't need to implement it from scratch.. The model is implemented by someone.}
