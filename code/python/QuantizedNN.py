@@ -27,10 +27,10 @@ quantize = Quantize.apply
 
 class ErrorModel(Function):
     @staticmethod
-    def forward(ctx, input, index_offset, block_size=64, error_model=None):
+    def forward(ctx, input, index_offset, rt_size=64, error_model=None):
         output = input.clone().detach()
         # print(index_offset)
-        output = error_model.applyErrorModel(output, index_offset, block_size)
+        output = error_model.applyErrorModel(output, index_offset, rt_size)
         # print(output)
         return output
 
@@ -62,9 +62,9 @@ def read_data(filepath):
     return torch.tensor(inner_tensors)
 
 
-# add for compatibility to every apply_error_model parameters that do not use index_offset and block_size
+# add for compatibility to every apply_error_model parameters that do not use index_offset and rt_size
 index_offset_default = np.zeros([2,2])
-block_size_default = 1.0
+rt_size_default = 1.0
 
 def check_quantization(quantize_train, quantize_eval, training):
     condition = ((quantize_train == True) and (training == True)) or ((quantize_eval == True) and (training == False)) or ((quantize_train == True) and (quantize_eval == True))
@@ -95,7 +95,7 @@ class QuantizedActivation(nn.Module):
         else:
             output = input
         if self.error_model is not None:
-            output = apply_error_model(output, index_offset_default, block_size_default, self.error_model)
+            output = apply_error_model(output, index_offset_default, rt_size_default, self.error_model)
         return output
 
 ### read from file parameters ### 
@@ -152,7 +152,7 @@ class QuantizedLinear(nn.Linear):
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
         self.index_offset = kwargs.pop('index_offset', None)
-        self.block_size = kwargs.pop('block_size', None)
+        self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
         self.err_shifts = kwargs.pop('err_shifts', None)
         self.err_shifts_ind = kwargs.pop('err_shifts_ind', None)
@@ -256,29 +256,29 @@ class QuantizedLinear(nn.Linear):
                         for j in range(0, self.index_offset.shape[1]):  #
                             # self.index_offset[i][j] = -4
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
-                            for k in range(1, self.block_size):         #
+                            for k in range(1, self.rt_size):         #
                                 shift += 1
                                 if(random.uniform(0.0, 1.0) < self.error_model.p):
                                     err_shift += 1
                                     # 50/50 random possibility (uniform distribution) of right or left err_shift
                                     if(random.choice([-1,1]) == 1):
                                         # right err_shift
-                                        if (self.index_offset[i][j] < self.block_size/2): # +1
+                                        if (self.index_offset[i][j] < self.rt_size/2): # +1
                                             self.index_offset[i][j] += 1
                                         # self.index_offset[i][j] += 1
-                                        # if (self.index_offset[i][j] > self.block_size/2): # +1
+                                        # if (self.index_offset[i][j] > self.rt_size/2): # +1
                                         #     self.lost_vals_r[i][j] += 1
-                                        #     quantized_weight[i][(j+1)*self.block_size - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
+                                        #     quantized_weight[i][(j+1)*self.rt_size - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
                                         # if (self.lost_vals_l[i][j] > 0):
                                         #     self.lost_vals_l[i][j] -= 1
                                     else:
                                         # left err_shift
-                                        if (self.index_offset[i][j] < self.block_size/2): # -1
+                                        if (self.index_offset[i][j] < self.rt_size/2): # -1
                                             self.index_offset[i][j] -= 1
                                         # self.index_offset[i][j] -= 1
-                                        # if(-self.index_offset[i][j] > self.block_size/2): # +1
+                                        # if(-self.index_offset[i][j] > self.rt_size/2): # +1
                                         #     self.lost_vals_l[i][j] += 1
-                                        #     quantized_weight[i][j*self.block_size + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
+                                        #     quantized_weight[i][j*self.rt_size + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
 
@@ -378,7 +378,7 @@ class QuantizedLinear(nn.Linear):
                     ## global_bitflip_budget    <=> lower ##
                     ## local_bitflip_budget     <=> upper ##
                     # if self.nr_run == 1:
-                    #     ratio_blocks_io.apply_ratio_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     ratio_blocks_io.apply_ratio_ind_off(array_type="1D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
                     #     print("ratio_blocks flip according to index_offset applied")
                     #     self.q_weight = quantized_weight
                     # else:
@@ -389,7 +389,7 @@ class QuantizedLinear(nn.Linear):
 
                     ### #ENDLEN# ###
                     # # print(quantized_weight)
-                    # endlen.apply_1flip(array_type="1D", block_size=self.block_size, data=quantized_weight)
+                    # endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
                     # print("endlen flip applied")
                     # # print(quantized_weight)
                     ### #ENDLEN# ###     
@@ -398,7 +398,7 @@ class QuantizedLinear(nn.Linear):
                     ### #ENDLEN IND_OFF# ###
                     # # print(quantized_weight)
                     # if self.nr_run == 1:
-                    #     endlen.apply_1flip_ind_off(array_type="1D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     endlen.apply_1flip_ind_off(array_type="1D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
                     #     print("endlen flip according to index_offset applied")
                     #     self.q_weight = quantized_weight
                     # else:
@@ -412,7 +412,7 @@ class QuantizedLinear(nn.Linear):
                     self.nr_run += 1
 
 
-                quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.block_size, self.error_model)
+                quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.rt_size, self.error_model)
 
 
                 if self.protectLayers[self.layerNR-1]==0:
@@ -452,7 +452,7 @@ class QuantizedLinear(nn.Linear):
                 # if self.protectLayers[self.layerNR-1]==0:
                 #     list_of_integers = quantized_weight.cpu().tolist()
                 #     try:
-                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
+                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
                 #             f.write("[")
                 #             # Write the list of integers to the file
                 #             for integer in list_of_integers[:-1]:
@@ -462,7 +462,7 @@ class QuantizedLinear(nn.Linear):
                 #     except FileExistsError:
                 #         print("shift1 already exists, writing to shift2 file.")
                 #         try:
-                #             with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
+                #             with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
                 #                 f.write("[")
                 #                 # Write the list of integers to the file
                 #                 for integer in list_of_integers[:-1]:
@@ -473,7 +473,7 @@ class QuantizedLinear(nn.Linear):
                 #             print("shift2 already exists, skipping write.")
                         
                 #     try:
-                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
+                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
                 #             f.write("[")
                 #             # Write the list of integers to the file
                 #             for integer in list_of_integers[:-1]:
@@ -497,8 +497,8 @@ class QuantizedLinear(nn.Linear):
                 quantized_weight = self.weight
                 quantized_bias = self.bias
             if self.error_model is not None:
-                quantized_weight = apply_error_model(quantized_weight, index_offset_default, block_size_default, self.error_model)
-                quantized_bias = apply_error_model(quantized_bias, index_offset_default, block_size_default, self.error_model)
+                quantized_weight = apply_error_model(quantized_weight, index_offset_default, rt_size_default, self.error_model)
+                quantized_bias = apply_error_model(quantized_bias, index_offset_default, rt_size_default, self.error_model)
             return F.linear(input, quantized_weight, quantized_bias)
 
 
@@ -522,7 +522,7 @@ class QuantizedConv2d(nn.Conv2d):
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
         self.index_offset = kwargs.pop('index_offset', None)
-        self.block_size = kwargs.pop('block_size', None)
+        self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
         self.err_shifts = kwargs.pop('err_shifts', None)
         self.err_shifts_ind = kwargs.pop('err_shifts_ind', None)
@@ -593,7 +593,7 @@ class QuantizedConv2d(nn.Conv2d):
                     # print(self.nr_run)
 
                     # print(quantized_weight.size())
-                    # print(self.block_size)
+                    # print(self.rt_size)
                     # print("")
                     # print(np.sum(self.index_offset))
                     # print(self.index_offset.shape[0])
@@ -664,29 +664,29 @@ class QuantizedConv2d(nn.Conv2d):
                             # self.index_offset[i][j] = -4
                             # now, read every value from the block
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
-                            for k in range(1, self.block_size):         # 
+                            for k in range(1, self.rt_size):         # 
                                 shift += 1
                                 if(random.uniform(0.0, 1.0) < self.error_model.p):
                                     err_shift += 1
                                     # 50/50 random possibility of right or left err_shift
                                     if(random.choice([-1,1]) == 1):
                                         # right err_shift
-                                        if (self.index_offset[i][j] < self.block_size/2): # +1
+                                        if (self.index_offset[i][j] < self.rt_size/2): # +1
                                             self.index_offset[i][j] += 1
                                         # self.index_offset[i][j] += 1
-                                        # if (self.index_offset[i][j] > self.block_size/2): # +1
+                                        # if (self.index_offset[i][j] > self.rt_size/2): # +1
                                         #     self.lost_vals_r[i][j] += 1
-                                        #     quantized_weight[i][(j+1)*self.block_size - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
+                                        #     quantized_weight[i][(j+1)*self.rt_size - int(self.lost_vals_r[i][j])] = random.choice([-1,1])
                                         # if (self.lost_vals_l[i][j] > 0):
                                         #     self.lost_vals_l[i][j] -= 1
                                     else:
                                         # left err_shift
-                                        if (self.index_offset[i][j] < self.block_size/2): # -1
+                                        if (self.index_offset[i][j] < self.rt_size/2): # -1
                                             self.index_offset[i][j] -= 1
                                         # self.index_offset[i][j] -= 1
-                                        # if(-self.index_offset[i][j] > self.block_size/2): # +1
+                                        # if(-self.index_offset[i][j] > self.rt_size/2): # +1
                                         #     self.lost_vals_l[i][j] += 1
-                                        #     quantized_weight[i][j*self.block_size + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
+                                        #     quantized_weight[i][j*self.rt_size + int(self.lost_vals_l[i][j]) - 1] = random.choice([-1,1])
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
 
@@ -789,7 +789,7 @@ class QuantizedConv2d(nn.Conv2d):
                     ## global_bitflip_budget    <=> lower ##
                     ## local_bitflip_budget     <=> upper ##
                     # if self.nr_run == 1:
-                    #     ratio_blocks_io.apply_ratio_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     ratio_blocks_io.apply_ratio_ind_off(array_type="3D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
                     #     print("ratio_blocks flip according to index_offset applied")
                     #     self.q_weight = quantized_weight
                     # else:
@@ -800,7 +800,7 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### #ENDLEN# ###
                     # # print(quantized_weight)
-                    # endlen.apply_1flip(array_type="3D", block_size=self.block_size, data=quantized_weight)
+                    # endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
                     # print("endlen flip applied")
                     # # print(quantized_weight)
                     ### #ENDLEN# ###
@@ -809,7 +809,7 @@ class QuantizedConv2d(nn.Conv2d):
                     ### #ENDLEN IND_OFF# ###
                     # # print(quantized_weight)
                     # if self.nr_run == 1:
-                    #     endlen.apply_1flip_ind_off(array_type="3D", block_size=self.block_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                    #     endlen.apply_1flip_ind_off(array_type="3D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
                     #     print("endlen flip according to index_offset applied")
                     #     self.q_weight = quantized_weight
                     # else:
@@ -822,7 +822,7 @@ class QuantizedConv2d(nn.Conv2d):
                     self.nr_run += 1
 
 
-                quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.block_size, self.error_model)
+                quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.rt_size, self.error_model)
                 
 
                 if self.protectLayers[self.layerNR-1]==0:
@@ -862,7 +862,7 @@ class QuantizedConv2d(nn.Conv2d):
                 # if self.protectLayers[self.layerNR-1]==0:
                 #     list_of_integers = quantized_weight.cpu().tolist()
                 #     try:
-                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
+                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
                 #             f.write("[")
                 #             # Write the list of integers to the file
                 #             for integer in list_of_integers[:-1]:
@@ -872,7 +872,7 @@ class QuantizedConv2d(nn.Conv2d):
                 #     except FileExistsError:
                 #         print("shift1 already exists, writing to shift2 file.")
                 #         try:
-                #             with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
+                #             with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
                 #                 f.write("[")
                 #                 # Write the list of integers to the file
                 #                 for integer in list_of_integers[:-1]:
@@ -883,7 +883,7 @@ class QuantizedConv2d(nn.Conv2d):
                 #             print("shift2 already exists, skipping write.")
                         
                 #     try:
-                #         with open('qweights/'+str(self.block_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
+                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
                 #             f.write("[")
                 #             # Write the list of integers to the file
                 #             for integer in list_of_integers[:-1]:
@@ -911,8 +911,8 @@ class QuantizedConv2d(nn.Conv2d):
                 quantized_bias = self.bias
             # check whether error model needs to be applied
             if self.error_model is not None:
-                quantized_weight = apply_error_model(quantized_weight, index_offset_default, block_size_default, self.error_model)
-                quantized_bias = apply_error_model(quantized_bias, index_offset_default, block_size_default, self.error_model)
+                quantized_weight = apply_error_model(quantized_weight, index_offset_default, rt_size_default, self.error_model)
+                quantized_bias = apply_error_model(quantized_bias, index_offset_default, rt_size_default, self.error_model)
             # compute regular 2d conv
             output = F.conv2d(input, quantized_weight, quantized_bias, self.stride,
                               self.padding, self.dilation, self.groups)

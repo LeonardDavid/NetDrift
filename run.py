@@ -37,7 +37,7 @@ import netdrift
 #     "architecture": "VGG3", # model.name,
 #     "dataset": "FMNIST", # model.dataset,
 #     "loops": 1,
-#     "block_size": 64,
+#     "rt_size": 64,
 #     "config": "CUSTOM",
 #     "error_rate": 0.1, # perror,
 #     }
@@ -58,8 +58,8 @@ class NetDriftModel:
         self.p = p_updated
     def resetErrorModel(self):
         self.p = 0
-    def applyErrorModel(self, input, index_offset, block_size):
-        return self.method(input, self.p, self.p, index_offset, block_size)
+    def applyErrorModel(self, input, index_offset, rt_size):
+        return self.method(input, self.p, self.p, index_offset, rt_size)
 
 binarizepm1 = Quantization1(binarizePM1.binarize)
 # TODO p has no effect here
@@ -162,7 +162,8 @@ def main():
     model = None
     protectLayers = args.protect_layers
     err_shifts = args.err_shifts
-    block_size = args.block_size # 2, 4, ... 64
+    rt_size = args.rt_size # 2, 4, ... 64
+    # print(args)
     global_bitflip_budget = args.global_bitflip_budget
     local_bitflip_budget = args.local_bitflip_budget
     
@@ -170,7 +171,7 @@ def main():
     print(err_shifts)
 
     if args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
     else:
         if args.model == "VGG3":
             bitflips = [[] for _ in range(4)] 
@@ -182,7 +183,7 @@ def main():
             bitflips = []
             err_shifts_ind = []
 
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts, err_shifts_ind=err_shifts_ind, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, err_shifts=err_shifts, err_shifts_ind=err_shifts_ind, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
     # print(model)
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
@@ -240,7 +241,7 @@ def main():
     if args.load_model_path is not None:
             to_load = args.load_model_path
             print("Loaded model: ", to_load)
-            print("block_size: ", block_size)
+            print("rt_size: ", rt_size)
             print("-----------------------------")
             model.load_state_dict(torch.load(to_load, map_location='cuda:0'))
 

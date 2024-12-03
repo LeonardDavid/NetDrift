@@ -5,14 +5,9 @@
 #   Automation script for running RTM misalignment fault simulation for BNNs
 # 
 #   ### Arguments:
-#
-#   `PROTECT_LAYERS`:           array of layers to be protected (in the format PROTECT_LAYERS[layer_id+1]={1:protected | 0:unprotected})
-#   END1:                       first array termination token
-#   `PERRORS`:                  Array of misalignment fault rates to be tested (floats)
-#   END2:                       second array termination token
 #   `nn_model`:                 FMNIST, CIFAR, RESNET
 #   `loops`:                    amount of loops (0, 100]
-#   `rt_size`:                  racetrack/nanowire size (typically 64)
+#   `block_size`:               aka racetrack/nanowire size (typically 64)
 #   `layer_config`:             unprotected layers configuration (ALL, CUSTOM, INDIV)
 #   `gpu_id`:                   ID of GPU to use for computations (0, 1) 
 #
@@ -22,58 +17,6 @@
 #
 #
 ##########################################################################################
-
-
-# Read the first array - PROTECT_LAYERS (assumes the array ends with "END1")
-PROTECT_LAYERS=()
-while [[ $1 != "END1" ]]; do
-    PROTECT_LAYERS+=("$1")
-    shift
-done
-shift # Skip the "END1" token
-
-# Read the second array - PERRORS (assumes the array ends with "END2")
-PERRORS=()
-while [[ $1 != "END2" ]]; do
-    PERRORS+=("$1")
-    shift
-done
-shift # Skip the "END2" token
-
-# # Print arrays
-# echo "PROTECT_LAYERS: ${PROTECT_LAYERS[@]}"
-# echo "PERRORS: ${PERRORS[@]}"
-
-# # Remaining arguments
-# echo "Other arguments: $@"
-
-# required args
-NN_MODEL="$1"   # FMNIST    CIFAR   RESNET
-shift
-LOOPS=$1
-shift
-RT_SIZE=$1
-shift
-LAYER_CONFIG=$1
-shift
-GPU_ID=$1
-shift
-
-# echo "$NN_MODEL"
-# echo "$LOOPS"
-# echo "$RT_SIZE"
-# echo "$LAYER_CONFIG"
-# echo "$GPU_ID"
-
-# optional args
-GLOBAL_BITFLIP_BUDGET=${1:-0.0}
-shift
-LOCAL_BITFLIP_BUDGET=${1:-0.0}
-shift
-
-# echo "$GLOBAL_BITFLIP_BUDGET"
-# echo "$LOCAL_BITFLIP_BUDGET"
-
 
 ## params for rtm testing
 TEST_ERROR=1
@@ -87,20 +30,20 @@ STEP_SIZE=25
 ## variables & arrays
 declare -a all_results  # array of arrays to store all results
 
-# ## required args
-# NN_MODEL="$1"           # FMNIST    CIFAR   RESNET
-# LOOPS=$2
-# RT_SIZE=$3
-# LAYER_CONFIG=$4
-# GPU_ID=$5
-# ## optional args
-# GLOBAL_BITFLIP_BUDGET=${6:-0.0}
-# LOCAL_BITFLIP_BUDGET=${7:-0.0}
+## required args
+NN_MODEL="$1"           # FMNIST    CIFAR   RESNET
+LOOPS=$2
+BLOCK_SIZE=$3
+LAYER_CONFIG=$4
+GPU_ID=$5
+## optional args
+GLOBAL_BITFLIP_BUDGET=${6:-0.0}
+LOCAL_BITFLIP_BUDGET=${7:-0.0}
 
 
 ## create output directory
 timestamp=$(date +%Y-%m-%d_%H-%M-%S)
-results_dir="RTM_results/$NN_MODEL/$RT_SIZE/$timestamp"
+results_dir="RTM_results/$NN_MODEL/$BLOCK_SIZE/$timestamp"
 output_dir="$results_dir/outputs"
 if [ ! -d "$results_dir" ]; then
     mkdir -p "$results_dir"
@@ -139,6 +82,23 @@ then
     # MODEL_PATH="models/model_fmnist7x7_8880.pt"
     TEST_BATCH_SIZE=10000
     declare -a ERRSHIFTS=(0 0 0 0)
+    
+    if [[ $LAYER_CONFIG == *"ALL"* ]]; then
+        declare -a PROTECT_LAYERS=(0 0 0 0)
+
+    elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
+        # declare -a PROTECT_LAYERS=(0 1 1 1)
+        # declare -a PROTECT_LAYERS=(1 0 1 1)
+        declare -a PROTECT_LAYERS=(1 1 0 1)
+        # declare -a PROTECT_LAYERS=(1 1 1 0)
+
+        # declare -a PROTECT_LAYERS=(0 0 1 0)
+        # declare -a PROTECT_LAYERS=(0 0 0 0)
+
+    elif [[ $LAYER_CONFIG =~ ^[0-9]+$ ]]; then
+        declare -a PROTECT_LAYERS=(1 1 1 1)
+        PROTECT_LAYERS[$LAYER_CONFIG]=0
+    fi
 
 elif [ "$NN_MODEL" = "CIFAR" ]
 then
@@ -149,6 +109,23 @@ then
     TEST_BATCH_SIZE=10000
     declare -a ERRSHIFTS=(0 0 0 0 0 0 0 0)
 
+    if [[ $LAYER_CONFIG == *"ALL"* ]]; then
+        declare -a PROTECT_LAYERS=(0 0 0 0 0 0 0 0)
+
+    elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
+        # declare -a PROTECT_LAYERS=(0 1 1 1 1 1 1 1)
+        declare -a PROTECT_LAYERS=(1 0 1 1 1 1 1 1)
+
+        # declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 0)
+        # declare -a PROTECT_LAYERS=(1 0 1 0 1 0 1 0)
+        # declare -a PROTECT_LAYERS=(0 1 0 1 0 1 0 1)
+        # declare -a PROTECT_LAYERS=(0 1 1 1 1 0 0 0)
+
+    elif [[ $LAYER_CONFIG =~ ^[0-9]+$ ]]; then
+        declare -a PROTECT_LAYERS=(1 1 1 1 1 1 1 1)
+        PROTECT_LAYERS[$LAYER_CONFIG]=0
+    fi
+
 elif [ "$NN_MODEL" = "RESNET" ]
 then 
     MODEL="ResNet"
@@ -156,6 +133,24 @@ then
     MODEL_PATH="models/model_resnet7694.pt"
     TEST_BATCH_SIZE=256
     declare -a ERRSHIFTS=(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+
+    if [[ $LAYER_CONFIG == *"ALL"* ]]; then
+        declare -a PROTECT_LAYERS=(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+
+    elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
+    
+        # declare -a PROTECT_LAYERS=(0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        declare -a PROTECT_LAYERS=(1 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+
+        # declare -a PROTECT_LAYERS=(0 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 0 1 1 1)
+        # declare -a PROTECT_LAYERS=(0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0)
+        # declare -a PROTECT_LAYERS=(1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1)
+        # declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 1 0 0 1 0 0 0 0 1 1 0 0 0 1)
+
+    elif [[ $LAYER_CONFIG =~ ^[0-9]+$ ]]; then
+        declare -a PROTECT_LAYERS=(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        PROTECT_LAYERS[$LAYER_CONFIG]=0
+    fi
 
 else
     echo -e "\n\033[0;31m$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET\033[0m\n"
@@ -168,7 +163,7 @@ fi
 
 # declare -a PERRORS=(0.0)
 
-# declare -a PERRORS=(0.1)
+declare -a PERRORS=(0.1)
 # declare -a PERRORS=(0.1 0.1)
 # declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
 
@@ -218,7 +213,7 @@ do
                 fi
                 output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
+                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
                 
                 penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
                 # Remove square brackets and split values
@@ -251,7 +246,7 @@ do
         fi
         output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
+        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --block_size=$BLOCK_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
         
         penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
         # Remove square brackets and split values
