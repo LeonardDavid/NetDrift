@@ -61,16 +61,23 @@ $ bash ./code/cuda/install_kernels.sh
 $ bash ./run_auto.sh {nn_model} {loops} {block_size} {layer_config} {gpu_id}
 ```
 
-### Parameters:
+### Arguments:
 - `nn_model`: FMNIST, CIFAR, RESNET
 - `loops`: amount of loops (0, 100]
 - `block_size`: aka racetrack/nanowire size (typically 64)
 - `layer_config`: unprotected layers configuration (ALL, CUSTOM, INDIV)
 - `gpu_id`: ID of GPU to use for computations (0, 1) 
 
-### Optional parameters:
-- `global_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer)
-- `local_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack)
+### Optional arguments:
+- `global_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
+- `local_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
+
+### Example
+```
+$ bash ./run_auto.sh FMNIST 10 64 CUSTOM 0
+```
+
+- `CUSTOM`: TODO
 
 # TODO
 First, the custom NN needs to be implemented in a separate class in the file located at \texttt{code/python/Model.py}.\ak{Does this mean, taking the new model? We don't need to implement it from scratch.. The model is implemented by someone.}
