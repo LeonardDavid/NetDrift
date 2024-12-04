@@ -32,8 +32,8 @@ def process_file(input_file, output_file):
     write_formatted_data_to_file(transposed_data, output_file)
 
 # Input and output file names
-input_file = 'coordinates_in.txt'  # Replace with the path to your input file
-output_file = 'coordinates_out.txt'  # Replace with the desired output file path
+input_file = 'coordinates/coordinates_in.txt'  # Replace with the path to your input file
+output_file = 'coordinates/coordinates_out.txt'  # Replace with the desired output file path
 
 # Run the process
 process_file(input_file, output_file)

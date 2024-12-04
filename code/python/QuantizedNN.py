@@ -154,8 +154,8 @@ class QuantizedLinear(nn.Linear):
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
-        self.err_shifts = kwargs.pop('err_shifts', None)
-        self.err_shifts_ind = kwargs.pop('err_shifts_ind', None)
+        self.affected_rts = kwargs.pop('affected_rts', None)
+        self.misalign_faults = kwargs.pop('misalign_faults', None)
         self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
@@ -250,7 +250,7 @@ class QuantizedLinear(nn.Linear):
 
                     quantized_weight_init = quantized_weight
 
-                    err_shift = 0   # number of error shifts
+                    err_shift = 0   # number of misalignment faults
                     shift = 0       # number of shifts (used for reading)
                     for i in range(0, self.index_offset.shape[0]):      #
                         for j in range(0, self.index_offset.shape[1]):  #
@@ -282,15 +282,15 @@ class QuantizedLinear(nn.Linear):
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
 
-                    self.err_shifts[self.layerNR-1] += err_shift
+                    # self.err_shifts_abs[self.layerNR-1] += err_shift
                     ## !! ##
-                    # self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    self.misalign_faults[self.layerNR-1].append(err_shift)
                     ## !! ##
 
-                    # print(self.err_shifts_ind)
+                    # print(self.misalign_faults)
 
-                    # print("local err_shifts: " + str(err_shift) + "/" + str(shift))
-                    # print(self.err_shifts)
+                    # print("local err_shifts_abs: " + str(err_shift) + "/" + str(shift))
+                    # print(self.err_shifts_abs)
 
                     # # print(np.sum(self.index_offset))
                     # # print(self.index_offset)
@@ -421,7 +421,7 @@ class QuantizedLinear(nn.Linear):
                     self.bitflips[self.layerNR-1].append(differences)
 
                     ## relative # of bitflips
-                    ## remove/add back line 'self.err_shifts_ind[self.layerNR-1].append(err_shift)' ##
+                    ## remove/add back line 'self.misalign_faults[self.layerNR-1].append(err_shift)' ##
                     affected_racetracks = np.count_nonzero(self.index_offset)
                     # print(differences)
                     # print(affected_racetracks)
@@ -429,10 +429,12 @@ class QuantizedLinear(nn.Linear):
                     # print(len(self.index_offset)*len(self.index_offset[0]))
 
                     # only if running baseline benchmark with error rate 0.0
-                    if affected_racetracks == 0 :
-                        affected_racetracks = 1
+                    # if affected_racetracks == 0 :
+                    #     affected_racetracks = 1
 
-                    self.err_shifts_ind[self.layerNR-1].append(differences/affected_racetracks)
+                    self.affected_rts[self.layerNR-1].append(affected_racetracks)
+
+                    # self.misalign_faults[self.layerNR-1].append(differences/affected_racetracks)
                     ## !! ##
 
                 
@@ -524,8 +526,8 @@ class QuantizedConv2d(nn.Conv2d):
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
-        self.err_shifts = kwargs.pop('err_shifts', None)
-        self.err_shifts_ind = kwargs.pop('err_shifts_ind', None)
+        self.affected_rts = kwargs.pop('affected_rts', None)
+        self.misalign_faults = kwargs.pop('misalign_faults', None)
         self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
@@ -656,7 +658,7 @@ class QuantizedConv2d(nn.Conv2d):
 
                     quantized_weight_init = quantized_weight
 
-                    err_shift = 0   # number of error shifts
+                    err_shift = 0   # number of misalignment faults
                     shift = 0       # number of shifts (used for reading)
                     # iterate over all blocks (row-wise -> swap for loops for column-wise)
                     for i in range(0, self.index_offset.shape[0]):      # 
@@ -690,15 +692,15 @@ class QuantizedConv2d(nn.Conv2d):
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
 
-                    self.err_shifts[self.layerNR-1] += err_shift
+                    # self.err_shifts_abs[self.layerNR-1] += err_shift
                     ## !! ##
-                    # self.err_shifts_ind[self.layerNR-1].append(err_shift)
+                    self.misalign_faults[self.layerNR-1].append(err_shift)
                     ## !! ##
 
-                    # print(self.err_shifts_ind)
+                    # print(self.misalign_faults)
 
-                    # print("local err_shifts: " + str(err_shift) + "/" + str(shift))
-                    # print(self.err_shifts)
+                    # print("local err_shifts_abs: " + str(err_shift) + "/" + str(shift))
+                    # print(self.err_shifts_abs)
 
                     # # print(np.sum(self.index_offset))
                     # # print(self.index_offset)
@@ -831,7 +833,7 @@ class QuantizedConv2d(nn.Conv2d):
                     self.bitflips[self.layerNR-1].append(differences)
 
                     ## relative # of bitflips
-                    ## remove/add back line 'self.err_shifts_ind[self.layerNR-1].append(err_shift)' ##
+                    ## remove/add back line 'self.misalign_faults[self.layerNR-1].append(err_shift)' ##
                     affected_racetracks = np.count_nonzero(self.index_offset)
                     # print(differences)
                     # print(affected_racetracks)
@@ -839,10 +841,12 @@ class QuantizedConv2d(nn.Conv2d):
                     # print(len(self.index_offset)*len(self.index_offset[0]))
 
                     # only if running baseline benchmark with error rate 0.0
-                    if affected_racetracks == 0 :
-                        affected_racetracks = 1
+                    # if affected_racetracks == 0 :
+                    #     affected_racetracks = 1
 
-                    self.err_shifts_ind[self.layerNR-1].append(differences/affected_racetracks)
+                    self.affected_rts[self.layerNR-1].append(affected_racetracks)
+
+                    # self.misalign_faults[self.layerNR-1].append(differences/affected_racetracks)
                     ## !! ##
 
 

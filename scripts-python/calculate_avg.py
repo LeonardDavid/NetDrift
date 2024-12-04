@@ -1,4 +1,5 @@
 import sys
+import os
 import numpy as np
 
 def calculate_averages(filename):
@@ -21,12 +22,9 @@ def calculate_averages(filename):
 
   return averages
 
-# Example usage
-layer = sys.argv[1]
+script_dir = os.path.dirname(os.path.abspath(__file__))
+in_file = os.path.join(script_dir, "..", sys.argv[1])
 
-filename = "all_results_"+str(layer)+".txt"  # Replace with your actual filename
-averages = calculate_averages(filename)
+averages = calculate_averages(in_file)
 
-# Print the averages
-print(str(layer) + ": ")
 print(averages)

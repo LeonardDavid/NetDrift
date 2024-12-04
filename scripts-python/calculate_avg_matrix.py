@@ -2,6 +2,7 @@ import sys
 import ast
 import numpy as np
 import math
+import os
 
 def read_data_from_file(filename):
     with open(filename, 'r') as f:
@@ -21,11 +22,19 @@ def calculate_mean(data):
             means.append([])
     return means
 
-layer = sys.argv[1]
+script_dir = os.path.dirname(os.path.abspath(__file__))
+in_file = os.path.join(script_dir, "..", sys.argv[1])
 
-filename = "all_err_shifts_"+str(layer)+".txt"
-data = read_data_from_file(filename)
+data = read_data_from_file(in_file)
 means = calculate_mean(data)
 
 for mean in means:
     print(mean)
+
+# print("")
+
+if sys.argv[2] == "1":
+    # print("Total average per layer:")
+    print("=============================")
+    print([sum(mean) for mean in means])
+    print("=============================")

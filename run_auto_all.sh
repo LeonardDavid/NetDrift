@@ -1,4 +1,5 @@
 #!/bin/bash
+
 ##########################################################################################
 #   LDB
 #   
@@ -23,6 +24,14 @@
 #
 ##########################################################################################
 
+# Define colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+RESET='\033[0m' # Reset to default
 
 # Read the first array - PROTECT_LAYERS (assumes the array ends with "END1")
 PROTECT_LAYERS=()
@@ -102,13 +111,47 @@ declare -a all_results  # array of arrays to store all results
 timestamp=$(date +%Y-%m-%d_%H-%M-%S)
 results_dir="RTM_results/$NN_MODEL/$RT_SIZE/$timestamp"
 output_dir="$results_dir/outputs"
+
+## TODO -> flags whether to calculate some stuff or not
+all_bitflips_dir="$results_dir/all_bitflips"
+all_affected_rts_dir="$results_dir/all_affected_rts"
+all_misalign_faults_dir="$results_dir/all_misalign_faults"
+all_results_dir="$results_dir/all_results"
+
 if [ ! -d "$results_dir" ]; then
     mkdir -p "$results_dir"
+
     if [ ! -d "$output_dir" ]; then
         mkdir -p "$output_dir"
     else
         echo "Directory $output_dir already exists."
     fi
+
+## TODO -> flags whether to calculate some stuff or not
+    if [ ! -d "$all_bitflips_dir" ]; then
+        mkdir -p "$all_bitflips_dir"
+    else
+        echo "Directory $all_bitflips_dir already exists."
+    fi
+
+    if [ ! -d "$all_affected_rts_dir" ]; then
+        mkdir -p "$all_affected_rts_dir"
+    else
+        echo "Directory $all_affected_rts_dir already exists."
+    fi
+
+    if [ ! -d "$all_misalign_faults_dir" ]; then
+        mkdir -p "$all_misalign_faults_dir"
+    else
+        echo "Directory $all_misalign_faults_dir already exists."
+    fi
+
+    if [ ! -d "$all_results_dir" ]; then
+        mkdir -p "$all_results_dir"
+    else
+        echo "Directory $all_results_dir already exists."
+    fi
+
 else
     echo "Directory $results_dir already exists."
 fi
@@ -138,7 +181,6 @@ then
     # MODEL_PATH="models/model_fmnist5x5_9077.pt"
     # MODEL_PATH="models/model_fmnist7x7_8880.pt"
     TEST_BATCH_SIZE=10000
-    declare -a ERRSHIFTS=(0 0 0 0)
 
 elif [ "$NN_MODEL" = "CIFAR" ]
 then
@@ -147,7 +189,6 @@ then
     MODEL_PATH="models/model_cifar8582.pt"
     # MODEL_PATH="model_cifar8660.pt"
     TEST_BATCH_SIZE=10000
-    declare -a ERRSHIFTS=(0 0 0 0 0 0 0 0)
 
 elif [ "$NN_MODEL" = "RESNET" ]
 then 
@@ -155,10 +196,9 @@ then
     DATASET="IMAGENETTE"
     MODEL_PATH="models/model_resnet7694.pt"
     TEST_BATCH_SIZE=256
-    declare -a ERRSHIFTS=(0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
 
 else
-    echo -e "\n\033[0;31m$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET\033[0m\n"
+    echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET${RESET}\n"
     exit
 fi
 # echo -e "${PROTECT_LAYERS[@]}"
@@ -192,10 +232,31 @@ fi
 # declare -a PERRORS=(0.0001 0.0000455 0.00001 0.000001)
 
 
+## TODO -> flags whether to calculate some stuff or not
+# out_results_file_bb="$all_results_dir/all_results-$GLOBAL_BITFLIP_BUDGET-$LOCAL_BITFLIP_BUDGET.txt"
+out_results_file="$all_results_dir/all_results.txt"
+echo "" > "$out_results_file"
+> "$out_results_file"
+
+out_bitflips_file="$all_bitflips_dir/all_bitflips.txt"
+echo "" > "$out_bitflips_file"
+> "$out_bitflips_file"
+
+out_misalign_faults_file="$all_misalign_faults_dir/all_misalign_faults.txt"
+echo "" > "$out_misalign_faults_file"
+> "$out_misalign_faults_file"
+
+out_affected_rts_file="$all_affected_rts_dir/all_affected_rts.txt"
+echo "" > "$out_affected_rts_file"
+> "$out_affected_rts_file"
+
+declare -a all_results  # Declare an array of arrays to store all results
+
+
 ## Main loop
 for p in "${PERRORS[@]}"
 do
-    echo -e "\n\033[0;32mRunning $NN_MODEL for $LOOPS loops with error: $p\033[0m\n"
+    echo -e "\n${GREEN}Running $NN_MODEL for $LOOPS loops with error: $p${RESET}\n"
     
     declare -a list     # stores results
 
@@ -205,7 +266,7 @@ do
         do
             if [ "${PROTECT_LAYERS[$layer]}" == 0 ]; then
                 let "L=layer+1"
-                echo -e "\n\033[0;33mUNprotected Layer: $L\033[0m\n"
+                echo -e "\n${YELLOW}UNprotected Layer: $L${RESET}\n"
 
                 # PROTECT_LAYERS[$layer]=0
                 # echo "${PROTECT_LAYERS[@]}"
@@ -218,8 +279,18 @@ do
                 fi
                 output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
+                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
                 
+## TODO -> flags whether to calculate some stuff or not
+                affected_rts_line=$(tail -n 8 "$output_file" | head -n 1)
+                echo $affected_rts_line >> "$out_affected_rts_file"
+
+                misalign_faults_line=$(tail -n 6 "$output_file" | head -n 1)
+                echo $misalign_faults_line >> "$out_misalign_faults_file"
+
+                bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
+                echo $bitflips_line >> "$out_bitflips_file"
+
                 penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
                 # Remove square brackets and split values
                 values=$(echo "$penultimate_line" | tr -d '[]')
@@ -228,7 +299,7 @@ do
                 
                 # echo $list
                 
-                python plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
+                python scripts-python/plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
 
                 # PROTECT_LAYERS[$layer]=1
             fi
@@ -238,7 +309,7 @@ do
     else    # in the case of ALL, CUSTOM
 
         L=$LAYER_CONFIG
-        echo -e "\n\033[0;33mUNprotected Layer: $L\033[0m\n"
+        echo -e "\n${YELLOW}UNprotected Layer: $L${RESET}\n"
 
         # PROTECT_LAYERS[$layer]=0
         # echo "${PROTECT_LAYERS[@]}"
@@ -251,8 +322,18 @@ do
         fi
         output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --err_shifts ${ERRSHIFTS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
+        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
         
+## TODO -> flags whether to calculate some stuff or not
+        affected_rts_line=$(tail -n 8 "$output_file" | head -n 1)
+        echo $affected_rts_line >> "$out_affected_rts_file"
+
+        misalign_faults_line=$(tail -n 6 "$output_file" | head -n 1)
+        echo $misalign_faults_line >> "$out_misalign_faults_file"
+
+        bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
+        echo $bitflips_line >> "$out_bitflips_file"
+
         penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
         # Remove square brackets and split values
         values=$(echo "$penultimate_line" | tr -d '[]')
@@ -261,46 +342,59 @@ do
         
         # echo $list
         
-        python plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
+        python scripts-python/plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
         
         all_results+=("$list")
     fi
 
-    csv_file="$output_dir/table_$p.csv"
-
-    for value in "${list[@]}"
-    do
-        echo "${value[@]}" >> "$csv_file"
-    done
+    # csv_file="$output_dir/table_$p.csv"
+    # for value in "${list[@]}"
+    # do
+    #     echo "${value[@]}" >> "$csv_file"
+    # done
 
     unset list
     
 done
 
-# for list in "${all_results[@]}"
-# do
-#     echo $list
-# done
 
-# # Specify the output file
-# out_results="$output_dir/all_results.txt"
-# out_results_python="all_results.txt"
+## TODO -> flags whether to calculate some stuff or not
+# Loop through the outer array
+for outer_idx in "${!all_results[@]}"; do
+  # Print each inner array element with a space separator
+  echo "${all_results[$outer_idx]}" >> "$out_results_file"
+done
 
-# > "$out_results"
-# > "$out_results_python"
 
-# # Loop through the outer array
-# for outer_idx in "${!all_results[@]}"; do
-#   # Print each inner array element with a space separator
-#   echo "${all_results[$outer_idx]}" >> "$out_results"
-#   echo "${all_results[$outer_idx]}" >> "$out_results_python"
-# done
+echo ""
+echo "============================="
+echo -e "${CYAN}Average accuracies${RESET}"
+echo "(for each inference iteration across PERRORS misalignment fault rates):"
+echo ""
+python scripts-python/calculate_avg.py ${out_results_file}
+echo "============================="
 
-# echo ""
-# echo "Average accuracies:"
-# echo ""
 
-# python calculate_avg.py
+echo ""
+echo -e "${CYAN}Average bitflips${RESET}"
+echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
+echo ""
+python scripts-python/calculate_avg_matrix.py ${out_bitflips_file} 1
+
+
+echo ""
+echo -e "${CYAN}Average misalign_faults${RESET}"
+echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
+echo ""
+python scripts-python/calculate_avg_matrix.py ${out_misalign_faults_file} 1
+
+
+echo ""
+echo -e "${CYAN}Average affected_rts${RESET}"
+echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
+echo ""
+python scripts-python/calculate_avg_matrix.py ${out_affected_rts_file} 1
+
 
 ## Reset layer configuration in case of INDIV
 if [[ $LAYER_CONFIG =~ ^[0-9]+$ ]]; then

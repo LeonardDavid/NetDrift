@@ -27,8 +27,8 @@ def reformat_data(input_file, output_file):
         print(f"Error: {e}")
 
 # Input and output file names
-input_file = 'coordinates_hist_in.txt'   # Replace with your input file path
-output_file = 'coordinates_hist_out.txt' # Replace with your output file path
+input_file = 'coordinates_hist/coordinates_hist_in.txt'   # Replace with your input file path
+output_file = 'coordinates_hist/coordinates_hist_out.txt' # Replace with your output file path
 
 # Call the function to process the data
 reformat_data(input_file, output_file)

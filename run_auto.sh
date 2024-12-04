@@ -22,6 +22,15 @@
 #
 ##########################################################################################
 
+# Define colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+RESET='\033[0m' # Reset to default
+
 ## Fixed ending tokens for array arguments when calling main script
 END1="END1"
 END2="END2"
@@ -39,7 +48,7 @@ if [[ ! $PERRORS_TOKEN = ^[0-9]+$ ]]; then
     done
     PERRORS_TOKEN=$1
 else
-    echo -e "\n\033[0;31mMisalignment fault values not defined before PERRORS ending token OR missing PERRORS ending token before NN_MODEL argument!\033[0m\n"
+    echo -e "\n${RED}Misalignment fault values not defined before PERRORS ending token OR missing PERRORS ending token before NN_MODEL argument!${RESET}\n"
     exit 1
 fi
 
@@ -101,7 +110,7 @@ elif [ "$NN_MODEL" = "RESNET" ]
 then 
     layers_total=21
 else
-    echo -e "\n\033[0;31m$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET\033[0m\n"
+    echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET${RESET}\n"
     exit 1
 fi
 
@@ -123,12 +132,12 @@ if [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
                 if [ $l -gt 0 ] && [ $l -le $layers_total ]; then
                     PROTECT_LAYERS[$l-1]=0
                 else
-                    echo -e "\n\033[0;31mSpecified layer $l is outside of the bounds for $NN_MODEL = (0, $layers_total]. Note that layer numberring starts at 1 instead of 0.\033[0m\n"
+                    echo -e "\n${RED}Specified layer $l is outside of the bounds for $NN_MODEL = (0, $layers_total]. Note that layer numberring starts at 1 instead of 0.${RESET}\n"
                     exit 1
                 fi
             done
         else
-            echo -e "\n\033[0;31mSpecified number of layers is larger than the total number of layers in $NN_MODEL = $layers_total\033[0m\n"
+            echo -e "\n${RED}Specified number of layers is larger than the total number of layers in $NN_MODEL = $layers_total${RESET}\n"
             exit 1
         fi
     else
@@ -154,7 +163,7 @@ if [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
             # declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 1 0 0 1 0 0 0 0 1 1 0 0 0 1)
 
         else
-            echo -e "\n\033[0;31m$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET\033[0m\n"
+            echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET${RESET}\n"
             exit 1
         fi
     fi  

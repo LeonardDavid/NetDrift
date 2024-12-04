@@ -41,9 +41,10 @@ filenames = ["all_results_"+str(layer)+"-0.035-0.035.txt", "all_results_"+str(la
 # filenames = ["all_results_4-0.1-1.txt", "all_results_4-0.05-1.txt", "all_results_4-0.035-1.txt", "all_results_4-0.03-1.txt", "all_results_4-0.025-1.txt", "all_results_4-0.01-1.txt"]
 # filenames = ["all_results_4-0.035-0.035.txt", "all_results_4-0.03-0.025.txt", "all_results_4-0.03-0.01.txt", "all_results_4-0.01-0.025.txt", "all_results_4-0.01-0.01.txt"]
 
+directory = "all_results/"
 
 for filename in filenames:
-    data = np.loadtxt(filename, delimiter=',')
+    data = np.loadtxt(directory+filename, delimiter=',')
 
     averages = calculate_averages(data)
     maximums = calculate_max(data)

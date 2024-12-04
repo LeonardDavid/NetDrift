@@ -161,29 +161,29 @@ def main():
 
     model = None
     protectLayers = args.protect_layers
-    err_shifts = args.err_shifts
     rt_size = args.rt_size # 2, 4, ... 64
-    # print(args)
     global_bitflip_budget = args.global_bitflip_budget
     local_bitflip_budget = args.local_bitflip_budget
     
     print(protectLayers)
-    print(err_shifts)
 
     if args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts).to(device)
     else:
         if args.model == "VGG3":
             bitflips = [[] for _ in range(4)] 
-            err_shifts_ind = [[] for _ in range(4)] 
+            affected_rts = [[] for _ in range(4)] 
+            misalign_faults = [[] for _ in range(4)] 
         elif args.model == "VGG7":
             bitflips = [[] for _ in range(8)] 
-            err_shifts_ind = [[] for _ in range(8)] 
+            affected_rts = [[] for _ in range(8)] 
+            misalign_faults = [[] for _ in range(8)] 
         else:
             bitflips = []
-            err_shifts_ind = []
+            affected_rts = []
+            misalign_faults = []
 
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, err_shifts=err_shifts, err_shifts_ind=err_shifts_ind, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
     # print(model)
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
@@ -261,12 +261,13 @@ def main():
             all_accuracies.append(test_error(model, device, test_loader, perror))
             print("-----------------------------")
 
-        to_dump_data = dump_exp_data(model, args, all_accuracies)
-        store_exp_data(to_dump_path, to_dump_data)
-        print("-----------------------------")
-        print("total_err_shifts: ", model.err_shifts)
-        print("err_shifts_indiv: ")
-        print(model.err_shifts_ind)
+        # to_dump_data = dump_exp_data(model, args, all_accuracies)
+        # store_exp_data(to_dump_path, to_dump_data)
+        # print("-----------------------------")
+        print("affected_rts: ")
+        print(model.affected_rts)
+        print("misalign_faults: ")
+        print(model.misalign_faults)
         print("bitflips: ")
         print(model.bitflips)
         print("accuracies:")
