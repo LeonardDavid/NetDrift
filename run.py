@@ -175,7 +175,6 @@ def main():
     # print(calc_bitflips)
     # print(calc_misalign_faults)
     # print(calc_affected_rts)
-    
     print(protectLayers)
 
     if args.model == "ResNet":
