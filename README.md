@@ -77,9 +77,9 @@ $ bash ./run_auto.sh {arr_perrors} PERRORS {nn_model} {loops} {rt_size} {OPT: ar
 
 ### Example in a table TODO
 ```
-$ bash ./run_auto.sh 0.1 PERRORS FMNIST 10 64 CUSTOM 0
+$ bash ./run_auto.sh 0.1 PERRORS FMNIST 1 64 CUSTOM 0
 ```
-Executes at misalignment fault rates of 10%: FMNIST for 10 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
+Executes at misalignment fault rates of 10%: FMNIST for 1 iteration with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
 
 ```
 $ bash ./run_auto.sh 0.1 0.01 PERRORS CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
