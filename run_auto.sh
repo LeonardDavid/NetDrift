@@ -22,14 +22,8 @@
 #
 ##########################################################################################
 
-# Define colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-RESET='\033[0m' # Reset to default
+# source flags and colour definitions from conf file
+source flags.conf 
 
 ## Fixed ending tokens for array arguments when calling main script
 END1="END1"
@@ -87,16 +81,16 @@ LOCAL_BITFLIP_BUDGET=${1:-0.0}
 shift
 
 
-echo "PERRORS: ${PERRORS[@]}"
-echo "LAYERS: ${LAYERS[@]}"
+# echo "PERRORS: ${PERRORS[@]}"
+# echo "LAYERS: ${LAYERS[@]}"
 
-echo "$NN_MODEL"
-echo "$LOOPS"
-echo "$RT_SIZE"
-echo "$LAYER_CONFIG"
-echo "$GPU_ID"
-echo "$GLOBAL_BITFLIP_BUDGET"
-echo "$LOCAL_BITFLIP_BUDGET"
+# echo "$NN_MODEL"
+# echo "$LOOPS"
+# echo "$RT_SIZE"
+# echo "$LAYER_CONFIG"
+# echo "$GPU_ID"
+# echo "$GLOBAL_BITFLIP_BUDGET"
+# echo "$LOCAL_BITFLIP_BUDGET"
 
 
 ## Specify the number of total layers in NN model
@@ -202,7 +196,6 @@ fi
 if [[ $LAYER_CONFIG == *"ALL"* ]]; then
     # echo "Number of unprotected layers: ALL"
     PROTECT_LAYERS=($(for i in $(seq 1 $layers_total); do echo 0; done))
-    # echo "${PROTECT_LAYERS[@]}"
 
     bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
 
@@ -221,7 +214,6 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
     do
         ## Set unprotected layer
         PROTECT_LAYERS[$layer_id]=0
-        # echo "${PROTECT_LAYERS[@]}"
 
         ## Run the bash file
         #
@@ -245,6 +237,7 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
 
         ## Reset for next iteration
         PROTECT_LAYERS[$layer_id]=1
+
     done
 else
     echo "Invalid layer configuration $LAYER_CONFIG."

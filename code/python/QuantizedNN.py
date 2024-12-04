@@ -159,6 +159,12 @@ class QuantizedLinear(nn.Linear):
         self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
+
+        self.calc_results = kwargs.pop('calc_results', None)
+        self.calc_bitflips = kwargs.pop('calc_bitflips', None)
+        self.calc_misalign_faults = kwargs.pop('calc_misalign_faults', None)
+        self.calc_affected_rts = kwargs.pop('calc_affected_rts', None)
+        
         self.nr_run = 1
         self.q_weight = None
         super(QuantizedLinear, self).__init__(*args, **kwargs)
@@ -284,7 +290,8 @@ class QuantizedLinear(nn.Linear):
 
                     # self.err_shifts_abs[self.layerNR-1] += err_shift
                     ## !! ##
-                    self.misalign_faults[self.layerNR-1].append(err_shift)
+                    if self.calc_misalign_faults == "True":
+                        self.misalign_faults[self.layerNR-1].append(err_shift)
                     ## !! ##
 
                     # print(self.misalign_faults)
@@ -416,26 +423,20 @@ class QuantizedLinear(nn.Linear):
 
 
                 if self.protectLayers[self.layerNR-1]==0:
+
                     ## absolute # of bitflips
-                    differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
-                    self.bitflips[self.layerNR-1].append(differences)
+                    if self.calc_bitflips == "True":
+                        differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
+                        self.bitflips[self.layerNR-1].append(differences)
 
-                    ## relative # of bitflips
-                    ## remove/add back line 'self.misalign_faults[self.layerNR-1].append(err_shift)' ##
-                    affected_racetracks = np.count_nonzero(self.index_offset)
-                    # print(differences)
-                    # print(affected_racetracks)
-                    # print(differences/affected_racetracks)
-                    # print(len(self.index_offset)*len(self.index_offset[0]))
+                    if self.calc_affected_rts == "True":
+                        affected_racetracks = np.count_nonzero(self.index_offset)
 
-                    # only if running baseline benchmark with error rate 0.0
-                    # if affected_racetracks == 0 :
-                    #     affected_racetracks = 1
+                        # only if running baseline benchmark with error rate 0.0
+                        # if affected_racetracks == 0 :
+                        #     affected_racetracks = 1
 
-                    self.affected_rts[self.layerNR-1].append(affected_racetracks)
-
-                    # self.misalign_faults[self.layerNR-1].append(differences/affected_racetracks)
-                    ## !! ##
+                        self.affected_rts[self.layerNR-1].append(affected_racetracks)
 
                 
                 # if self.protectLayers[self.layerNR-1]==0:
@@ -531,6 +532,12 @@ class QuantizedConv2d(nn.Conv2d):
         self.bitflips = kwargs.pop('bitflips', None)
         self.global_bitflip_budget = kwargs.pop('global_bitflip_budget', None)
         self.local_bitflip_budget = kwargs.pop('local_bitflip_budget', None)
+
+        self.calc_results = kwargs.pop('calc_results', None)
+        self.calc_bitflips = kwargs.pop('calc_bitflips', None)
+        self.calc_misalign_faults = kwargs.pop('calc_misalign_faults', None)
+        self.calc_affected_rts = kwargs.pop('calc_affected_rts', None)
+
         self.nr_run = 1
         self.q_weight = None
         super(QuantizedConv2d, self).__init__(*args, **kwargs)
@@ -693,9 +700,9 @@ class QuantizedConv2d(nn.Conv2d):
                                         #     self.lost_vals_r[i][j] -= 1
 
                     # self.err_shifts_abs[self.layerNR-1] += err_shift
-                    ## !! ##
-                    self.misalign_faults[self.layerNR-1].append(err_shift)
-                    ## !! ##
+                    
+                    if self.calc_misalign_faults == "True":
+                        self.misalign_faults[self.layerNR-1].append(err_shift)
 
                     # print(self.misalign_faults)
 
@@ -828,26 +835,21 @@ class QuantizedConv2d(nn.Conv2d):
                 
 
                 if self.protectLayers[self.layerNR-1]==0:
-                    ## absolute # of bitflips
-                    differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
-                    self.bitflips[self.layerNR-1].append(differences)
 
-                    ## relative # of bitflips
-                    ## remove/add back line 'self.misalign_faults[self.layerNR-1].append(err_shift)' ##
-                    affected_racetracks = np.count_nonzero(self.index_offset)
-                    # print(differences)
-                    # print(affected_racetracks)
-                    # print(differences/affected_racetracks)
-                    # print(len(self.index_offset)*len(self.index_offset[0]))
+                    ## absolute # of bitflips                    
+                    if self.calc_bitflips == "True":
+                        differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
+                        self.bitflips[self.layerNR-1].append(differences)
 
-                    # only if running baseline benchmark with error rate 0.0
-                    # if affected_racetracks == 0 :
-                    #     affected_racetracks = 1
+                    if self.calc_affected_rts == "True":
+                        affected_racetracks = np.count_nonzero(self.index_offset)
 
-                    self.affected_rts[self.layerNR-1].append(affected_racetracks)
+                        # only if running baseline benchmark with error rate 0.0
+                        # if affected_racetracks == 0 :
+                        #     affected_racetracks = 1
 
-                    # self.misalign_faults[self.layerNR-1].append(differences/affected_racetracks)
-                    ## !! ##
+                        self.affected_rts[self.layerNR-1].append(affected_racetracks)
+
 
 
                 # if self.protectLayers[self.layerNR-1]==0:

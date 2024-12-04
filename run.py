@@ -165,6 +165,17 @@ def main():
     global_bitflip_budget = args.global_bitflip_budget
     local_bitflip_budget = args.local_bitflip_budget
     
+    # Flags
+    calc_results = args.calc_results
+    calc_bitflips = args.calc_bitflips
+    calc_misalign_faults = args.calc_misalign_faults
+    calc_affected_rts = args.calc_affected_rts
+
+    # print(calc_results)
+    # print(calc_bitflips)
+    # print(calc_misalign_faults)
+    # print(calc_affected_rts)
+    
     print(protectLayers)
 
     if args.model == "ResNet":
@@ -183,7 +194,7 @@ def main():
             affected_rts = []
             misalign_faults = []
 
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
     # print(model)
 
     optimizer = Clippy(model.parameters(), lr=args.lr)

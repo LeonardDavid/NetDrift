@@ -24,14 +24,8 @@
 #
 ##########################################################################################
 
-# Define colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-RESET='\033[0m' # Reset to default
+# source flags and colour definitions from conf file
+source flags.conf 
 
 # Read the first array - PROTECT_LAYERS (assumes the array ends with "END1")
 PROTECT_LAYERS=()
@@ -48,13 +42,6 @@ while [[ $1 != "END2" ]]; do
     shift
 done
 shift # Skip the "END2" token
-
-# # Print arrays
-# echo "PROTECT_LAYERS: ${PROTECT_LAYERS[@]}"
-# echo "PERRORS: ${PERRORS[@]}"
-
-# # Remaining arguments
-# echo "Other arguments: $@"
 
 # required args
 NN_MODEL="$1"   # FMNIST    CIFAR   RESNET
@@ -96,27 +83,25 @@ STEP_SIZE=25
 ## variables & arrays
 declare -a all_results  # array of arrays to store all results
 
-# ## required args
-# NN_MODEL="$1"           # FMNIST    CIFAR   RESNET
-# LOOPS=$2
-# RT_SIZE=$3
-# LAYER_CONFIG=$4
-# GPU_ID=$5
-# ## optional args
-# GLOBAL_BITFLIP_BUDGET=${6:-0.0}
-# LOCAL_BITFLIP_BUDGET=${7:-0.0}
-
 
 ## create output directory
 timestamp=$(date +%Y-%m-%d_%H-%M-%S)
 results_dir="RTM_results/$NN_MODEL/$RT_SIZE/$timestamp"
 output_dir="$results_dir/outputs"
 
-## TODO -> flags whether to calculate some stuff or not
-all_bitflips_dir="$results_dir/all_bitflips"
-all_affected_rts_dir="$results_dir/all_affected_rts"
-all_misalign_faults_dir="$results_dir/all_misalign_faults"
-all_results_dir="$results_dir/all_results"
+if [ "$CALC_RESULTS" == "True" ]; then
+    all_results_dir="$results_dir/all_results"
+fi
+if [ "$CALC_BITFLIPS" == "True" ]; then
+    all_bitflips_dir="$results_dir/all_bitflips"
+fi
+if [ "$CALC_MISALIGN_FAULTS" == "True" ]; then
+    all_misalign_faults_dir="$results_dir/all_misalign_faults"
+fi
+if [ "$CALC_AFFECTED_RTS" == "True" ]; then
+    all_affected_rts_dir="$results_dir/all_affected_rts"
+fi
+
 
 if [ ! -d "$results_dir" ]; then
     mkdir -p "$results_dir"
@@ -127,30 +112,31 @@ if [ ! -d "$results_dir" ]; then
         echo "Directory $output_dir already exists."
     fi
 
-## TODO -> flags whether to calculate some stuff or not
-    if [ ! -d "$all_bitflips_dir" ]; then
-        mkdir -p "$all_bitflips_dir"
-    else
-        echo "Directory $all_bitflips_dir already exists."
-    fi
 
-    if [ ! -d "$all_affected_rts_dir" ]; then
-        mkdir -p "$all_affected_rts_dir"
-    else
-        echo "Directory $all_affected_rts_dir already exists."
-    fi
-
-    if [ ! -d "$all_misalign_faults_dir" ]; then
-        mkdir -p "$all_misalign_faults_dir"
-    else
-        echo "Directory $all_misalign_faults_dir already exists."
-    fi
-
-    if [ ! -d "$all_results_dir" ]; then
+    if [ "$CALC_RESULTS" == "True" ] && [ ! -d "$all_results_dir" ]; then
         mkdir -p "$all_results_dir"
     else
-        echo "Directory $all_results_dir already exists."
+        echo "Flag CALC_RESULTS set to False."
     fi
+
+    if [ "$CALC_BITFLIPS" == "True" ] && [ ! -d "$all_bitflips_dir" ]; then
+        mkdir -p "$all_bitflips_dir"
+    else
+        echo "Flag CALC_BITFLIPS set to False."
+    fi
+
+    if [ "$CALC_MISALIGN_FAULTS" == "True" ] && [ ! -d "$all_misalign_faults_dir" ]; then
+        mkdir -p "$all_misalign_faults_dir"
+    else
+        echo "Flag CALC_MISALIGN_FAULTS set to False."
+    fi
+
+    if [ "$CALC_AFFECTED_RTS" == "True" ] && [ ! -d "$all_affected_rts_dir" ]; then
+        mkdir -p "$all_affected_rts_dir"
+    else
+        echo "Flag CALC_AFFECTED_RTS set to False."
+    fi
+
 
 else
     echo "Directory $results_dir already exists."
@@ -231,24 +217,27 @@ fi
 # declare -a PERRORS=(0.1 0.01 0.001 0.0001)
 # declare -a PERRORS=(0.0001 0.0000455 0.00001 0.000001)
 
-
-## TODO -> flags whether to calculate some stuff or not
-# out_results_file_bb="$all_results_dir/all_results-$GLOBAL_BITFLIP_BUDGET-$LOCAL_BITFLIP_BUDGET.txt"
-out_results_file="$all_results_dir/all_results.txt"
-echo "" > "$out_results_file"
-> "$out_results_file"
-
-out_bitflips_file="$all_bitflips_dir/all_bitflips.txt"
-echo "" > "$out_bitflips_file"
-> "$out_bitflips_file"
-
-out_misalign_faults_file="$all_misalign_faults_dir/all_misalign_faults.txt"
-echo "" > "$out_misalign_faults_file"
-> "$out_misalign_faults_file"
-
-out_affected_rts_file="$all_affected_rts_dir/all_affected_rts.txt"
-echo "" > "$out_affected_rts_file"
-> "$out_affected_rts_file"
+if [ "$CALC_RESULTS" == "True" ]; then
+    # out_results_file_bb="$all_results_dir/all_results-$GLOBAL_BITFLIP_BUDGET-$LOCAL_BITFLIP_BUDGET.txt"
+    out_results_file="$all_results_dir/all_results.txt"
+    echo "" > "$out_results_file"
+    > "$out_results_file"
+fi
+if [ "$CALC_BITFLIPS" == "True" ]; then
+    out_bitflips_file="$all_bitflips_dir/all_bitflips.txt"
+    echo "" > "$out_bitflips_file"
+    > "$out_bitflips_file"
+fi
+if [ "$CALC_MISALIGN_FAULTS" == "True" ]; then
+    out_misalign_faults_file="$all_misalign_faults_dir/all_misalign_faults.txt"
+    echo "" > "$out_misalign_faults_file"
+    > "$out_misalign_faults_file"
+fi
+if [ "$CALC_AFFECTED_RTS" == "True" ]; then
+    out_affected_rts_file="$all_affected_rts_dir/all_affected_rts.txt"
+    echo "" > "$out_affected_rts_file"
+    > "$out_affected_rts_file"
+fi
 
 declare -a all_results  # Declare an array of arrays to store all results
 
@@ -279,21 +268,25 @@ do
                 fi
                 output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
-                
-## TODO -> flags whether to calculate some stuff or not
-                affected_rts_line=$(tail -n 8 "$output_file" | head -n 1)
-                echo $affected_rts_line >> "$out_affected_rts_file"
+                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
 
-                misalign_faults_line=$(tail -n 6 "$output_file" | head -n 1)
-                echo $misalign_faults_line >> "$out_misalign_faults_file"
-
-                bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
-                echo $bitflips_line >> "$out_bitflips_file"
-
-                penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
-                # Remove square brackets and split values
-                values=$(echo "$penultimate_line" | tr -d '[]')
+                if [ "$CALC_RESULTS" == "True" ]; then
+                    penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
+                    # Remove square brackets and split values
+                    values=$(echo "$penultimate_line" | tr -d '[]')
+                fi
+                if [ "$CALC_BITFLIPS" == "True" ]; then
+                    bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
+                    echo $bitflips_line >> "$out_bitflips_file"
+                fi
+                if [ "$CALC_MISALIGN_FAULTS" == "True" ]; then
+                    misalign_faults_line=$(tail -n 6 "$output_file" | head -n 1)
+                    echo $misalign_faults_line >> "$out_misalign_faults_file"
+                fi
+                if [ "$CALC_AFFECTED_RTS" == "True" ]; then
+                    affected_rts_line=$(tail -n 8 "$output_file" | head -n 1)
+                    echo $affected_rts_line >> "$out_affected_rts_file"
+                fi
 
                 list+=("$values")
                 
@@ -322,21 +315,25 @@ do
         fi
         output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET | tee "$output_file"
+        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET  --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
         
-## TODO -> flags whether to calculate some stuff or not
-        affected_rts_line=$(tail -n 8 "$output_file" | head -n 1)
-        echo $affected_rts_line >> "$out_affected_rts_file"
-
-        misalign_faults_line=$(tail -n 6 "$output_file" | head -n 1)
-        echo $misalign_faults_line >> "$out_misalign_faults_file"
-
-        bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
-        echo $bitflips_line >> "$out_bitflips_file"
-
-        penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
-        # Remove square brackets and split values
-        values=$(echo "$penultimate_line" | tr -d '[]')
+        if [ "$CALC_RESULTS" == "True" ]; then
+            penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
+            # Remove square brackets and split values
+            values=$(echo "$penultimate_line" | tr -d '[]')
+        fi
+        if [ "$CALC_BITFLIPS" == "True" ]; then
+            bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
+            echo $bitflips_line >> "$out_bitflips_file"
+        fi
+        if [ "$CALC_MISALIGN_FAULTS" == "True" ]; then
+            misalign_faults_line=$(tail -n 6 "$output_file" | head -n 1)
+            echo $misalign_faults_line >> "$out_misalign_faults_file"
+        fi
+        if [ "$CALC_AFFECTED_RTS" == "True" ]; then
+            affected_rts_line=$(tail -n 8 "$output_file" | head -n 1)
+            echo $affected_rts_line >> "$out_affected_rts_file"
+        fi
 
         list+=("$values")
         
@@ -358,42 +355,42 @@ do
 done
 
 
-## TODO -> flags whether to calculate some stuff or not
-# Loop through the outer array
-for outer_idx in "${!all_results[@]}"; do
-  # Print each inner array element with a space separator
-  echo "${all_results[$outer_idx]}" >> "$out_results_file"
-done
+if [ "$CALC_RESULTS" == "True" ]; then
+    # Loop through the outer array
+    for outer_idx in "${!all_results[@]}"; do
+    # Print each inner array element with a space separator
+    echo "${all_results[$outer_idx]}" >> "$out_results_file"
+    done
 
-
-echo ""
-echo "============================="
-echo -e "${CYAN}Average accuracies${RESET}"
-echo "(for each inference iteration across PERRORS misalignment fault rates):"
-echo ""
-python scripts-python/calculate_avg.py ${out_results_file}
-echo "============================="
-
-
-echo ""
-echo -e "${CYAN}Average bitflips${RESET}"
-echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
-echo ""
-python scripts-python/calculate_avg_matrix.py ${out_bitflips_file} 1
-
-
-echo ""
-echo -e "${CYAN}Average misalign_faults${RESET}"
-echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
-echo ""
-python scripts-python/calculate_avg_matrix.py ${out_misalign_faults_file} 1
-
-
-echo ""
-echo -e "${CYAN}Average affected_rts${RESET}"
-echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
-echo ""
-python scripts-python/calculate_avg_matrix.py ${out_affected_rts_file} 1
+    echo ""
+    echo "============================="
+    echo -e "${CYAN}Average accuracies${RESET}"
+    echo "(for each inference iteration across PERRORS misalignment fault rates):"
+    echo ""
+    python scripts-python/calculate_avg.py ${out_results_file}
+    echo "============================="
+fi
+if [ "$CALC_BITFLIPS" == "True" ]; then
+    echo ""
+    echo -e "${CYAN}Average bitflips${RESET}"
+    echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
+    echo ""
+    python scripts-python/calculate_avg_matrix.py ${out_bitflips_file} 1
+fi
+if [ "$CALC_MISALIGN_FAULTS" == "True" ]; then
+    echo ""
+    echo -e "${CYAN}Average misalign_faults${RESET}"
+    echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
+    echo ""
+    python scripts-python/calculate_avg_matrix.py ${out_misalign_faults_file} 1
+fi
+if [ "$CALC_AFFECTED_RTS" == "True" ]; then
+    echo ""
+    echo -e "${CYAN}Average affected_rts${RESET}"
+    echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
+    echo ""
+    python scripts-python/calculate_avg_matrix.py ${out_affected_rts_file} 1
+fi
 
 
 ## Reset layer configuration in case of INDIV

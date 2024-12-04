@@ -148,6 +148,12 @@ def parse_args(parser):
     parser.add_argument('--rt_size', type=int, default=64, help='specify the racetrack size of the RTM nanowire')
     parser.add_argument('--global_bitflip_budget', type=float, default=0.0, help='specify the global budget (i.e. 0.1 -> 10%) for flipping bits')
     parser.add_argument('--local_bitflip_budget', type=float, default=0.0, help='specify the local budget (i.e. 0.1 -> 10%) for flipping bits')
+    ## NetDrift Flags
+    parser.add_argument('--calc_results', type=str, default=True, help='Flag to calculate results (for each inference iteration across PERRORS misalignment fault rates)')
+    parser.add_argument('--calc_bitflips', type=str, default=True, help='Flag to calculate bitflips (per layer for each inference iteration across PERRORS misalignment fault rates)')
+    parser.add_argument('--calc_misalign_faults', type=str, default=True, help='Flag to calculate misalign_faults (per layer for each inference iteration across PERRORS misalignment fault rates)')
+    parser.add_argument('--calc_affected_rts', type=str, default=True, help='Flag to calculate affected_rts (per layer for each inference iteration across PERRORS misalignment fault rates)')
+    
 
 def dump_exp_data(model, args, all_accuracies):
     to_dump = dict()
