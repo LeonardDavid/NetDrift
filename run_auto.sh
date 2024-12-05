@@ -48,6 +48,8 @@ fi
 
 ## Required args
 shift # skip token necessary
+KERNEL_SIZE=$1
+shift
 NN_MODEL="$1"
 shift
 LOOPS=$1
@@ -84,6 +86,7 @@ shift
 # echo "PERRORS: ${PERRORS[@]}"
 # echo "LAYERS: ${LAYERS[@]}"
 
+# echo "$KERNEL_SIZE"
 # echo "$NN_MODEL"
 # echo "$LOOPS"
 # echo "$RT_SIZE"
@@ -197,12 +200,12 @@ if [[ $LAYER_CONFIG == *"ALL"* ]]; then
     # echo "Number of unprotected layers: ALL"
     PROTECT_LAYERS=($(for i in $(seq 1 $layers_total); do echo 0; done))
 
-    bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+    bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
 
 elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
     # echo "Number of unprotected layers: CUSTOM"
 
-    bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+    bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
 
 elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
     # echo "Number of unprotected layers: INDIVIDUAL"
@@ -233,7 +236,7 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
         ###  $10: global_bitflip_budget: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
         ###  $11: local_bitflip_budget: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
         
-        bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $NN_MODEL $LOOPS $RT_SIZE $layer_id $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $layer_id $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
 
         ## Reset for next iteration
         PROTECT_LAYERS[$layer_id]=1

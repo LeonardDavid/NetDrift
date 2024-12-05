@@ -44,6 +44,8 @@ done
 shift # Skip the "END2" token
 
 # required args
+KERNEL_SIZE=$1
+shift
 NN_MODEL="$1"   # FMNIST    CIFAR   RESNET
 shift
 LOOPS=$1
@@ -55,6 +57,7 @@ shift
 GPU_ID=$1
 shift
 
+# echo "$KERNEL_SIZE"
 # echo "$NN_MODEL"
 # echo "$LOOPS"
 # echo "$RT_SIZE"
@@ -163,26 +166,47 @@ if [ "$NN_MODEL" = "FMNIST" ]
 then
     MODEL="VGG3"
     DATASET="FMNIST"
-    MODEL_PATH="models/model_fmnist9108.pt"
-    # MODEL_PATH="models/model_fmnist5x5_9077.pt"
-    # MODEL_PATH="models/model_fmnist7x7_8880.pt"
     TEST_BATCH_SIZE=10000
+    if [ "$KERNEL_SIZE" = 3 ]
+    then
+        MODEL_PATH="models/model_fmnist9108.pt"
+    elif [ "$KERNEL_SIZE" = 5 ]
+    then
+        MODEL_PATH="models/model_fmnist5x5_9077.pt"
+    elif [ "$KERNEL_SIZE" = 7 ]
+    then
+        MODEL_PATH="models/model_fmnist7x7_8880.pt"
+    else
+        echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL."
+        exit 1
+    fi
 
 elif [ "$NN_MODEL" = "CIFAR" ]
 then
     MODEL="VGG7"
     DATASET="CIFAR10"
-    MODEL_PATH="models/model_cifar8582.pt"
-    # MODEL_PATH="model_cifar8660.pt"
     TEST_BATCH_SIZE=10000
+    if [ "$KERNEL_SIZE" = 3 ]
+    then
+        MODEL_PATH="models/model_cifar8582.pt"
+        # MODEL_PATH="model_cifar8660.pt"
+    else
+        echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL."
+        exit 1
+    fi
 
 elif [ "$NN_MODEL" = "RESNET" ]
 then 
     MODEL="ResNet"
     DATASET="IMAGENETTE"
-    MODEL_PATH="models/model_resnet7694.pt"
     TEST_BATCH_SIZE=256
-
+    if [ "$KERNEL_SIZE" = 3 ]
+    then
+        MODEL_PATH="models/model_resnet7694.pt"
+    else
+        echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL."
+        exit 1
+    fi
 else
     echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET${RESET}\n"
     exit
@@ -239,8 +263,8 @@ if [ "$CALC_AFFECTED_RTS" == "True" ]; then
     > "$out_affected_rts_file"
 fi
 
-declare -a all_results  # Declare an array of arrays to store all results
 
+declare -a all_results  # Declare an array of arrays to store all results
 
 ## Main loop
 for p in "${PERRORS[@]}"
@@ -268,7 +292,7 @@ do
                 fi
                 output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
+                python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
 
                 if [ "$CALC_RESULTS" == "True" ]; then
                     penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
@@ -315,7 +339,7 @@ do
         fi
         output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET  --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
+        python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET  --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
         
         if [ "$CALC_RESULTS" == "True" ]; then
             penultimate_line=$(tail -n 2 "$output_file" | head -n 1)

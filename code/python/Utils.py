@@ -142,6 +142,7 @@ def parse_args(parser):
     
     ## NetDrift RTM parameters
     parser.add_argument('--test_rtm', type=int, default=None, help='Whether to test the model using RTM misalignment faults')
+    parser.add_argument('--kernel_size', type=int, default=None, help='Size of convolutional kernel in convolutional layers')
     parser.add_argument('--perror', type=float, default=0.0, help='Error rate with which to test the model')
     parser.add_argument('--loops', type=int, default=1, help='Amount of times the inference model is run (offsets accumulate!)')
     parser.add_argument('--protect_layers', nargs='+', type=int, default=None, help='choose which layers to protect in array e.g.: 0 1 1 1 -> first layer unprotected')

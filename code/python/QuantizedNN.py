@@ -6,6 +6,8 @@ from torch.autograd import Function
 import numpy as np
 import random
 
+import os
+
 import metrics.ratio_blocks_ecc_ind_off.ratio_blocks_ecc_ind_off as ratio_blocks_io
 import metrics.count_len.count_len_endlen as endlen
 import metrics.binomial_revert.binomial_revert as bin_revert
@@ -23,7 +25,6 @@ class Quantize(Function):
         return grad_input, None
 
 quantize = Quantize.apply
-
 
 class ErrorModel(Function):
     @staticmethod
@@ -98,23 +99,56 @@ class QuantizedActivation(nn.Module):
             output = apply_error_model(output, index_offset_default, rt_size_default, self.error_model)
         return output
 
+
+
+# read flags.conf
+def read_flags(file_path):
+    flags = {}
+    with open(file_path, 'r') as file:
+        for line in file:
+            # Ignore comments and blank lines
+            if line.startswith("#") or not line.strip():
+                continue
+            
+            # Parse key-value pairs
+            key, value = line.strip().split("=", 1)
+            flags[key] = value
+    return flags
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+flags_file = os.path.join(script_dir, "../..", "flags.conf")
+
+flags = read_flags(flags_file)
+
+# Check only Execution flags
+exec_keys = {key: value for key, value in flags.items() if key.startswith("EXEC_")}
+true_count = sum(1 for value in exec_keys.values() if value == "True")
+
+# Assert whether there is at most one Execution flag turned on at the same time
+assert true_count <= 1, f"\n\033[0;31mMore than one Execution flag in flags.conf has the value 'True': {exec_keys}\n\033[0m"
+print("\033[0;32mAssertion passed: At most one Execution flag in flags.conf has the value 'True'.\n\033[0m")
+
+
 ### read from file parameters ### 
 
 ratio_blocks = "ecc"
 # ratio_blocks = "ecc_ind_off"
 
+#FOLDER_ECC
 # folder_ecc = "q_out_A"
 # folder_ecc = "q_out_B"
 # folder_ecc = "q_out_C"
 # folder_ecc = "q_out_D"
 folder_ecc = "q_out_E"
 
-nr_flip = 1
-edge_flag = False 
-bitlen = "endlen1"
+#DEPRECATE:
+nr_flip = 1 #//
+edge_flag = False #//
+bitlen = "endlen1" #//
 # bitlen = "endlen1_col"
-n_l_r = 1
+n_l_r = 1 #//
 
+# FOLDER_ENDLEN
 folder = "q_out_fmnist3x3_endlen"
 # folder = "q_out_fmnist3x3_endlen_col"
 # folder = "q_out_fmnist3x3_endlen_0.01_1"
@@ -151,6 +185,7 @@ class QuantizedLinear(nn.Linear):
         if self.extract_absfreq is not None:
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
+        # self.kernel_size = kwargs.pop('kernel_size', False)
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
@@ -256,19 +291,18 @@ class QuantizedLinear(nn.Linear):
 
                     quantized_weight_init = quantized_weight
 
-                    err_shift = 0   # number of misalignment faults
+                    misalign_fault = 0   # number of misalignment faults
                     shift = 0       # number of shifts (used for reading)
-                    for i in range(0, self.index_offset.shape[0]):      #
-                        for j in range(0, self.index_offset.shape[1]):  #
-                            # self.index_offset[i][j] = -4
+                    for i in range(0, self.index_offset.shape[0]):
+                        for j in range(0, self.index_offset.shape[1]):
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
-                            for k in range(1, self.rt_size):         #
+                            for k in range(1, self.rt_size):
                                 shift += 1
                                 if(random.uniform(0.0, 1.0) < self.error_model.p):
-                                    err_shift += 1
-                                    # 50/50 random possibility (uniform distribution) of right or left err_shift
+                                    misalign_fault += 1
+                                    # 50/50 random possibility (uniform distribution) of right or left misalign_fault
                                     if(random.choice([-1,1]) == 1):
-                                        # right err_shift
+                                        # right misalign_fault
                                         if (self.index_offset[i][j] < self.rt_size/2): # +1
                                             self.index_offset[i][j] += 1
                                         # self.index_offset[i][j] += 1
@@ -278,7 +312,7 @@ class QuantizedLinear(nn.Linear):
                                         # if (self.lost_vals_l[i][j] > 0):
                                         #     self.lost_vals_l[i][j] -= 1
                                     else:
-                                        # left err_shift
+                                        # left misalign_fault
                                         if (self.index_offset[i][j] < self.rt_size/2): # -1
                                             self.index_offset[i][j] -= 1
                                         # self.index_offset[i][j] -= 1
@@ -288,17 +322,15 @@ class QuantizedLinear(nn.Linear):
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
 
-                    # self.err_shifts_abs[self.layerNR-1] += err_shift
-                    ## !! ##
+                    # self.misalign_faults_abs[self.layerNR-1] += misalign_fault
+                    # print("local misalign_faults_abs: " + str(misalign_fault) + "/" + str(shift))
+                    # print(self.misalign_faults_abs)
+
                     if self.calc_misalign_faults == "True":
-                        self.misalign_faults[self.layerNR-1].append(err_shift)
-                    ## !! ##
+                        self.misalign_faults[self.layerNR-1].append(misalign_fault)
+                        # print(self.misalign_faults)
 
-                    # print(self.misalign_faults)
-
-                    # print("local err_shifts_abs: " + str(err_shift) + "/" + str(shift))
-                    # print(self.err_shifts_abs)
-
+#
                     # # print(np.sum(self.index_offset))
                     # # print(self.index_offset)
                     # if self.nr_run==1:
@@ -319,21 +351,22 @@ class QuantizedLinear(nn.Linear):
 
                     # before = np.sum(abs(self.index_offset))
 
-                    # # for i in range(0, self.index_offset.shape[0]):      # 
-                    # #     for j in range(0, self.index_offset.shape[1]):  # 
-                    # #         if abs(self.index_offset[i][j]) >= 2:
-                    # #             self.index_offset[i][j] = 0
+                    if flags.get("EXEC_BIN_REVERT_MID") == "True":
+                        # 80/20 from middle (total elements)
+                        # if self.nr_run == 1:
+                        self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                    
+                    if flags.get("EXEC_BIN_REVERT_EDGES") == "True":
+                        # 80/20 from edges (total bins)
+                        # if self.nr_run == 1:
+                        self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
 
-                    # # if self.nr_run == 1:
-                    # # # 80/20 from middle (total elements)
-                    # # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
-                    # # # 80/20 from edges (total bins)
-                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
 
                     # after = np.sum(abs(self.index_offset))
                     # diff = before-after
                     # print(f"{diff} / {diff/before*100}")
 
+#
                     # if self.nr_run in (1, 10):
                     #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
                     #         for i in range(0, self.index_offset.shape[0]):      # 
@@ -341,8 +374,6 @@ class QuantizedLinear(nn.Linear):
                     #                 f.write(str(self.index_offset[i][j]) + " ")
                     #             f.write("\n")
 
-                    ### BINOMIAL REVERT ###
-
 
                     ### ODD2EVEN ###
 
@@ -352,12 +383,17 @@ class QuantizedLinear(nn.Linear):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                    if flags.get("EXEC_ODD2EVEN_DEC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] % 2 != 0:
+                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
-                    ### ODD2EVEN ###
+                    if flags.get("EXEC_ODD2EVEN_INC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] % 2 != 0:
+                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
 
 
                     ### EVEN2ODD ###
@@ -368,53 +404,47 @@ class QuantizedLinear(nn.Linear):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
-                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                    if flags.get("EXEC_EVEN2ODD_DEC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
+                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
-                    # print(self.index_offset)
-
-                    ### EVEN2ODD ###
-
+                    if flags.get("EXEC_EVEN2ODD_INC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
+                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                    
 
                     ### AT RUNTIME ###
 
                     ### #RATIO_BLOCKS_IND_OFF# ###
-                    # print(quantized_weight)
-                    ## global_bitflip_budget    <=> lower ##
-                    ## local_bitflip_budget     <=> upper ##
-                    # if self.nr_run == 1:
-                    #     ratio_blocks_io.apply_ratio_ind_off(array_type="1D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                    #     print("ratio_blocks flip according to index_offset applied")
-                    #     self.q_weight = quantized_weight
-                    # else:
-                    #     quantized_weight = self.q_weight
-                    # print(quantized_weight)
-                    ### #RATIO_BLOCKS_IND_OFF# ###
+                    if flags.get("EXEC_RATIO_BLOCKS_IND_OFF") == "True":
+                        if self.nr_run == 1:
+                            ratio_blocks_io.apply_ratio_ind_off(array_type="1D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                            print("ratio_blocks flip according to index_offset applied")
+                            self.q_weight = quantized_weight
+                        else:
+                            quantized_weight = self.q_weight
 
 
                     ### #ENDLEN# ###
-                    # # print(quantized_weight)
-                    # endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
-                    # print("endlen flip applied")
-                    # # print(quantized_weight)
-                    ### #ENDLEN# ###     
-                    
+                    if flags.get("EXEC_ENDLEN") == "True":
+                        endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+                        print("endlen flip applied")
                                
+
                     ### #ENDLEN IND_OFF# ###
-                    # # print(quantized_weight)
-                    # if self.nr_run == 1:
-                    #     endlen.apply_1flip_ind_off(array_type="1D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                    #     print("endlen flip according to index_offset applied")
-                    #     self.q_weight = quantized_weight
-                    # else:
-                    #     quantized_weight = self.q_weight
-                    # # print(quantized_weight)
-                    ### #ENDLEN IND_OFF# ###
+                    if flags.get("EXEC_ENDLEN_IND_OFF") == "True":
+                        if self.nr_run == 1:
+                            endlen.apply_1flip_ind_off(array_type="1D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                            print("endlen flip according to index_offset applied")
+                            self.q_weight = quantized_weight
+                        else:
+                            quantized_weight = self.q_weight
 
                     ### AT RUNTIME ###
-
 
                     self.nr_run += 1
 
@@ -524,6 +554,7 @@ class QuantizedConv2d(nn.Conv2d):
         if self.extract_absfreq is not None:
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
+        # self.kernel_size = kwargs.pop('kernel_size', False)
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
@@ -665,21 +696,20 @@ class QuantizedConv2d(nn.Conv2d):
 
                     quantized_weight_init = quantized_weight
 
-                    err_shift = 0   # number of misalignment faults
+                    misalign_fault = 0   # number of misalignment faults
                     shift = 0       # number of shifts (used for reading)
                     # iterate over all blocks (row-wise -> swap for loops for column-wise)
-                    for i in range(0, self.index_offset.shape[0]):      # 
-                        for j in range(0, self.index_offset.shape[1]):  # 
-                            # self.index_offset[i][j] = -4
+                    for i in range(0, self.index_offset.shape[0]):
+                        for j in range(0, self.index_offset.shape[1]):
                             # now, read every value from the block
                             # start at 1 because AP is on the first element at the beginning, no shift is needed for reading the first value
-                            for k in range(1, self.rt_size):         # 
+                            for k in range(1, self.rt_size):
                                 shift += 1
                                 if(random.uniform(0.0, 1.0) < self.error_model.p):
-                                    err_shift += 1
-                                    # 50/50 random possibility of right or left err_shift
+                                    misalign_fault += 1
+                                    # 50/50 random possibility of right or left misalign_fault
                                     if(random.choice([-1,1]) == 1):
-                                        # right err_shift
+                                        # right misalign_fault
                                         if (self.index_offset[i][j] < self.rt_size/2): # +1
                                             self.index_offset[i][j] += 1
                                         # self.index_offset[i][j] += 1
@@ -689,7 +719,7 @@ class QuantizedConv2d(nn.Conv2d):
                                         # if (self.lost_vals_l[i][j] > 0):
                                         #     self.lost_vals_l[i][j] -= 1
                                     else:
-                                        # left err_shift
+                                        # left misalign_fault
                                         if (self.index_offset[i][j] < self.rt_size/2): # -1
                                             self.index_offset[i][j] -= 1
                                         # self.index_offset[i][j] -= 1
@@ -699,15 +729,14 @@ class QuantizedConv2d(nn.Conv2d):
                                         # if(self.lost_vals_r[i][j] > 0):
                                         #     self.lost_vals_r[i][j] -= 1
 
-                    # self.err_shifts_abs[self.layerNR-1] += err_shift
-                    
+                    # self.misalign_faults_abs[self.layerNR-1] += misalign_fault
+                    # print("local misalign_faults_abs: " + str(misalign_fault) + "/" + str(shift))
+                    # print(self.misalign_faults_abs)
+
                     if self.calc_misalign_faults == "True":
-                        self.misalign_faults[self.layerNR-1].append(err_shift)
+                        self.misalign_faults[self.layerNR-1].append(misalign_fault)
+                        # print(self.misalign_faults)
 
-                    # print(self.misalign_faults)
-
-                    # print("local err_shifts_abs: " + str(err_shift) + "/" + str(shift))
-                    # print(self.err_shifts_abs)
 
                     # # print(np.sum(self.index_offset))
                     # # print(self.index_offset)
@@ -729,21 +758,21 @@ class QuantizedConv2d(nn.Conv2d):
 
                     # before = np.sum(abs(self.index_offset))
 
-                    # # for i in range(0, self.index_offset.shape[0]):      # 
-                    # #     for j in range(0, self.index_offset.shape[1]):  # 
-                    # #         if abs(self.index_offset[i][j]) <= 2:
-                    # #             self.index_offset[i][j] = 0
+                    if flags.get("EXEC_BIN_REVERT_MID") == "True":
+                        # 80/20 from middle (total elements)
+                        # if self.nr_run == 1:
+                        self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
                     
-                    # # if self.nr_run == 1:
-                    # # # 80/20 from middle (total elements)
-                    # # self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
-                    # # # 80/20 from edges (total bins)
-                    # self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+                    if flags.get("EXEC_BIN_REVERT_EDGES") == "True":
+                        # 80/20 from edges (total bins)
+                        # if self.nr_run == 1:
+                        self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+
 
                     # after = np.sum(abs(self.index_offset))
-                    # # print(f"{before} - {after}")
                     # diff = before-after
                     # print(f"{diff} / {diff/before*100}")
+
 
                     # if self.nr_run in (1, 10):
                     #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
@@ -752,8 +781,6 @@ class QuantizedConv2d(nn.Conv2d):
                     #                 f.write(str(self.index_offset[i][j]) + " ")
                     #             f.write("\n")
 
-                    ### BINOMIAL REVERT ###
-
 
                     ### ODD2EVEN ###
 
@@ -762,15 +789,17 @@ class QuantizedConv2d(nn.Conv2d):
                     # -> we leave it out for now, just for theoretical testing
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
+                    if flags.get("EXEC_ODD2EVEN_DEC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] % 2 != 0:
+                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] % 2 != 0:
-                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
-
-                    # print(self.index_offset)
-
-                    ### ODD2EVEN ###
+                    if flags.get("EXEC_ODD2EVEN_INC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] % 2 != 0:
+                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
 
 
                     ### EVEN2ODD ###
@@ -780,51 +809,46 @@ class QuantizedConv2d(nn.Conv2d):
                     # -> we leave it out for now, just for theoretical testing
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
+                    
+                    if flags.get("EXEC_EVEN2ODD_DEC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
+                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
 
-                    # for i in range(0, self.index_offset.shape[0]):      # 
-                    #     for j in range(0, self.index_offset.shape[1]):  # 
-                    #         if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
-                    #             self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
-
-                    # print(self.index_offset)
-
-                    ### EVEN2ODD ###
+                    if flags.get("EXEC_EVEN2ODD_INC") == "True":
+                        for i in range(0, self.index_offset.shape[0]):      
+                            for j in range(0, self.index_offset.shape[1]):  
+                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
+                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
 
 
                     ### AT RUNTIME ###
 
                     ### #RATIO_BLOCKS_IND_OFF# ###
-                    # print(quantized_weight)
-                    ## global_bitflip_budget    <=> lower ##
-                    ## local_bitflip_budget     <=> upper ##
-                    # if self.nr_run == 1:
-                    #     ratio_blocks_io.apply_ratio_ind_off(array_type="3D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                    #     print("ratio_blocks flip according to index_offset applied")
-                    #     self.q_weight = quantized_weight
-                    # else:
-                    #     quantized_weight = self.q_weight
-                    # print(quantized_weight)
-                    ### #RATIO_BLOCKS_IND_OFF# ###
+                    if flags.get("EXEC_RATIO_BLOCKS_IND_OFF") == "True":
+                        if self.nr_run == 1:
+                            ratio_blocks_io.apply_ratio_ind_off(array_type="3D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                            print("ratio_blocks flip according to index_offset applied")
+                            self.q_weight = quantized_weight
+                        else:
+                            quantized_weight = self.q_weight
 
 
                     ### #ENDLEN# ###
-                    # # print(quantized_weight)
-                    # endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
-                    # print("endlen flip applied")
-                    # # print(quantized_weight)
-                    ### #ENDLEN# ###
+                    if flags.get("EXEC_ENDLEN") == "True":
+                        endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+                        print("endlen flip applied")
 
                     
                     ### #ENDLEN IND_OFF# ###
-                    # # print(quantized_weight)
-                    # if self.nr_run == 1:
-                    #     endlen.apply_1flip_ind_off(array_type="3D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
-                    #     print("endlen flip according to index_offset applied")
-                    #     self.q_weight = quantized_weight
-                    # else:
-                    #     quantized_weight = self.q_weight
-                    # # print(quantized_weight)
-                    ### #ENDLEN IND_OFF# ###
+                    if flags.get("EXEC_ENDLEN_IND_OFF") == "True":
+                        if self.nr_run == 1:
+                            endlen.apply_1flip_ind_off(array_type="3D", rt_size=self.rt_size, data=quantized_weight, index_offset=self.index_offset, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget)
+                            print("endlen flip according to index_offset applied")
+                            self.q_weight = quantized_weight
+                        else:
+                            quantized_weight = self.q_weight
 
                     ### AT RUNTIME ###
 

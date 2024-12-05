@@ -12,11 +12,6 @@ sys.path.append("code/python/")
 from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 
-import wandb
-
-
-
-
 def binary_hingeloss(yhat, y, b=128):
     #print("yhat", yhat.mean(dim=1))
     #print("y", y)
@@ -77,25 +72,15 @@ def test(model, device, test_loader, pr=1):
     correct = 0
     criterion = nn.CrossEntropyLoss(reduction="sum")
     with torch.no_grad():
-        # print(test_loader)
         for data, target in test_loader:
-            # print(data)
-            # print(target)
-            # print("+")
             data, target = data.to(device), target.to(device)
-            # print("+")
-            # print(data)
-            # print(target)
-            # print(test_loader)
             output = model(data)
-            # print("-")
             if model.name == "ResNet18":
                 test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
             else:
                 test_loss += criterion(output, target).item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
-            # print("-")
 
     test_loss /= len(test_loader.dataset)
 
@@ -115,9 +100,6 @@ def test_error(model, device, test_loader, perror):
     model.eval()
     set_layer_mode(model, "eval") # propagate informaton about eval to all layers
        
-    # print("start")
-    # print(model.printIndexOffsets())
-
     if model.name == "ResNet18":
         for block in model.children():
             if isinstance(block, (QuantizedActivation, QuantizedConv2d)):
@@ -149,16 +131,11 @@ def test_error(model, device, test_loader, perror):
     print("Error rate: ", perror)
     
     accuracy = test(model, device, test_loader)
-            
-    # print("end")
-    # print(model.printIndexOffsets())
 
     # reset error models
     for layer in model.children():
         if isinstance(layer, (QuantizedActivation, QuantizedLinear, QuantizedConv2d)):
             if layer.error_model is not None:
                 layer.error_model.resetErrorModel()
-
-    # print(str(perror) + " " + str(accuracy))
 
     return accuracy

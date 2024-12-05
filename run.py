@@ -17,31 +17,13 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 sys.path.append("code/python/")
 
-from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data, get_model_and_datasets, print_tikz_data, cuda_profiler
+from Utils import set_layer_mode, parse_args, get_model_and_datasets, print_tikz_data, cuda_profiler
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 from Models import VGG3, VGG7, ResNet, BasicBlock
 from Traintest_Utils import train, test, test_error, Clippy, Criterion, binary_hingeloss
 
 import binarizePM1
 import netdrift
-
-# import wandb
-
-# # start a new wandb run to track this script
-# wandb.init(
-#     # set the wandb project where this run will be logged
-#     project="RTM-BNN",
-
-#     # track hyperparameters and run metadata
-#     config={
-#     "architecture": "VGG3", # model.name,
-#     "dataset": "FMNIST", # model.dataset,
-#     "loops": 1,
-#     "rt_size": 64,
-#     "config": "CUSTOM",
-#     "error_rate": 0.1, # perror,
-#     }
-# )
 
 
 class Quantization1:
@@ -129,7 +111,6 @@ def main():
         mac_mapping = torch.from_numpy(np.load(args.mapping)).float().cuda()
         # print("mapping", mac_mapping)
     if args.mapping_distr is not None:
-        # print("hello")
         # print("Mapping distr.: ", args.mapping_distr)
         sorted_mac_mapping_idx = torch.from_numpy(np.argsort(np.load(args.mapping_distr))).float().cuda().contiguous()
         mac_mapping_distr = torch.from_numpy(np.load(args.mapping_distr)).float().cuda().contiguous()
@@ -159,7 +140,12 @@ def main():
         # print("Mapping from distr: ", mac_mapping_distr)
         # print("Mapping from distr idx: ", sorted_mac_mapping_idx)
 
+
+    ### NetDrift
+
+    # Arguments
     model = None
+    kernel_size = args.kernel_size
     protectLayers = args.protect_layers
     rt_size = args.rt_size # 2, 4, ... 64
     global_bitflip_budget = args.global_bitflip_budget
@@ -171,14 +157,11 @@ def main():
     calc_misalign_faults = args.calc_misalign_faults
     calc_affected_rts = args.calc_affected_rts
 
-    # print(calc_results)
-    # print(calc_bitflips)
-    # print(calc_misalign_faults)
-    # print(calc_affected_rts)
-    print(protectLayers)
+    # print(protectLayers)
 
     if args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts).to(device)
+
     else:
         if args.model == "VGG3":
             bitflips = [[] for _ in range(4)] 
@@ -193,8 +176,8 @@ def main():
             affected_rts = []
             misalign_faults = []
 
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
-    # print(model)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
 
@@ -210,9 +193,9 @@ def main():
 
     # print(model.name)
     # create experiment folder and file
-    to_dump_path = create_exp_folder(model)
-    if not os.path.exists(to_dump_path):
-        open(to_dump_path, 'w').close()
+    # to_dump_path = create_exp_folder(model)
+    # if not os.path.exists(to_dump_path):
+    #     open(to_dump_path, 'w').close()
 
     if args.train_model is not None:
         time_elapsed = 0
@@ -220,16 +203,16 @@ def main():
         for epoch in range(1, args.epochs + 1):
             torch.cuda.synchronize()
             since = int(round(time.time()*1000))
-            #
+            
             train(args, model, device, train_loader, optimizer, epoch)
-            #
+            
             time_elapsed += int(round(time.time()*1000)) - since
             print('Epoch training time elapsed: {}ms'.format(int(round(time.time()*1000)) - since))
             # test(model, device, train_loader)
             since = int(round(time.time()*1000))
-            #
+            
             test(model, device, test_loader)
-            #
+            
             time_elapsed += int(round(time.time()*1000)) - since
             print('Test time elapsed: {}ms'.format(int(round(time.time()*1000)) - since))
             # test(model, device, train_loader)
@@ -266,7 +249,6 @@ def main():
         loops = args.loops
         
         for i in range(0, loops):
-            # print("\n")
             print("Inference #" + str(i))
             all_accuracies.append(test_error(model, device, test_loader, perror))
             print("-----------------------------")
@@ -284,7 +266,6 @@ def main():
         print(all_accuracies)
         print("-----------------------------")
 
-        # wandb.log({"acc": all_accuracies})
 
     if args.test_error_distr is not None:
         # perform repeated experiments and return in tikz format
@@ -308,11 +289,7 @@ def main():
 
     # Resnet absfreq extraction is different from VGG
     if args.extract_absfreq_resnet is not None:
-        ####
         # abs freq test resnet
-        # print(model)
-        # print("--")
-        # print((model.layer1[1]))
         # iterate through resnet structure to access conv and linear layer data
         for block in model.children():
             # print("BLOCK---", block)
