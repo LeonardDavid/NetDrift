@@ -65,12 +65,13 @@ in `flags.conf`:
 
 ### Launch
 ```
-$ bash ./run_auto.sh {arr_perrors} PERRORS {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+$ bash ./run_auto.sh {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 ### Arguments:
 - `{arr_perrors}`: Array of misalignment fault rates to be tested (floats)
 - **`PERRORS`: REQUIRED: array termination token**
+- `kernel_size`: size of convolutional kernel in convolutional layers
 - `nn_model`: FMNIST, CIFAR, RESNET
 - `loops`: amount of loops (0, 100]
 - `rt_size`: racetrack/nanowire size (typically 64)
