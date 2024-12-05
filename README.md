@@ -56,12 +56,44 @@ $ pip install scipy
 $ bash ./code/cuda/install_kernels.sh
 ```
 
-### Set Flags
-in `flags.conf`:
+### Set Flags in `flags.conf`:
+
+Calculation Flags:
 - `CALC_RESULTS: True/False` (**Leave True**. _Calculate Results_ for each inference iteration across PERRORS misalignment fault rates)
 - `CALC_BITFLIPS: True/False` (_Calculate Bitflips_ per layer for each inference iteration across PERRORS misalignment fault rates)
 - `CALC_MISALIGN_FAULTS: True/False` (_Calculate Misalignment Faults_ per layer for each inference iteration across PERRORS misalignment fault rates)
 - `CALC_AFFECTED_RTS: True/False` (_Calculate Affected Racetracks_ per layer for each inference iteration across PERRORS misalignment fault rates)
+
+NN Model Parameters:
+- `kernel_size: 3/5/7` (size of convolutional kernel in convolutional layers, depending on the available trained models)
+
+Execution Flags (**At most 1 Execution flag in `flags.conf` can the value `True`**):
+- `EXEC_BIN_REVERT_MID: True/False`
+- `EXEC_BIN_REVERT_EDGES: True/False`
+- `EXEC_ODD2EVEN_DEC: True/False`
+- `EXEC_ODD2EVEN_INC: True/False`
+- `EXEC_EVEN2ODD_DEC: True/False`
+- `EXEC_EVEN2ODD_INC: True/False`
+- `EXEC_RATIO_BLOCKS_IND_OFF: True/False`
+- `EXEC_ENDLEN: True/False`
+- `EXEC_ENDLEN_IND_OFF: True/False`
+
+Read Parameters:
+- `FOLDER_ECC = `
+- `FOLDER_ENDLEN = `
+Read Flags:
+- `READ_ECC: True/False`
+- `READ_ECC_IND_OFF: True/False`
+- `READ_ENDLEN: True/False`
+
+Print Parameters:
+- `PRNT_IND_OFF_AFTER_NRUN = `
+- `PRNT_QWEIGHTS_AFTER_NRUN = `
+Print Flags:
+- `PRNT_IND_OFF_BEFORE: True/False`
+- `PRNT_IND_OFF_AFTER: True/False`
+- `PRNT_QWEIGHTS_BEFORE: True/False`
+- `PRNT_QWEIGHTS_AFTER: True/False`
 
 ### Launch
 ```
