@@ -56,6 +56,13 @@ $ pip install scipy
 $ bash ./code/cuda/install_kernels.sh
 ```
 
+### Set Flags
+in `flags.conf`:
+- `CALC_RESULTS: True/False` (**Leave True**. _Calculate Results_ for each inference iteration across PERRORS misalignment fault rates)
+- `CALC_BITFLIPS: True/False` (_Calculate Bitflips_ per layer for each inference iteration across PERRORS misalignment fault rates)
+- `CALC_MISALIGN_FAULTS: True/False` (_Calculate Misalignment Faults_ per layer for each inference iteration across PERRORS misalignment fault rates)
+- `CALC_AFFECTED_RTS: True/False` (_Calculate Affected Racetracks_ per layer for each inference iteration across PERRORS misalignment fault rates)
+
 ### Launch
 ```
 $ bash ./run_auto.sh {arr_perrors} PERRORS {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
@@ -63,7 +70,7 @@ $ bash ./run_auto.sh {arr_perrors} PERRORS {nn_model} {loops} {rt_size} {OPT: ar
 
 ### Arguments:
 - `{arr_perrors}`: Array of misalignment fault rates to be tested (floats)
-- **`PERRORS`**: REQUIRED: array termination token
+- **`PERRORS`: REQUIRED: array termination token**
 - `nn_model`: FMNIST, CIFAR, RESNET
 - `loops`: amount of loops (0, 100]
 - `rt_size`: racetrack/nanowire size (typically 64)
