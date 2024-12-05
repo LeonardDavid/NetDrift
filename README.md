@@ -79,16 +79,18 @@ Execution Flags (**At most 1 Execution flag in `flags.conf` can the value `True`
 - `EXEC_ENDLEN_IND_OFF: True/False`
 
 Read Parameters:
-- `FOLDER_ECC = `
-- `FOLDER_ENDLEN = `
+- `FOLDER_ECC = ""`
+- `FOLDER_ENDLEN = ""`
+
 Read Flags:
 - `READ_ECC: True/False`
 - `READ_ECC_IND_OFF: True/False`
 - `READ_ENDLEN: True/False`
 
 Print Parameters:
-- `PRNT_IND_OFF_AFTER_NRUN = `
-- `PRNT_QWEIGHTS_AFTER_NRUN = `
+- `PRNT_IND_OFF_AFTER_NRUN = 1`
+- `PRNT_QWEIGHTS_AFTER_NRUN = 1`
+
 Print Flags:
 - `PRNT_IND_OFF_BEFORE: True/False`
 - `PRNT_IND_OFF_AFTER: True/False`
