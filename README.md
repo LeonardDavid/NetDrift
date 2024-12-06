@@ -67,35 +67,36 @@ Calculation Flags:
 NN Model Parameters:
 - `kernel_size: 3/5/7` (size of convolutional kernel in convolutional layers, depending on the available trained models)
 
-Execution Flags (**At most 1 Execution flag in `flags.conf` can the value `True`**):
-- `EXEC_BIN_REVERT_MID: True/False`
-- `EXEC_BIN_REVERT_EDGES: True/False`
+Execution Flags (**At most 1 EXEC flag in `flags.conf` can the value `True`**):
+- `EXEC_RATIO_BLOCKS_IND_OFF: True/False`
+- `EXEC_ENDLEN: True/False`
+- `EXEC_ENDLEN_IND_OFF: True/False`
 - `EXEC_ODD2EVEN_DEC: True/False`
 - `EXEC_ODD2EVEN_INC: True/False`
 - `EXEC_EVEN2ODD_DEC: True/False`
 - `EXEC_EVEN2ODD_INC: True/False`
-- `EXEC_RATIO_BLOCKS_IND_OFF: True/False`
-- `EXEC_ENDLEN: True/False`
-- `EXEC_ENDLEN_IND_OFF: True/False`
+- `EXEC_BIN_REVERT_MID: True/False`
+- `EXEC_BIN_REVERT_EDGES: True/False`
 
-Read Parameters:
-- `FOLDER_ECC = ""`
-- `FOLDER_ENDLEN = ""`
+Read Flags & Parameters (**At most 1 READ flag in `flags.conf` can the value `True`**):
+- `READ_ECC: True/False` (whether to read qweights for each unprotected layer from FOLDER_ECC)
+- `FOLDER_ECC = string` (select subfolder to read)
+- `READ_ECC_IND_OFF: True/False` (whether to read qweights for each unprotected layer from FOLDER_ECC_IND_OFF)
+- `FOLDER_ECC_IND_OFF = string` (select subfolder to read)
+- `READ_ENDLEN: True/False` (whether to read qweights for each unprotected layer from FOLDER_ENDLEN)
+- `FOLDER_ENDLEN: string` (select subfolder to read)
+- `TYPE_ENDLEN: string` (select which endlen type termination to read)
 
-Read Flags:
-- `READ_ECC: True/False`
-- `READ_ECC_IND_OFF: True/False`
-- `READ_ENDLEN: True/False`
+Print Flags & Parameter:
+- `PRNT_LAYER_NAME: True/False` (print unprotected layer types and numbers)
+- `PRNT_INPUT_FILE_INFO: True/False` (print qweights input file info for each unprotected layer if any READ flag set to True)
+- `PRNT_QWEIGHTS_BEFORE: True/False` (print to file entire weight tensor of each unprotected layer _before_ any modifications)
+- `PRNT_QWEIGHTS_AFTER: True/False` (print to file entire weight tensor of each unprotected layer _after_ modifications)
+- `PRNT_QWEIGHTS_AFTER_NRUN = 1` (select after how many runs to print if PRNT_QWEIGHTS_AFTER flag is set to True)
+- `PRNT_IND_OFF_BEFORE: True/False` (print to file index offsets of each unprotected layer _before_ any modifications)
+- `PRNT_IND_OFF_AFTER: True/False` (print to file index offsets of each unprotected layer _after_ modifications)
+- `PRNT_IND_OFF_AFTER_NRUN = 1` (select after how many runs to print if PRNT_IND_OFF_AFTER flag is set to True)
 
-Print Parameters:
-- `PRNT_IND_OFF_AFTER_NRUN = 1`
-- `PRNT_QWEIGHTS_AFTER_NRUN = 1`
-
-Print Flags:
-- `PRNT_IND_OFF_BEFORE: True/False`
-- `PRNT_IND_OFF_AFTER: True/False`
-- `PRNT_QWEIGHTS_BEFORE: True/False`
-- `PRNT_QWEIGHTS_AFTER: True/False`
 
 ### Launch
 ```
