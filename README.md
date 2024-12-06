@@ -134,35 +134,5 @@ $ bash ./run_auto.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
 ```
 Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
 
-# TODO
-First, the custom NN needs to be implemented in a separate class in the file located at \texttt{code/python/Model.py}.\ak{Does this mean, taking the new model? We don't need to implement it from scratch.. The model is implemented by someone.}
-The adjacent file \texttt{QuantizedNN.py} contains the \texttt{QuantizedConv2D()} and \texttt{QuantizedLinear()} classes which are written specifically for Quantized and Binarized Neural Networks. \ak{We haven't specified these files and modules before..}
-These can be used as such in the custom NN, or used as a reference to create a specific convolutional Layer.
-It should be noted that the following parameters are required for RTM simulation:\ak{where are these parameters used? In which module?}
-\begin{itemize}
-    % \item \texttt{error_model}: name of the error model used
-    \item \texttt{test\_rtm}: flag whether to use RTM simulation (\texttt{True} by default);
-    \item \texttt{block\_size}: size of the nanowire (usually $n\le64$, see Section~\ref{subsec:mapping_weights});
-    \item \texttt{index\_offset}: array which stores the offsets of each block, depending on how many times a fault occurs in that block (initialised with zeros);
-    \item \texttt{protectLayers}: array that specifies which layers are protected against faults (1) and which are not (0). The size of this array is equal to the number of tested layers;
-    \item \texttt{err\_shifts}: array in which the amount of faults in each tested layer is summed up;
-\end{itemize}
+## Others
 
-The simulation of the RTM faults described in Section~\ref{subsec:error_injection} begins after the line of code that reads \texttt{if(self.error\_model is not None)}.\ak{Maybe this is too low level.}
-The simulator stores an offset value for each block of the mapped weight tensor in the \texttt{index\_offset} array. 
-This value is increased or decreased when a misalignment fault occurs that over-shifts or under-shifts the block, respectively.
-
-A different mapping can be achieved by switching the order of the first two \texttt{for}-loops, which changes the implementation from row-wise to column-wise.
-Alternatively, a custom mapping can be designed as needed.
-
-Finally, we apply the error model to the weight tensor with the following code:
-\begin{verbatim}
-weight = apply_error_model(weight, self.index_offset,
-                           self.block_size, self.error_model)
-\end{verbatim}
-
-The error injection model is usable out of the box and should not require any modifications. \ak{Great! Was waiting to see this ;)}
-% However, if needed, it can be extended in \texttt{code/cuda/binarizationPM1FI}, or used as reference.
-However, if needed, it can be extended (or used as reference) under \texttt{code/cuda/binarizationPM1FI}.
-
-All the necessary initializations, i.e., variables, NN models, and functions to start the inference iteration are located in \texttt{run.py}, while helpful scripts can be written to automate multiple iterations, such as the ones used for running our experiments (\texttt{run\_auto.sh} and \texttt{run\_auto\_all.sh}).\ak{This seems not specific to custom NNs but to BNNs as well. Maybe some details from here can be moved to the high level desciption, e.g., in the openning para of Sec 3.}
