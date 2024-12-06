@@ -67,6 +67,7 @@ def read_data(filepath):
 index_offset_default = np.zeros([2,2])
 rt_size_default = 1.0
 
+
 def check_quantization(quantize_train, quantize_eval, training):
     condition = ((quantize_train == True) and (training == True)) or ((quantize_eval == True) and (training == False)) or ((quantize_train == True) and (quantize_eval == True))
 
@@ -100,7 +101,6 @@ class QuantizedActivation(nn.Module):
         return output
 
 
-
 # read flags.conf
 def read_flags(file_path):
     flags = {}
@@ -120,51 +120,20 @@ flags_file = os.path.join(script_dir, "../..", "flags.conf")
 
 flags = read_flags(flags_file)
 
-# Check only Execution flags
+# Check only Execution/Read flags
 exec_keys = {key: value for key, value in flags.items() if key.startswith("EXEC_")}
-true_count = sum(1 for value in exec_keys.values() if value == "True")
+read_keys = {key: value for key, value in flags.items() if key.startswith("READ_")}
+true_count_exec = sum(1 for value in exec_keys.values() if value == "True")
+true_count_read = sum(1 for value in read_keys.values() if value == "True")
 
 # Assert whether there is at most one Execution flag turned on at the same time
-assert true_count <= 1, f"\n\033[0;31mMore than one Execution flag in flags.conf has the value 'True': {exec_keys}\n\033[0m"
+assert true_count_exec <= 1, f"\n\033[0;31mMore than one Execution flag in flags.conf has the value 'True': {exec_keys}\n\033[0m"
 print("\033[0;32mAssertion passed: At most one Execution flag in flags.conf has the value 'True'.\n\033[0m")
 
+# Assert whether there is at most one Execution flag turned on at the same time
+assert true_count_read <= 1, f"\n\033[0;31mMore than one Read flag in flags.conf has the value 'True': {read_keys}\n\033[0m"
+print("\033[0;32mAssertion passed: At most one Read flag in flags.conf has the value 'True'.\n\033[0m")
 
-### read from file parameters ### 
-
-ratio_blocks = "ecc"
-# ratio_blocks = "ecc_ind_off"
-
-#FOLDER_ECC
-# folder_ecc = "q_out_A"
-# folder_ecc = "q_out_B"
-# folder_ecc = "q_out_C"
-# folder_ecc = "q_out_D"
-folder_ecc = "q_out_E"
-
-#DEPRECATE:
-nr_flip = 1 #//
-edge_flag = False #//
-bitlen = "endlen1" #//
-# bitlen = "endlen1_col"
-n_l_r = 1 #//
-
-# FOLDER_ENDLEN
-folder = "q_out_fmnist3x3_endlen"
-# folder = "q_out_fmnist3x3_endlen_col"
-# folder = "q_out_fmnist3x3_endlen_0.01_1"
-# folder = "q_out_fmnist3x3_endlen_0.01_0.1"
-# folder = "q_out_fmnist3x3_endlen_0.03_1"
-# folder = "q_out_fmnist3x3_endlen_0.03_0.1"
-
-# folder = "q_out_fmnist5x5_endlen"
-# folder = "q_out_fmnist5x5_endlen_col"
-
-# folder = "q_out_fmnist7x7_endlen"
-# folder = "q_out_fmnist7x7_endlen_col"
-
-# folder = "q_out_cifar3x3_endlen"
-
-###
 
 class QuantizedLinear(nn.Linear):
     def __init__(self, *args, **kwargs):
@@ -214,80 +183,68 @@ class QuantizedLinear(nn.Linear):
             else:
                 quantized_weight = self.weight
 
-            # if self.protectLayers[self.layerNR-1]==0:
-            #     list_of_integers = quantized_weight.cpu().tolist()
 
-            #     try:
-            #         with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
-            #             f.write("[")
+            ### PRNT ###
 
-            #             # Write the list of integers to the file
-            #             for integer in list_of_integers[:-1]:
-            #                 f.write(str(integer) + ',\n')
+            if flags.get("PRNT_QWEIGHTS_BEFORE") == "True" and self.protectLayers[self.layerNR-1]==0:
+                list_of_integers = quantized_weight.cpu().tolist()
 
-            #             f.write(str(list_of_integers[-1]) + "]")
-            #     except FileExistsError:
-            #         print("orig already exists")
+                try:
+                    with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
+                        f.write("[")
+                        # Write the list of integers to the file
+                        for integer in list_of_integers[:-1]:
+                            f.write(str(integer) + ',\n')
+                        f.write(str(list_of_integers[-1]) + "]")
+
+                except FileExistsError:
+                    print("Orig qweights file already exists")
+
+
+            ### RTM_SIM ###
 
             if self.error_model is not None:
                 if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
-                    print("Linear", self.layerNR)
+                    if flags.get("PRNT_LAYER_NAME") == "True":
+                        print("Linear", self.layerNR)
                     # print(self.nr_run)
 
-                    ### read weight tensor from file
+                    ### Read input qweight tensor from file ###
 
-                    # # file = "qweights/64/qweights_0.1/qweights_append_3.txt"
-                    # # file = "qweights/64/qweights_0.1/qweights_shift1_4.txt"
-
-                    # # file = "q/qweights_shift1_4_mod.txt"
-                    # # file = "q/qweights_append_4_lce_mod.txt"
+                    file = "Info: no input qweight tensor has been read"
+                    data_tensor = np.array([])
 
                     # file = "metrics/count_len/q_in/qweights_orig_"+str(self.layerNR)+".txt"
                     # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     
+                    ### else cases are handled by assertion outside of the class, after reading flags out
 
-                    ### RATIO_BLOCKS_ECC ###
+                    if flags.get("READ_ECC") == "True":
+                        file = "metrics/ratio_blocks_ecc/" + flags.get("FOLDER_ECC") + "/qweights_ratio_ecc"+str(self.layerNR)+".txt"
+                        
+                        data_tensor = read_data(file).cuda()
+                        quantized_weight = quantize(data_tensor, self.quantization)
 
-                    # if "ecc" in ratio_blocks:
-                    #     file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
-                    # elif "ecc_ind_off" in ratio_blocks:
-                    #     file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
-                    # else:
-                    #     file = "none"
-                    # print(file)
-                    # data_tensor = read_data(file).cuda()
+                    if flags.get("READ_ECC_IND_OFF") == "True":
+                        file = "metrics/ratio_blocks_ecc_ind_off/" + flags.get("FOLDER_ECC_IND_OFF") + "/qweights_ratio_ecc"+str(self.layerNR)+".txt"
 
-                    # # print(data_tensor)
-                    # print(data_tensor.shape) 
-                    # # L3: [2048, 3136]
-                    # # L4: [10, 2048]
+                        data_tensor = read_data(file).cuda()
+                        quantized_weight = quantize(data_tensor, self.quantization)
 
-                    # quantized_weight = quantize(data_tensor, self.quantization)
+                    if flags.get("READ_ENDLEN") == "True":
+                        file = "metrics/count_len/" + flags.get("FOLDER_ENDLEN") + "/qweights_orig_"+str(self.layerNR)+"_1flip_" + flags.get("TYPE_ENDLEN") + ".txt"
 
-                    ### RATIO_BLOCKS_ECC ###
+                        data_tensor = read_data(file).cuda()
+                        quantized_weight = quantize(data_tensor, self.quantization)
 
+                    if flags.get("PRNT_INPUT_FILE_INFO") == "True":
+                        print(file)
+                        print(data_tensor.shape) 
+                        # L3: [2048, 3136]
+                        # L4: [10, 2048]
 
-                    ### ENDLEN ###
-
-                    # if "endlen" in bitlen:
-                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
-                    # else:
-                    #     if edge_flag:
-                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    #     else:
-                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    # print(file)
-                    # data_tensor = read_data(file).cuda()
-
-                    # # print(data_tensor)
-                    # print(data_tensor.shape) 
-                    # # L3: [2048, 3136]
-                    # # L4: [10, 2048]
-
-                    # quantized_weight = quantize(data_tensor, self.quantization)
-
-                    ### ENDLEN ###
+                    ### calculate index offset for misalignment faults
 
                     quantized_weight_init = quantized_weight
 
@@ -330,15 +287,15 @@ class QuantizedLinear(nn.Linear):
                         self.misalign_faults[self.layerNR-1].append(misalign_fault)
                         # print(self.misalign_faults)
 
-#
-                    # # print(np.sum(self.index_offset))
-                    # # print(self.index_offset)
-                    # if self.nr_run==1:
-                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
-                    #         for i in range(0, self.index_offset.shape[0]):      # 
-                    #             for j in range(0, self.index_offset.shape[1]):  #
-                    #                 f.write(str(self.index_offset[i][j]) + " ")
-                    #             f.write("\n")
+
+                    ### PRNT ###
+
+                    if flags.get("PRNT_IND_OFF_BEFORE") == "True" and self.nr_run==1:
+                        with open("ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
+                            for i in range(0, self.index_offset.shape[0]):      # 
+                                for j in range(0, self.index_offset.shape[1]):  #
+                                    f.write(str(self.index_offset[i][j]) + " ")
+                                f.write("\n")
 
 
                     ### BINOMIAL REVERT ###
@@ -349,8 +306,6 @@ class QuantizedLinear(nn.Linear):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    # before = np.sum(abs(self.index_offset))
-
                     if flags.get("EXEC_BIN_REVERT_MID") == "True":
                         # 80/20 from middle (total elements)
                         # if self.nr_run == 1:
@@ -360,19 +315,6 @@ class QuantizedLinear(nn.Linear):
                         # 80/20 from edges (total bins)
                         # if self.nr_run == 1:
                         self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
-
-
-                    # after = np.sum(abs(self.index_offset))
-                    # diff = before-after
-                    # print(f"{diff} / {diff/before*100}")
-
-#
-                    # if self.nr_run in (1, 10):
-                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
-                    #         for i in range(0, self.index_offset.shape[0]):      # 
-                    #             for j in range(0, self.index_offset.shape[1]):  #
-                    #                 f.write(str(self.index_offset[i][j]) + " ")
-                    #             f.write("\n")
 
 
                     ### ODD2EVEN ###
@@ -448,73 +390,44 @@ class QuantizedLinear(nn.Linear):
 
                     self.nr_run += 1
 
+                    ### PRNT ###
+
+                    if flags.get("PRNT_IND_OFF_AFTER") == "True" and flags.get("PRNT_IND_OFF_AFTER_NRUN") == str(self.nr_run-1):
+                        with open("ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run-1)+".txt", "w") as f:
+                            for i in range(0, self.index_offset.shape[0]):      # 
+                                for j in range(0, self.index_offset.shape[1]):  #
+                                    f.write(str(self.index_offset[i][j]) + " ")
+                                f.write("\n")
+
 
                 quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.rt_size, self.error_model)
 
 
                 if self.protectLayers[self.layerNR-1]==0:
 
-                    ## absolute # of bitflips
+                    ## absolute number of bitflips
                     if self.calc_bitflips == "True":
                         differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                         self.bitflips[self.layerNR-1].append(differences)
 
+                    ## number of misaligned racetracks
                     if self.calc_affected_rts == "True":
                         affected_racetracks = np.count_nonzero(self.index_offset)
-
-                        # only if running baseline benchmark with error rate 0.0
-                        # if affected_racetracks == 0 :
-                        #     affected_racetracks = 1
-
                         self.affected_rts[self.layerNR-1].append(affected_racetracks)
 
-                
-                # if self.protectLayers[self.layerNR-1]==0:
-                #     list_of_integers = quantized_weight.cpu().tolist()
 
-                #     # Open a file in write mode
-                #     with open('qweights_shift1_'+str(self.layerNR)+'.txt', 'w') as f:
-                #         f.write("[")
+                ### PRNT ###
 
-                #         # Write the list of integers to the file
-                #         for integer in list_of_integers[:-1]:
-                #             f.write(str(integer) + ',\n')
+                if flags.get("PRNT_QWEIGHTS_AFTER") == "True" and self.protectLayers[self.layerNR-1]==0 and flags.get("PRNT_QWEIGHTS_AFTER_NRUN") == str(self.nr_run-1):
+                    list_of_integers = quantized_weight.cpu().tolist()
 
-                #         f.write(str(list_of_integers[-1]) + "]")
+                    with open('qweights_shift' + str(self.nr_run-1) + '_' + str(self.layerNR) + '.txt', 'w') as f:
+                        f.write("[")
+                        # Write the list of integers to the file
+                        for integer in list_of_integers[:-1]:
+                            f.write(str(integer) + ',\n')
+                        f.write(str(list_of_integers[-1]) + "]")
 
-                # if self.protectLayers[self.layerNR-1]==0:
-                #     list_of_integers = quantized_weight.cpu().tolist()
-                #     try:
-                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
-                #             f.write("[")
-                #             # Write the list of integers to the file
-                #             for integer in list_of_integers[:-1]:
-                #                 f.write(str(integer) + ',\n')
-                #             f.write(str(list_of_integers[-1]) + "]")
-                #             print("Wrote content to shift1 file")
-                #     except FileExistsError:
-                #         print("shift1 already exists, writing to shift2 file.")
-                #         try:
-                #             with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
-                #                 f.write("[")
-                #                 # Write the list of integers to the file
-                #                 for integer in list_of_integers[:-1]:
-                #                     f.write(str(integer) + ',\n')
-                #                 f.write(str(list_of_integers[-1]) + "]")
-                #                 print("Wrote content to shift2 file")
-                #         except FileExistsError:
-                #             print("shift2 already exists, skipping write.")
-                        
-                #     try:
-                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
-                #             f.write("[")
-                #             # Write the list of integers to the file
-                #             for integer in list_of_integers[:-1]:
-                #                 f.write(str(integer) + ',\n')
-                #             f.write(str(list_of_integers[-1]) + "]")
-                #             print("Wrote content to shift10 file")
-                #     except FileExistsError:
-                #         print("shift10 already exists, skipping write.")
 
                 output = F.linear(input, quantized_weight)
             return output
@@ -588,112 +501,70 @@ class QuantizedConv2d(nn.Conv2d):
                 quantized_weight = self.weight
                 quantized_bias = self.bias
 
-            # if self.protectLayers[self.layerNR-1]==0:
-            #     list_of_integers = quantized_weight.cpu().tolist()
 
-            #     try:
-            #         with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
-            #             f.write("[")
+            ### PRNT ###
 
-            #             # Write the list of integers to the file
-            #             for integer in list_of_integers[:-1]:
-            #                 f.write(str(integer) + ',\n')
+            if flags.get("PRNT_QWEIGHTS_BEFORE") == "True" and self.protectLayers[self.layerNR-1]==0:
+                list_of_integers = quantized_weight.cpu().tolist()
 
-            #             f.write(str(list_of_integers[-1]) + "]")
-            #     except FileExistsError:
-            #         print("orig already exists")
+                try:
+                    with open('qweights_orig_'+str(self.layerNR)+'.txt', 'w') as f:
+                        f.write("[")
+                        # Write the list of integers to the file
+                        for integer in list_of_integers[:-1]:
+                            f.write(str(integer) + ',\n')
+                        f.write(str(list_of_integers[-1]) + "]")
 
-            ###
+                except FileExistsError:
+                    print("Orig qweights file already exists")
 
 
-            # if self.protectLayers[self.layerNR-1]==0:
-            #     list_of_integers = quantized_weight.cpu().tolist()
-            #     try:
-            #         with open('qweights_initial0_'+str(self.layerNR)+'.txt', 'x') as f:
-            #             # Write the list of integers to the file
-            #             for integer in list_of_integers:
-            #                 f.write(str(integer) + '\n')
-            #             print("Wrote content to initial file")
-            #     except FileExistsError:
-            #         print("initial already exists, writing to after1 file.")
-            #         try:
-            #             with open('qweights_after1_'+str(self.layerNR)+'.txt', 'x') as f:
-            #                 # Write the list of integers to the file
-            #                 for integer in list_of_integers:
-            #                     f.write(str(integer) + '\n')
-            #                 print("Wrote content to after1 file")
-            #         except FileExistsError:
-            #             print("after1 exists, skipping write.")
-
+            ### RTM_SIM ###
 
             if self.error_model is not None:
 
                 if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
-                    print("Convolution2D", self.layerNR)
+                    if flags.get("PRNT_LAYER_NAME") == "True":
+                        print("Convolution2D", self.layerNR)
                     # print(self.nr_run)
 
-                    # print(quantized_weight.size())
-                    # print(self.rt_size)
-                    # print("")
-                    # print(np.sum(self.index_offset))
-                    # print(self.index_offset.shape[0])
-                    # print(self.index_offset.shape[1])
+                    ### Read input qweight tensor from file ###
 
-                    ### read weight tensor from file
-
-                    # # file = "qweights/64/qweights_0.1/qweights_append_1.txt"
-                    # # file = "qweights/64/qweights_0.1/qweights_shift1_2.txt"
-                    # # file = "q/qweights_shift1_1.txt"
-
-                    # # file = "q/qweights_shift1_2_mod.txt"
-                    # # file = "q_index_offset/qweights_shift1_2_mod.txt"
+                    file = "Info: no input qweight tensor has been read"
+                    data_tensor = np.array([])
 
                     # file = "metrics/count_len/q_in/qweights_orig_"+str(self.layerNR)+".txt"
                     # file = "metrics/count_len/q_out_indiv/qweights_orig_"+str(self.layerNR)+"_flip_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     # file = "metrics/count_len/q_out/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
                     
-                    ### RATIO_BLOCKS_ECC ###
+                    ### else cases are handled by assertion outside of the class, after reading flags out
 
-                    # if "ecc" in ratio_blocks:
-                    #     file = "metrics/ratio_blocks_ecc/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt"
-                    # elif "ecc_ind_off" in ratio_blocks:
-                    #     file = "metrics/ratio_blocks_ecc_ind_off/"+str(folder_ecc)+"/qweights_ratio_ecc"+str(self.layerNR)+".txt" 
-                    # else:
-                    #     file = "none"
-                    # print(file)
-                    # data_tensor = read_data(file).cuda()
+                    if flags.get("READ_ECC") == "True":
+                        file = "metrics/ratio_blocks_ecc/" + flags.get("FOLDER_ECC") + "/qweights_ratio_ecc"+str(self.layerNR)+".txt"
+                        
+                        data_tensor = read_data(file).cuda()
+                        quantized_weight = quantize(data_tensor, self.quantization)
 
-                    # # print(data_tensor)
-                    # print(data_tensor.shape) 
-                    # # L1: [64, 1, 3, 3]
-                    # # L2: [64, 64, 3, 3]
+                    if flags.get("READ_ECC_IND_OFF") == "True":
+                        file = "metrics/ratio_blocks_ecc_ind_off/" + flags.get("FOLDER_ECC_IND_OFF") + "/qweights_ratio_ecc"+str(self.layerNR)+".txt"
 
-                    # quantized_weight = quantize(data_tensor, self.quantization)
+                        data_tensor = read_data(file).cuda()
+                        quantized_weight = quantize(data_tensor, self.quantization)
 
-                    ### RATIO_BLOCKS_ECC ###
+                    if flags.get("READ_ENDLEN") == "True":
+                        file = "metrics/count_len/" + flags.get("FOLDER_ENDLEN") + "/qweights_orig_"+str(self.layerNR)+"_1flip_" + flags.get("TYPE_ENDLEN") + ".txt"
 
+                        data_tensor = read_data(file).cuda()
+                        quantized_weight = quantize(data_tensor, self.quantization)
 
-                    ### ENDLEN ###
+                    if flags.get("PRNT_INPUT_FILE_INFO") == "True":
+                        print(file)
+                        print(data_tensor.shape) 
+                        # L1: [64, 1, 3, 3]
+                        # L2: [64, 64, 3, 3]
 
-                    # if "endlen" in bitlen:
-                    #     file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip_"+str(bitlen)+".txt"
-                    # else:
-                    #     if edge_flag:
-                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"e_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    #     else:
-                    #         file = "metrics/count_len/"+str(folder)+"/qweights_orig_"+str(self.layerNR)+"_"+str(nr_flip)+"flip"+str(bitlen)+"_"+str(n_l_r)+"_"+str(n_l_r)+".txt"
-                    # print(file)
-                    # data_tensor = read_data(file).cuda()
-
-                    # # print(data_tensor)
-                    # print(data_tensor.shape)
-                    # # L1: [64, 1, 3, 3]
-                    # # L2: [64, 64, 3, 3]
-
-                    # quantized_weight = quantize(data_tensor, self.quantization)
-
-                    ### ENDLEN ###
-
+                    ### calculate index offset for misalignment faults
+                    
                     quantized_weight_init = quantized_weight
 
                     misalign_fault = 0   # number of misalignment faults
@@ -738,14 +609,14 @@ class QuantizedConv2d(nn.Conv2d):
                         # print(self.misalign_faults)
 
 
-                    # # print(np.sum(self.index_offset))
-                    # # print(self.index_offset)
-                    # if self.nr_run==1:
-                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
-                    #         for i in range(0, self.index_offset.shape[0]):      # 
-                    #             for j in range(0, self.index_offset.shape[1]):  #
-                    #                 f.write(str(self.index_offset[i][j]) + " ")
-                    #             f.write("\n")
+                    ### PRNT ###
+
+                    if flags.get("PRNT_IND_OFF_BEFORE") == "True" and self.nr_run==1:
+                        with open("ind_off_"+str(self.layerNR)+"_run_0.txt", "w") as f:
+                            for i in range(0, self.index_offset.shape[0]):      # 
+                                for j in range(0, self.index_offset.shape[1]):  #
+                                    f.write(str(self.index_offset[i][j]) + " ")
+                                f.write("\n")
 
 
                     ### BINOMIAL REVERT ###
@@ -756,8 +627,6 @@ class QuantizedConv2d(nn.Conv2d):
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
-                    # before = np.sum(abs(self.index_offset))
-
                     if flags.get("EXEC_BIN_REVERT_MID") == "True":
                         # 80/20 from middle (total elements)
                         # if self.nr_run == 1:
@@ -767,19 +636,6 @@ class QuantizedConv2d(nn.Conv2d):
                         # 80/20 from edges (total bins)
                         # if self.nr_run == 1:
                         self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
-
-
-                    # after = np.sum(abs(self.index_offset))
-                    # diff = before-after
-                    # print(f"{diff} / {diff/before*100}")
-
-
-                    # if self.nr_run in (1, 10):
-                    #     with open("ind_off/"+str(self.layerNR)+"/ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run)+".txt", "w") as f:
-                    #         for i in range(0, self.index_offset.shape[0]):      # 
-                    #             for j in range(0, self.index_offset.shape[1]):  #
-                    #                 f.write(str(self.index_offset[i][j]) + " ")
-                    #             f.write("\n")
 
 
                     ### ODD2EVEN ###
@@ -854,76 +710,44 @@ class QuantizedConv2d(nn.Conv2d):
 
                     self.nr_run += 1
 
+                    ### PRNT ###
+
+                    if flags.get("PRNT_IND_OFF_AFTER") == "True" and flags.get("PRNT_IND_OFF_AFTER_NRUN") == str(self.nr_run-1):
+                        with open("ind_off_"+str(self.layerNR)+"_run_"+str(self.nr_run-1)+".txt", "w") as f:
+                            for i in range(0, self.index_offset.shape[0]):      # 
+                                for j in range(0, self.index_offset.shape[1]):  #
+                                    f.write(str(self.index_offset[i][j]) + " ")
+                                f.write("\n")
+
 
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.rt_size, self.error_model)
                 
 
                 if self.protectLayers[self.layerNR-1]==0:
 
-                    ## absolute # of bitflips                    
+                    ## absolute number of bitflips             
                     if self.calc_bitflips == "True":
                         differences = np.count_nonzero(quantized_weight_init.cpu() != quantized_weight.cpu())
                         self.bitflips[self.layerNR-1].append(differences)
 
+                    ## number of misaligned racetracks
                     if self.calc_affected_rts == "True":
                         affected_racetracks = np.count_nonzero(self.index_offset)
-
-                        # only if running baseline benchmark with error rate 0.0
-                        # if affected_racetracks == 0 :
-                        #     affected_racetracks = 1
-
                         self.affected_rts[self.layerNR-1].append(affected_racetracks)
 
 
+                ### PRNT ###
 
-                # if self.protectLayers[self.layerNR-1]==0:
-                #     list_of_integers = quantized_weight.cpu().tolist()
+                if flags.get("PRNT_QWEIGHTS_AFTER") == "True" and self.protectLayers[self.layerNR-1]==0 and flags.get("PRNT_QWEIGHTS_AFTER_NRUN") == str(self.nr_run-1):
+                    list_of_integers = quantized_weight.cpu().tolist()
 
-                #     # Open a file in write mode
-                #     with open('qweights_shift_'+str(self.layerNR)+'.txt', 'w') as f:
-                #         f.write("[")
-                #         # Write the list of integers to the file
-                #         for integer in list_of_integers[:-1]:
-                #             f.write(str(integer) + ',\n')
-                #         f.write(str(list_of_integers[-1]) + "]")
+                    with open('qweights_shift' + str(self.nr_run-1) + '_' + str(self.layerNR) + '.txt', 'w') as f:
+                        f.write("[")
+                        # Write the list of integers to the file
+                        for integer in list_of_integers[:-1]:
+                            f.write(str(integer) + ',\n')
+                        f.write(str(list_of_integers[-1]) + "]")
 
-                ###
-
-                # if self.protectLayers[self.layerNR-1]==0:
-                #     list_of_integers = quantized_weight.cpu().tolist()
-                #     try:
-                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift1_'+str(self.layerNR)+'.txt', 'x') as f:
-                #             f.write("[")
-                #             # Write the list of integers to the file
-                #             for integer in list_of_integers[:-1]:
-                #                 f.write(str(integer) + ',\n')
-                #             f.write(str(list_of_integers[-1]) + "]")
-                #             print("Wrote content to shift1 file")
-                #     except FileExistsError:
-                #         print("shift1 already exists, writing to shift2 file.")
-                #         try:
-                #             with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift2_'+str(self.layerNR)+'.txt', 'x') as f:
-                #                 f.write("[")
-                #                 # Write the list of integers to the file
-                #                 for integer in list_of_integers[:-1]:
-                #                     f.write(str(integer) + ',\n')
-                #                 f.write(str(list_of_integers[-1]) + "]")
-                #                 print("Wrote content to shift2 file")
-                #         except FileExistsError:
-                #             print("shift2 already exists, skipping write.")
-                        
-                #     try:
-                #         with open('qweights/'+str(self.rt_size)+'/qweights_'+str(self.error_model.p)+'/qweights_shift10_'+str(self.layerNR)+'.txt', 'w') as f:
-                #             f.write("[")
-                #             # Write the list of integers to the file
-                #             for integer in list_of_integers[:-1]:
-                #                 f.write(str(integer) + ',\n')
-                #             f.write(str(list_of_integers[-1]) + "]")
-                #             print("Wrote content to shift10 file")
-                #     except FileExistsError:
-                #         print("shift10 already exists, skipping write.")
-
-                
 
                 output = F.conv2d(input, quantized_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             return output

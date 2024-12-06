@@ -140,7 +140,7 @@ class VGG3(nn.Module):
             self.index_offset_fc2 = np.zeros((10, fc2_y))
 
         else:
-            print("Invalid kernel size!")
+            print("NO available FMNIST models for kernel size " + str(self.kernel_size))
             exit
 
     
