@@ -17,13 +17,14 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 sys.path.append("code/python/")
 
-from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data, get_model_and_datasets, print_tikz_data, cuda_profiler
+from Utils import set_layer_mode, parse_args, get_model_and_datasets, print_tikz_data, cuda_profiler
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 from Models import VGG3, VGG7, ResNet, BasicBlock
 from Traintest_Utils import train, test, test_error, Clippy, Criterion, binary_hingeloss
 
 import binarizePM1
 import netdrift
+
 
 class Quantization1:
     def __init__(self, method):
@@ -39,8 +40,8 @@ class NetDriftModel:
         self.p = p_updated
     def resetErrorModel(self):
         self.p = 0
-    def applyErrorModel(self, input, index_offset, block_size):
-        return self.method(input, self.p, self.p, index_offset, block_size)
+    def applyErrorModel(self, input, index_offset, rt_size):
+        return self.method(input, self.p, self.p, index_offset, rt_size)
 
 binarizepm1 = Quantization1(binarizePM1.binarize)
 # TODO p has no effect here
@@ -70,6 +71,8 @@ def main():
     # which GPU is currently used
     print("Currently used GPU: ", torch.cuda.current_device())
 
+    print(args)
+
     train_kwargs = {'batch_size': args.batch_size}
     test_kwargs = {'batch_size': args.test_batch_size}
     if use_cuda:
@@ -84,6 +87,22 @@ def main():
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
+    # print("")
+    # print(train_kwargs)
+    # train_features, train_labels = next(iter(train_loader))
+    # print(f"Feature batch shape: {train_features.size()}")
+    # print(f"Labels batch shape: {train_labels.size()}")
+    # print(test_kwargs)
+    # test_features, test_labels = next(iter(test_loader))
+    # print(f"Feature batch shape: {test_features.size()}")
+    # print(f"Labels batch shape: {test_labels.size()}")
+    # print("")
+    # # img = train_features[0].squeeze()
+    # # label = train_labels[0]
+    # # plt.imshow(img, cmap="gray")
+    # # plt.show()
+    # # print(f"Label: {label}")
+
     mac_mapping = None
     mac_mapping_distr = None
     sorted_mac_mapping_idx = None
@@ -92,7 +111,6 @@ def main():
         mac_mapping = torch.from_numpy(np.load(args.mapping)).float().cuda()
         # print("mapping", mac_mapping)
     if args.mapping_distr is not None:
-        # print("hello")
         # print("Mapping distr.: ", args.mapping_distr)
         sorted_mac_mapping_idx = torch.from_numpy(np.argsort(np.load(args.mapping_distr))).float().cuda().contiguous()
         mac_mapping_distr = torch.from_numpy(np.load(args.mapping_distr)).float().cuda().contiguous()
@@ -122,19 +140,44 @@ def main():
         # print("Mapping from distr: ", mac_mapping_distr)
         # print("Mapping from distr idx: ", sorted_mac_mapping_idx)
 
+
+    ### NetDrift
+
+    # Arguments
     model = None
+    kernel_size = args.kernel_size
     protectLayers = args.protect_layers
-    err_shifts = args.err_shifts
-    block_size = args.block_size # 2, 4, ... 64
+    rt_size = args.rt_size # 2, 4, ... 64
+    global_bitflip_budget = args.global_bitflip_budget
+    local_bitflip_budget = args.local_bitflip_budget
     
-    print(protectLayers)
-    print(err_shifts)
+    # Flags
+    calc_results = args.calc_results
+    calc_bitflips = args.calc_bitflips
+    calc_misalign_faults = args.calc_misalign_faults
+    calc_affected_rts = args.calc_affected_rts
+
+    # print(protectLayers)
 
     if args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts).to(device)
+
     else:
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, block_size = block_size, protectLayers = protectLayers, err_shifts=err_shifts).to(device)
-    # print(model)
+        if args.model == "VGG3":
+            bitflips = [[] for _ in range(4)] 
+            affected_rts = [[] for _ in range(4)] 
+            misalign_faults = [[] for _ in range(4)] 
+        elif args.model == "VGG7":
+            bitflips = [[] for _ in range(8)] 
+            affected_rts = [[] for _ in range(8)] 
+            misalign_faults = [[] for _ in range(8)] 
+        else:
+            bitflips = []
+            affected_rts = []
+            misalign_faults = []
+
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
 
@@ -150,9 +193,9 @@ def main():
 
     # print(model.name)
     # create experiment folder and file
-    to_dump_path = create_exp_folder(model)
-    if not os.path.exists(to_dump_path):
-        open(to_dump_path, 'w').close()
+    # to_dump_path = create_exp_folder(model)
+    # if not os.path.exists(to_dump_path):
+    #     open(to_dump_path, 'w').close()
 
     if args.train_model is not None:
         time_elapsed = 0
@@ -160,16 +203,16 @@ def main():
         for epoch in range(1, args.epochs + 1):
             torch.cuda.synchronize()
             since = int(round(time.time()*1000))
-            #
+            
             train(args, model, device, train_loader, optimizer, epoch)
-            #
+            
             time_elapsed += int(round(time.time()*1000)) - since
             print('Epoch training time elapsed: {}ms'.format(int(round(time.time()*1000)) - since))
             # test(model, device, train_loader)
             since = int(round(time.time()*1000))
-            #
+            
             test(model, device, test_loader)
-            #
+            
             time_elapsed += int(round(time.time()*1000)) - since
             print('Test time elapsed: {}ms'.format(int(round(time.time()*1000)) - since))
             # test(model, device, train_loader)
@@ -191,7 +234,7 @@ def main():
     if args.load_model_path is not None:
             to_load = args.load_model_path
             print("Loaded model: ", to_load)
-            print("block_size: ", block_size)
+            print("rt_size: ", rt_size)
             print("-----------------------------")
             model.load_state_dict(torch.load(to_load, map_location='cuda:0'))
 
@@ -206,16 +249,23 @@ def main():
         loops = args.loops
         
         for i in range(0, loops):
-            # print("\n")
             print("Inference #" + str(i))
             all_accuracies.append(test_error(model, device, test_loader, perror))
             print("-----------------------------")
 
-        to_dump_data = dump_exp_data(model, args, all_accuracies)
-        store_exp_data(to_dump_path, to_dump_data)
-        print("-----------------------------")
+        # to_dump_data = dump_exp_data(model, args, all_accuracies)
+        # store_exp_data(to_dump_path, to_dump_data)
+        # print("-----------------------------")
+        print("affected_rts: ")
+        print(model.affected_rts)
+        print("misalign_faults: ")
+        print(model.misalign_faults)
+        print("bitflips: ")
+        print(model.bitflips)
+        print("accuracies:")
         print(all_accuracies)
         print("-----------------------------")
+
 
     if args.test_error_distr is not None:
         # perform repeated experiments and return in tikz format
@@ -239,11 +289,7 @@ def main():
 
     # Resnet absfreq extraction is different from VGG
     if args.extract_absfreq_resnet is not None:
-        ####
         # abs freq test resnet
-        # print(model)
-        # print("--")
-        # print((model.layer1[1]))
         # iterate through resnet structure to access conv and linear layer data
         for block in model.children():
             # print("BLOCK---", block)

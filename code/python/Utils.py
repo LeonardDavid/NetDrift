@@ -110,14 +110,14 @@ def set_layer_mode(model, mode):
                 layer.eval = False
 
 def parse_args(parser):
-    parser.add_argument('--model', type=str, default=None, help='VGG3/VGG7')
-    parser.add_argument('--dataset', type=str, default=None, help='MNIST/FMNIST/QMNIST/SVHN/CIFAR10')
+    parser.add_argument('--model', type=str, default=None, help='VGG3/VGG7/RESNET18')
+    parser.add_argument('--dataset', type=str, default=None, help='MNIST/FMNIST/QMNIST/SVHN/CIFAR10/CIFAR100/IMAGENETTE')
     parser.add_argument('--performance-mode', type=int, default=None, help='Specify whether to activate the faster and more memory-efficient performance mode (sub-MAC results can only be changed in cuda-kernel!)')
     parser.add_argument('--train-model', type=int, default=None, help='Whether to train a model')
     parser.add_argument('--load-model-path', type=str, default=None, help='Specify path to model if it should be loaded')
     parser.add_argument('--gpu-num', type=int, default=0, metavar='N', help='Specify the GPU on which the training should be performed')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N', help='input batch size for training (default: 64)')
-    parser.add_argument('--test-batch-size', type=int, default=256, metavar='N', help='input batch size for testing (default: 256)')
+    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N', help='input batch size for testing (default: 256)')
     parser.add_argument('--epochs', type=int, default=10, metavar='N', help='number of epochs to train (default: 14)')
     parser.add_argument('--lr', type=float, default=1.0, metavar='LR', help='learning rate (default: 1.0)')
     parser.add_argument('--gamma', type=float, default=0.5, metavar='M', help='Learning rate step gamma (default: 0.5)')
@@ -139,13 +139,22 @@ def parse_args(parser):
     parser.add_argument('--profile-time', type=int, default=None, help='Specify whether to profile the execution time by specifying the repetitions')
     parser.add_argument('--extract-absfreq', type=int, default=None, help='Specify whether to extract the absolute frequencies of MAC values')
     parser.add_argument('--extract-absfreq-resnet', type=int, default=None, help='Specify whether to extract the absolute frequencies of MAC values for ResNet')
-    parser.add_argument('--test_rtm', type=int, default=None, help='Whether to test the model using RTM err_shifts')
+    
+    ## NetDrift RTM parameters
+    parser.add_argument('--test_rtm', type=int, default=None, help='Whether to test the model using RTM misalignment faults')
+    parser.add_argument('--kernel_size', type=int, default=None, help='Size of convolutional kernel in convolutional layers')
     parser.add_argument('--perror', type=float, default=0.0, help='Error rate with which to test the model')
     parser.add_argument('--loops', type=int, default=1, help='Amount of times the inference model is run (offsets accumulate!)')
     parser.add_argument('--protect_layers', nargs='+', type=int, default=None, help='choose which layers to protect in array e.g.: 0 1 1 1 -> first layer unprotected')
-    parser.add_argument('--err_shifts', nargs='+', type=int, default=None, help='stores the amount of err_shift occuring in each layer')
-    parser.add_argument('--block_size', type=int, default=64, help='specify the block_size of the RTM nanowire')
-
+    parser.add_argument('--rt_size', type=int, default=64, help='specify the racetrack size of the RTM nanowire')
+    parser.add_argument('--global_bitflip_budget', type=float, default=0.0, help='specify the global budget (i.e. 0.1 -> 10%) for flipping bits')
+    parser.add_argument('--local_bitflip_budget', type=float, default=0.0, help='specify the local budget (i.e. 0.1 -> 10%) for flipping bits')
+    ## NetDrift Flags
+    parser.add_argument('--calc_results', type=str, default=True, help='Flag to calculate results (for each inference iteration across PERRORS misalignment fault rates)')
+    parser.add_argument('--calc_bitflips', type=str, default=True, help='Flag to calculate bitflips (per layer for each inference iteration across PERRORS misalignment fault rates)')
+    parser.add_argument('--calc_misalign_faults', type=str, default=True, help='Flag to calculate misalign_faults (per layer for each inference iteration across PERRORS misalignment fault rates)')
+    parser.add_argument('--calc_affected_rts', type=str, default=True, help='Flag to calculate affected_rts (per layer for each inference iteration across PERRORS misalignment fault rates)')
+    
 
 def dump_exp_data(model, args, all_accuracies):
     to_dump = dict()

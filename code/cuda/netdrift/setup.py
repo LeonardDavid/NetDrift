@@ -6,7 +6,7 @@ setuptools.setup(
     version="0.0.1",
     author='Mikail Yayla, Leonard David Bereholschi',
     author_email='mikail.yayla@tu-dortmund.de, leonard.bereholschi@tu-dortmund.de',
-    description='RTM Fault Injection in BNN',
+    description='RTM Misalignment Fault Injection for BNNs',
     # long_description=long_description,
     # long_description_content_type="text/markdown",
     # url="",

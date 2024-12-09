@@ -16,7 +16,7 @@ class Scale(nn.Module):
 
 
 class VGG3(nn.Module):
-    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, block_size=64, protectLayers=[], err_shifts=[]):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(VGG3, self).__init__()
         self.name = "VGG3"
         self.quantization = quantMethod
@@ -24,73 +24,128 @@ class VGG3(nn.Module):
         self.q_test = quantize_eval
         self.error_model = error_model
         self.htanh = nn.Hardtanh()
-        self.block_size = block_size
+        self.kernel_size = kernel_size
+        self.rt_size = rt_size
         self.protectLayers = protectLayers
-        self.err_shifts = err_shifts
+        self.affected_rts = affected_rts
+        self.misalign_faults = misalign_faults
+        self.bitflips = bitflips
+        self.global_bitflip_budget = global_bitflip_budget
+        self.local_bitflip_budget = local_bitflip_budget
+
+        self.calc_results = calc_results
+        self.calc_bitflips = calc_bitflips
+        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_affected_rts = calc_affected_rts
 
         self.resetOffsets()
 
-        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size, bias=False)
+        self.conv1 = QuantizedConv2d(1, 64, layerNr=1, protectLayers = self.protectLayers, affected_rts=self.affected_rts, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, kernel_size=self.kernel_size, index_offset = self.index_offset_conv1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
-        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, block_size = self.block_size, bias=False)
+        self.conv2 = QuantizedConv2d(64, 64, layerNr=2, protectLayers = self.protectLayers, affected_rts=self.affected_rts, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, kernel_size=self.kernel_size, index_offset = self.index_offset_conv2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc1 = QuantizedLinear(7*7*64, 2048, layerNr=3, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, block_size = self.block_size, bias=False)
+        self.fc1 = QuantizedLinear(self.dim_fc1, 2048, layerNr=3, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn3 = nn.BatchNorm1d(2048)
         self.qact3 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc2 = QuantizedLinear(2048, 10, layerNr=4, protectLayers = self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, block_size = self.block_size, bias=False)
+        self.fc2 = QuantizedLinear(2048, 10, layerNr=4, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.scale = Scale()
     
     def resetOffsets(self):
-        # if self.conv1_size(0) >= 64:
-        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.block_size)
-        # else:
-        #     nr_blocks_conv1 = self.conv1_size
-        # for conv 1 nr_blocks_conv1 has to be 1, because else it will set it to 0
-        # conv1_y = int(64/self.block_size)
-        # self.index_offset_conv1 = np.zeros((64, 1))
 
-        if self.block_size > 3*3: # kernel size 3x3
-            conv1_y = 1
-        else:
-            conv1_y = int(3*3/self.block_size)
-        self.index_offset_conv1 = np.zeros((64, conv1_y))
+        if self.kernel_size == 3:
+            self.dim_fc1 = 7*7*64
 
-        if self.block_size > 3*3*64: # kernel size 3x3
-            conv2_y = 1
-        else:
-            conv2_y = int(3*3*64/self.block_size)
-        self.index_offset_conv2 = np.zeros((64, conv2_y))
+            if self.rt_size > 3*3: 
+                conv1_y = 1
+            else:
+                conv1_y = int(3*3/self.rt_size)
+            self.index_offset_conv1 = np.zeros((64, conv1_y))
 
-        if self.block_size > 7*7*64:
-            fc1_y = 1
-        else:
-            fc1_y = int(7*7*64/self.block_size)
-        self.index_offset_fc1 = np.zeros((2048, fc1_y))
+            if self.rt_size > 3*3*64: 
+                conv2_y = 1
+            else:
+                conv2_y = int(3*3*64/self.rt_size)
+            self.index_offset_conv2 = np.zeros((64, conv2_y))
 
-        if self.block_size > 2048:
-            fc2_y = 1
+            if self.rt_size > 7*7*64:
+                fc1_y = 1
+            else:
+                fc1_y = int(7*7*64/self.rt_size)
+            self.index_offset_fc1 = np.zeros((2048, fc1_y))
+
+            if self.rt_size > 2048:
+                fc2_y = 1
+            else:
+                fc2_y = int(2048/self.rt_size)
+            self.index_offset_fc2 = np.zeros((10, fc2_y))
+
+
+        elif self.kernel_size == 5:
+            self.dim_fc1 = 5*5*64
+
+            if self.rt_size > 5*5: 
+                conv1_y = 1
+            else:
+                conv1_y = int(5*5/self.rt_size)
+            self.index_offset_conv1 = np.zeros((64, conv1_y))
+
+            if self.rt_size > 5*5*64: 
+                conv2_y = 1
+            else:
+                conv2_y = int(5*5*64/self.rt_size)
+            self.index_offset_conv2 = np.zeros((64, conv2_y))
+
+            if self.rt_size > 5*5*64:
+                fc1_y = 1
+            else:
+                fc1_y = int(5*5*64/self.rt_size)
+            self.index_offset_fc1 = np.zeros((2048, fc1_y))
+
+            if self.rt_size > 2048:
+                fc2_y = 1
+            else:
+                fc2_y = int(2048/self.rt_size)
+            self.index_offset_fc2 = np.zeros((10, fc2_y))
+
+        elif self.kernel_size == 7:
+            self.dim_fc1 = 4*4*64
+
+            if self.rt_size > 7*7: 
+                conv1_y = 1
+            else:
+                conv1_y = int(7*7/self.rt_size)
+            self.index_offset_conv1 = np.zeros((64, conv1_y))
+
+            if self.rt_size > 7*7*64: 
+                conv2_y = 1
+            else:
+                conv2_y = int(7*7*64/self.rt_size)
+            self.index_offset_conv2 = np.zeros((64, conv2_y))
+
+            if self.rt_size > 4*4*64:
+                fc1_y = 1
+            else:
+                fc1_y = int(4*4*64/self.rt_size)
+            self.index_offset_fc1 = np.zeros((2048, fc1_y))
+
+            if self.rt_size > 2048:
+                fc2_y = 1
+            else:
+                fc2_y = int(2048/self.rt_size)
+            self.index_offset_fc2 = np.zeros((10, fc2_y))
+
         else:
-            fc2_y = int(2048/self.block_size)
-        self.index_offset_fc2 = np.zeros((10, fc2_y))
+            print("NO available FMNIST models for kernel size " + str(self.kernel_size))
+            exit
 
     
-    def getBlockSize(self):
-        return self.block_size
-
-    def printIndexOffsets(self):
-        print("conv1 " + str(self.index_offset_conv1.shape[0]) + " " + str(self.index_offset_conv1.shape[1]) + " " + str(np.sum(self.index_offset_conv1)))
-        print(self.index_offset_conv1)
-        print("conv2 " + str(self.index_offset_conv2.shape[0]) + " " + str(self.index_offset_conv2.shape[1]) + " " + str(np.sum(self.index_offset_conv2)))
-        print(self.index_offset_conv2)
-        print("fc1 " + str(self.index_offset_fc1.shape[0]) + " " + str(self.index_offset_fc1.shape[1]) + " " + str(np.sum(self.index_offset_fc1)))
-        print(self.index_offset_fc1)
-        print("fc2 " + str(self.index_offset_fc2.shape[0]) + " " + str(self.index_offset_fc2.shape[1]) + " " + str(np.sum(self.index_offset_fc2)))
-        print(self.index_offset_fc2)
+    def getRacetrackSize(self):
+        return self.rt_size
 
 
     def forward(self, x):
@@ -119,57 +174,65 @@ class VGG3(nn.Module):
 
 
 class VGG7(nn.Module):
-    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, block_size=64, protectLayers=[], err_shifts=[]):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(VGG7, self).__init__()
         self.name = "VGG7"
         self.quantization = quantMethod
         self.q_train = quantize_train
         self.q_test = quantize_eval
         self.error_model = error_model
-        self.block_size = block_size
+        self.kernel_size = kernel_size
+        self.rt_size = rt_size
         self.htanh = nn.Hardtanh()
         self.protectLayers = protectLayers
-        self.err_shifts = err_shifts
+        self.affected_rts = affected_rts
+        self.global_bitflip_budget = global_bitflip_budget
+        self.local_bitflip_budget = local_bitflip_budget
+
+        self.calc_results = calc_results
+        self.calc_bitflips = calc_bitflips
+        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_affected_rts = calc_affected_rts
 
         self.resetOffsets()
 
         #CNN
         # block 1
-        self.conv1 = QuantizedConv2d(3, 128, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=1, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size, bias=False)
+        self.conv1 = QuantizedConv2d(3, 128, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, layerNr=1, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn1 = nn.BatchNorm2d(128)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
         # block 2
-        self.conv2 = QuantizedConv2d(128, 128, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=2, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, block_size = self.block_size, bias=False)
+        self.conv2 = QuantizedConv2d(128, 128, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, layerNr=2, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn2 = nn.BatchNorm2d(128)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
 
         # block 3
-        self.conv3 = QuantizedConv2d(128, 256, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=3, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv3, block_size = self.block_size, bias=False)
+        self.conv3 = QuantizedConv2d(128, 256, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, layerNr=3, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv3, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn3 = nn.BatchNorm2d(256)
         self.qact3 = QuantizedActivation(quantization=self.quantization)
 
         # block 4
-        self.conv4 = QuantizedConv2d(256, 256, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=4, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv4, block_size = self.block_size, bias=False)
+        self.conv4 = QuantizedConv2d(256, 256, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, layerNr=4, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv4, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn4 = nn.BatchNorm2d(256)
         self.qact4 = QuantizedActivation(quantization=self.quantization)
 
         # block 5
-        self.conv5 = QuantizedConv2d(256, 512, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=5, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv5, block_size = self.block_size, bias=False)
+        self.conv5 = QuantizedConv2d(256, 512, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, layerNr=5, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv5, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn5 = nn.BatchNorm2d(512)
         self.qact5 = QuantizedActivation(quantization=self.quantization)
 
         # block 6
-        self.conv6 = QuantizedConv2d(512, 512, protectLayers=self.protectLayers, err_shifts=self.err_shifts, kernel_size=3, padding=1, stride=1, quantization=self.quantization, layerNr=6, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv6, block_size = self.block_size, bias=False)
+        self.conv6 = QuantizedConv2d(512, 512, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, layerNr=6, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv6, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn6 = nn.BatchNorm2d(512)
         self.qact6 = QuantizedActivation(quantization=self.quantization)
 
         # block 7
-        self.fc1 = QuantizedLinear(8192, 1024, protectLayers=self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, layerNr=7, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, block_size = self.block_size, bias=False)
+        self.fc1 = QuantizedLinear(8192, 1024, protectLayers=self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, layerNr=7, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_bitflips=calc_bitflips, calc_results=calc_results, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn7 = nn.BatchNorm1d(1024)
         self.qact7 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc2 = QuantizedLinear(1024, 10, protectLayers=self.protectLayers, err_shifts=self.err_shifts, quantization=self.quantization, layerNr=8, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, block_size = self.block_size, bias=False)
+        self.fc2 = QuantizedLinear(1024, 10, protectLayers=self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, layerNr=8, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, rt_size = self.rt_size, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_bitflips=calc_bitflips, calc_results=calc_results, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.scale = Scale(init_value=1e-3)
 
     def forward(self, x):
@@ -224,82 +287,77 @@ class VGG7(nn.Module):
 
         return x
  
-    def getBlockSize(self):
-        return self.block_size
+    def getRacetrackSize(self):
+        return self.rt_size
 
     def resetOffsets(self):
-        # if self.conv1_size(0) >= 64:
-        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.block_size)
-        # else:
-        #     nr_blocks_conv1 = self.conv1_size
-        # for conv 1 nr_blocks_conv1 has to be 3, because else it will set it to 0
-        # if self.block_size > 3:
-        #     conv1_y = 1
-        # else:
-        #     conv1_y = int(3/self.block_size)
-
         # transposed for consistency with other layers
-        # conv1_y = int(128/self.block_size)
+        # conv1_y = int(128/self.rt_size)
         # self.index_offset_conv1 = np.zeros((3, conv1_y))
 
-        if self.block_size > 3*3*3: # kernel size 3x3
-            conv1_y = 1
-        else:
-            conv1_y = int(3*3*3/self.block_size)
-        self.index_offset_conv1 = np.zeros((128, conv1_y))
+        if self.kernel_size == 3:
+            if self.rt_size > 3*3*3:
+                conv1_y = 1
+            else:
+                conv1_y = int(3*3*3/self.rt_size)
+            self.index_offset_conv1 = np.zeros((128, conv1_y))
 
-        if self.block_size > 3*3*128: # kernel size 3x3
-            conv2_y = 1
-        else:
-            conv2_y = int(3*3*128/self.block_size)
-        self.index_offset_conv2 = np.zeros((128, conv2_y))
+            if self.rt_size > 3*3*128:
+                conv2_y = 1
+            else:
+                conv2_y = int(3*3*128/self.rt_size)
+            self.index_offset_conv2 = np.zeros((128, conv2_y))
 
-        if self.block_size > 3*3*128: # kernel size 3x3
-            conv3_y = 1
-        else:
-            conv3_y = int(3*3*128/self.block_size)
-        self.index_offset_conv3 = np.zeros((256, conv3_y))
+            if self.rt_size > 3*3*128:
+                conv3_y = 1
+            else:
+                conv3_y = int(3*3*128/self.rt_size)
+            self.index_offset_conv3 = np.zeros((256, conv3_y))
 
-        if self.block_size > 3*3*256: # kernel size 3x3
-            conv4_y = 1
-        else:
-            conv4_y = int(3*3*256/self.block_size)
-        self.index_offset_conv4 = np.zeros((256, conv4_y))
+            if self.rt_size > 3*3*256:
+                conv4_y = 1
+            else:
+                conv4_y = int(3*3*256/self.rt_size)
+            self.index_offset_conv4 = np.zeros((256, conv4_y))
 
-        if self.block_size > 3*3*256: # kernel size 3x3
-            conv5_y = 1
+            if self.rt_size > 3*3*256:
+                conv5_y = 1
+            else:
+                conv5_y = int(3*3*256/self.rt_size)
+            self.index_offset_conv5 = np.zeros((512, conv5_y))
+            
+            if self.rt_size > 3*3*512:
+                conv6_y = 1
+            else:
+                conv6_y = int(3*3*512/self.rt_size)
+            self.index_offset_conv6 = np.zeros((512, conv6_y))
+            
+            if self.rt_size > 8192:
+                fc1_y = 1
+            else:
+                fc1_y = int(8192/self.rt_size)
+            self.index_offset_fc1 = np.zeros((1024, fc1_y))
+            if self.rt_size > 1024:
+                fc2_y = 1
+            else:
+                fc2_y = int(1024/self.rt_size)
+            self.index_offset_fc2 = np.zeros((10, fc2_y))
         else:
-            conv5_y = int(3*3*256/self.block_size)
-        self.index_offset_conv5 = np.zeros((512, conv5_y))
-        
-        if self.block_size > 3*3*512: # kernel size 3x3
-            conv6_y = 1
-        else:
-            conv6_y = int(3*3*512/self.block_size)
-        self.index_offset_conv6 = np.zeros((512, conv6_y))
-        
-        if self.block_size > 8192:
-            fc1_y = 1
-        else:
-            fc1_y = int(8192/self.block_size)
-        self.index_offset_fc1 = np.zeros((1024, fc1_y))
-        if self.block_size > 1024:
-            fc2_y = 1
-        else:
-            fc2_y = int(1024/self.block_size)
-        self.index_offset_fc2 = np.zeros((10, fc2_y))
+            print("Invalid kernel size!")
+            exit
+            
 
 
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, quantize_train=True, quantize_eval=True, error_model=None, train_model=None, extract_absfreq=None, test_rtm = None, block_size=64, layerNr=2, protectLayers=[], err_shifts=[]):
+    def __init__(self, in_planes, planes, stride=1, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, quantize_train=True, quantize_eval=True, error_model=None, train_model=None, extract_absfreq=None, test_rtm = None, rt_size=64, layerNr=2, protectLayers=[], affected_rts=[]):
         super(BasicBlock, self).__init__()
         self.htanh = nn.Hardtanh()
-        self.block_size = block_size #64
+        self.rt_size = rt_size #64
         self.layerNr = layerNr
         self.protectLayers = protectLayers
-        self.err_shifts = err_shifts
+        self.affected_rts = affected_rts
         # print("##BLOCK##")
     
         self.qact = QuantizedActivation(quantization=quantMethod)
@@ -309,8 +367,8 @@ class BasicBlock(nn.Module):
         self.resetConv1Offsets()
         # print(self.layerNr)
         self.conv1 = QuantizedConv2d(
-            self.conv1_size_1, self.conv1_size_2, err_shifts=self.err_shifts, layerNr=self.layerNr, protectLayers=protectLayers, kernel_size=3, stride=stride, padding=1, quantization=quantMethod, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx,
-            performance_mode=performance_mode, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size,
+            self.conv1_size_1, self.conv1_size_2, affected_rts=self.affected_rts, layerNr=self.layerNr, protectLayers=protectLayers, kernel_size=3, stride=stride, padding=1, quantization=quantMethod, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx,
+            performance_mode=performance_mode, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size,
             error_model=error_model, bias=False, train_model=train_model, extract_absfreq=extract_absfreq)
         self.bn1 = nn.BatchNorm2d(planes)
         self.layerNr += 1
@@ -319,9 +377,9 @@ class BasicBlock(nn.Module):
         self.conv2_size_2 = planes
         self.resetConv2Offsets()
         # print(self.layerNr)
-        self.conv2 = QuantizedConv2d(self.conv2_size_1, self.conv2_size_2, err_shifts=self.err_shifts, layerNr=self.layerNr, protectLayers=protectLayers, kernel_size=3,
+        self.conv2 = QuantizedConv2d(self.conv2_size_1, self.conv2_size_2, affected_rts=self.affected_rts, layerNr=self.layerNr, protectLayers=protectLayers, kernel_size=3,
                                stride=1, padding=1, quantization=quantMethod, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx,
-                               performance_mode=performance_mode, test_rtm = test_rtm, index_offset = self.index_offset_conv2, block_size = self.block_size,
+                               performance_mode=performance_mode, test_rtm = test_rtm, index_offset = self.index_offset_conv2, rt_size = self.rt_size,
                                error_model=error_model, bias=False, train_model=train_model, extract_absfreq=extract_absfreq)
         self.bn2 = nn.BatchNorm2d(planes)
         self.layerNr += 1
@@ -334,48 +392,46 @@ class BasicBlock(nn.Module):
             # print("--SHORTCUT--")
             # print(self.layerNr)
             self.shortcut = nn.Sequential(
-                QuantizedConv2d(self.shortcut_size_1, self.shortcut_size_2, err_shifts=self.err_shifts, layerNr=self.layerNr, protectLayers=protectLayers,
+                QuantizedConv2d(self.shortcut_size_1, self.shortcut_size_2, affected_rts=self.affected_rts, layerNr=self.layerNr, protectLayers=protectLayers,
                           kernel_size=1, stride=stride, quantization=quantMethod, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx,
                           performance_mode=performance_mode,
-                          error_model=error_model, test_rtm = test_rtm, index_offset = self.index_offset_shortcut, block_size = self.block_size, bias=False, train_model=train_model, extract_absfreq=extract_absfreq),
+                          error_model=error_model, test_rtm = test_rtm, index_offset = self.index_offset_shortcut, rt_size = self.rt_size, bias=False, train_model=train_model, extract_absfreq=extract_absfreq),
                 nn.BatchNorm2d(self.expansion*planes)
             )
             self.layerNr += 1
 
-    def getBlockSize(self):
-        return self.block_size
+    def getRacetrackSize(self):
+        return self.rt_size
     
     def getLayerNr(self):
         return self.layerNr
     
     def resetConv1Offsets(self):
         # if self.conv1_size(0) >= 64:
-        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.block_size)
+        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.rt_size)
         # else:
         #     nr_blocks_conv1 = self.conv1_size
         # for conv 1 nr_blocks_conv1 has to be 1, because else it will set it to 0
         # self.index_offset_conv1 = np.zeros((self.conv1_size_2, self.conv1_size_1))
         
-        if self.block_size > 3*3*self.conv1_size_1: # kernel size: 3x3
+        if self.rt_size > 3*3*self.conv1_size_1: # kernel size: 3x3
             conv1_y = 1
         else:
-            conv1_y = int(3*3*self.conv1_size_1/self.block_size)
+            conv1_y = int(3*3*self.conv1_size_1/self.rt_size)
         self.index_offset_conv1 = np.zeros((self.conv1_size_2, conv1_y))
 
     def resetConv2Offsets(self): 
-        
-        if self.block_size > 3*3*self.conv2_size_1: # kernel size: 3x3
+        if self.rt_size > 3*3*self.conv2_size_1: # kernel size: 3x3
             conv2_y = 1
         else:
-            conv2_y = int(3*3*self.conv2_size_1/self.block_size)
+            conv2_y = int(3*3*self.conv2_size_1/self.rt_size)
         self.index_offset_conv2 = np.zeros((self.conv2_size_2, conv2_y))
 
     def resetShortcutOffsets(self):
-
-        if self.block_size > 1*1*self.shortcut_size_1: # kernel size: 1x1
+        if self.rt_size > 1*1*self.shortcut_size_1: # kernel size: 1x1
             shortcut_y = 1
         else:
-            shortcut_y = int(1*1*self.shortcut_size_1/self.block_size)
+            shortcut_y = int(1*1*self.shortcut_size_1/self.rt_size)
         self.index_offset_shortcut = np.zeros((self.shortcut_size_2, shortcut_y))
 
 
@@ -388,7 +444,7 @@ class BasicBlock(nn.Module):
         return out
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, train_crit, test_crit, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, quantize_train=True, quantize_eval=True, error_model=None, train_model=None, extract_absfreq=None, num_classes=10, test_rtm = None, block_size=64, protectLayers=[], err_shifts=[]):
+    def __init__(self, block, num_blocks, train_crit, test_crit, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, quantize_train=True, quantize_eval=True, error_model=None, train_model=None, extract_absfreq=None, num_classes=10, test_rtm = None, rt_size=64, protectLayers=[], affected_rts=[]):
         super(ResNet, self).__init__()
         self.name = "ResNet18"
         self.traincriterion = train_crit
@@ -406,10 +462,10 @@ class ResNet(nn.Module):
         self.train_model = train_model
         self.extract_absfreq = extract_absfreq
         self.in_planes = 64
-        self.block_size = block_size #64
+        self.rt_size = rt_size #64
         self.resetOffsets()
         self.protectLayers = protectLayers
-        self.err_shifts = err_shifts
+        self.affected_rts = affected_rts
 
         self.htanh = nn.Hardtanh()
         self.qact = QuantizedActivation(quantization=self.quantization)
@@ -418,7 +474,7 @@ class ResNet(nn.Module):
 
         self.layerNr = 1
         # print(self.layerNr)
-        self.conv1 = QuantizedConv2d(3, 64, err_shifts=self.err_shifts, layerNr=self.layerNr, protectLayers = self.protectLayers, kernel_size=3, stride=1, padding=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, block_size = self.block_size, bias=False, array_size=self.array_size)
+        self.conv1 = QuantizedConv2d(3, 64, affected_rts=self.affected_rts, layerNr=self.layerNr, protectLayers = self.protectLayers, kernel_size=3, stride=1, padding=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, bias=False, array_size=self.array_size)
         self.bn1 = nn.BatchNorm2d(64)
         self.layerNr += 1
         
@@ -431,7 +487,7 @@ class ResNet(nn.Module):
         self.linear_size_2 = num_classes
         self.resetLinearOffsets()
         # print(self.layerNr)
-        self.linear = QuantizedLinear(self.linear_size_1, self.linear_size_2, err_shifts=self.err_shifts, layerNr=self.layerNr, protectLayers=self.protectLayers, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_linear, block_size = self.block_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+        self.linear = QuantizedLinear(self.linear_size_1, self.linear_size_2, affected_rts=self.affected_rts, layerNr=self.layerNr, protectLayers=self.protectLayers, quantization=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mac_mapping=self.mapping, mac_mapping_distr=self.mapping_distr, sorted_mac_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_linear, rt_size = self.rt_size, bias=False, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
 
     def _make_layer(self, block, planes, num_blocks, stride, test_rtm):
         strides = [stride] + [1]*(num_blocks-1)
@@ -439,33 +495,29 @@ class ResNet(nn.Module):
         # print(strides)
         for stride in strides:
             # print(stride)
-            bblock = block(self.in_planes, planes, stride, quantMethod=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mapping=self.mapping, mapping_distr=self.mapping_distr, sorted_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, train_model=self.train_model, extract_absfreq=self.extract_absfreq, test_rtm = test_rtm, block_size=self.block_size, layerNr = self.layerNr, protectLayers=self.protectLayers, err_shifts=self.err_shifts)
+            bblock = block(self.in_planes, planes, stride, quantMethod=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mapping=self.mapping, mapping_distr=self.mapping_distr, sorted_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, train_model=self.train_model, extract_absfreq=self.extract_absfreq, test_rtm = test_rtm, rt_size=self.rt_size, layerNr = self.layerNr, protectLayers=self.protectLayers, affected_rts=self.affected_rts)
             layers.append(bblock)
             self.in_planes = planes * block.expansion
             self.layerNr = bblock.getLayerNr()
         return nn.Sequential(*layers)
     
     
-    def getBlockSize(self):
-        return self.block_size
+    def getRacetrackSize(self):
+        return self.rt_size
     
     def resetOffsets(self):
-        # if self.conv1_size(0) >= 64:
-        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.block_size)
-        # else:
-        #     nr_blocks_conv1 = self.conv1_size
-        # conv1_y = int(64/self.block_size)
+        # conv1_y = int(64/self.rt_size)
         # self.index_offset_conv1 = np.zeros((3, conv1_y))
 
         # for conv 1 nr_blocks_conv1 has to be 3, because else it will set it to 0
-        if self.block_size > 3*3*64: # kernel size 3x3
+        if self.rt_size > 3*3*64: # kernel size 3x3
             conv1_y = 1
         else:
-            conv1_y = int(3*3*64/self.block_size)
+            conv1_y = int(3*3*64/self.rt_size)
         self.index_offset_conv1 = np.zeros((3, conv1_y)) # np.zeros((64, conv1_y))
 
     def resetLinearOffsets(self):
-        self.index_offset_linear = np.zeros((self.linear_size_2, int(self.linear_size_1/self.block_size)))
+        self.index_offset_linear = np.zeros((self.linear_size_2, int(self.linear_size_1/self.rt_size)))
 
     def printIndexOffsets(self):
         print("conv1 " + str(self.index_offset_conv1.shape[0]) + " " + str(self.index_offset_conv1.shape[1]) + " " + str(np.sum(self.index_offset_conv1)))

@@ -74,12 +74,7 @@ def test(model, device, test_loader, pr=1):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            # print("+")
-            # print(data)
-            # print(target)
-            # print(test_loader)
             output = model(data)
-            # print("-")
             if model.name == "ResNet18":
                 test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
             else:
@@ -100,11 +95,11 @@ def test(model, device, test_loader, pr=1):
 
     return accuracy
 
-
 def test_error(model, device, test_loader, perror):
+    
     model.eval()
     set_layer_mode(model, "eval") # propagate informaton about eval to all layers
-       
+   
     # print("start")
     # print(model.printIndexOffsets())
 
@@ -135,21 +130,15 @@ def test_error(model, device, test_loader, perror):
             if isinstance(layer, (QuantizedActivation, QuantizedLinear, QuantizedConv2d)):
                 if layer.error_model is not None:
                     layer.error_model.updateErrorModel(perror)
-    
-    print("Error rate: ", perror)
-    accuracy = test(model, device, test_loader)
 
-    print("total_err_shifts: ", model.err_shifts)
-        
-    # print("end")
-    # print(model.printIndexOffsets())
+    print("Error rate: ", perror)
+    
+    accuracy = test(model, device, test_loader)
 
     # reset error models
     for layer in model.children():
         if isinstance(layer, (QuantizedActivation, QuantizedLinear, QuantizedConv2d)):
             if layer.error_model is not None:
                 layer.error_model.resetErrorModel()
-
-    # print(str(perror) + " " + str(accuracy))
 
     return accuracy
