@@ -1,5 +1,7 @@
 # NetDrift
 
+Presentation [Paper TBP]()
+
 ## Prerequisites (Linux Ubuntu or WSL on Windows):
 
 ### Anaconda3 instalation (from https://docs.anaconda.com/free/anaconda/install/linux/):
@@ -135,5 +137,8 @@ $ bash ./run_auto.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
 Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
 
 ## Contact
-Maintaner: [leonard.bereholschi@tu-dortmund.de](leonard.bereholschi@tu-dortmund.de)
+Maintaner [leonard.bereholschi@tu-dortmund.de](mailto:leonard.bereholschi@tu-dortmund.de)
 
+## Acknowledgements
+
+Special thanks goes to [Mikail Yayla](https://github.com/myay) for providing the original SPICE-Torch framework as a base.
