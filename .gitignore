@@ -11,14 +11,6 @@ Dockerfile
 
 .Identifier
 
-.pyc
-
-code/python/__pycache__
-metrics/__pycache__
-binomial_revert/__pycache__
-count_len/__pycache__
-ratio_blocks_ecc_ind_off/__pycache__
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
