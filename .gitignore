@@ -10,3 +10,5 @@ Dockerfile
 .dockerignore
 
 .Identifier
+
+.pyc
