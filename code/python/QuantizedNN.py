@@ -309,12 +309,12 @@ class QuantizedLinear(nn.Linear):
                     if flags.get("EXEC_BIN_REVERT_MID") == "True":
                         # 80/20 from middle (total elements)
                         # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                        self.index_offset = bin_revert.revert_elements_2d_mid(self.index_offset)
                     
                     if flags.get("EXEC_BIN_REVERT_EDGES") == "True":
                         # 80/20 from edges (total bins)
                         # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+                        self.index_offset = bin_revert.revert_elements_2d_edges(self.index_offset)
 
 
                     ### ODD2EVEN ###
@@ -630,12 +630,12 @@ class QuantizedConv2d(nn.Conv2d):
                     if flags.get("EXEC_BIN_REVERT_MID") == "True":
                         # 80/20 from middle (total elements)
                         # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_mid_separate(self.index_offset)
+                        self.index_offset = bin_revert.revert_elements_2d_mid(self.index_offset)
                     
                     if flags.get("EXEC_BIN_REVERT_EDGES") == "True":
                         # 80/20 from edges (total bins)
                         # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_edges_separate(self.index_offset)
+                        self.index_offset = bin_revert.revert_elements_2d_edges(self.index_offset)
 
 
                     ### ODD2EVEN ###

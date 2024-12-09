@@ -166,7 +166,7 @@ if [ "$NN_MODEL" = "FMNIST" ]
 then
     MODEL="VGG3"
     DATASET="FMNIST"
-    TEST_BATCH_SIZE=10000
+    TEST_BATCH_SIZE=10000 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
     if [ "$KERNEL_SIZE" = 3 ]
     then
         MODEL_PATH="models/model_fmnist9108.pt"
@@ -185,7 +185,7 @@ elif [ "$NN_MODEL" = "CIFAR" ]
 then
     MODEL="VGG7"
     DATASET="CIFAR10"
-    TEST_BATCH_SIZE=10000
+    TEST_BATCH_SIZE=10000 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
     if [ "$KERNEL_SIZE" = 3 ]
     then
         MODEL_PATH="models/model_cifar8582.pt"
@@ -199,7 +199,7 @@ elif [ "$NN_MODEL" = "RESNET" ]
 then 
     MODEL="ResNet"
     DATASET="IMAGENETTE"
-    TEST_BATCH_SIZE=256
+    TEST_BATCH_SIZE=4096 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
     if [ "$KERNEL_SIZE" = 3 ]
     then
         MODEL_PATH="models/model_resnet7694.pt"
