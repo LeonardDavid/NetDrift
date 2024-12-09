@@ -342,7 +342,6 @@ class VGG7(nn.Module):
             else:
                 fc2_y = int(1024/self.rt_size)
             self.index_offset_fc2 = np.zeros((10, fc2_y))
-        
         else:
             print("Invalid kernel size!")
             exit
@@ -422,7 +421,6 @@ class BasicBlock(nn.Module):
         self.index_offset_conv1 = np.zeros((self.conv1_size_2, conv1_y))
 
     def resetConv2Offsets(self): 
-        
         if self.rt_size > 3*3*self.conv2_size_1: # kernel size: 3x3
             conv2_y = 1
         else:
@@ -430,7 +428,6 @@ class BasicBlock(nn.Module):
         self.index_offset_conv2 = np.zeros((self.conv2_size_2, conv2_y))
 
     def resetShortcutOffsets(self):
-
         if self.rt_size > 1*1*self.shortcut_size_1: # kernel size: 1x1
             shortcut_y = 1
         else:
@@ -509,10 +506,6 @@ class ResNet(nn.Module):
         return self.rt_size
     
     def resetOffsets(self):
-        # if self.conv1_size(0) >= 64:
-        #     nr_blocks_conv1 = int(self.conv1_size(0)/self.rt_size)
-        # else:
-        #     nr_blocks_conv1 = self.conv1_size
         # conv1_y = int(64/self.rt_size)
         # self.index_offset_conv1 = np.zeros((3, conv1_y))
 

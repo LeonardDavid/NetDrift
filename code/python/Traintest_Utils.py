@@ -99,7 +99,10 @@ def test_error(model, device, test_loader, perror):
     
     model.eval()
     set_layer_mode(model, "eval") # propagate informaton about eval to all layers
-       
+   
+    # print("start")
+    # print(model.printIndexOffsets())
+
     if model.name == "ResNet18":
         for block in model.children():
             if isinstance(block, (QuantizedActivation, QuantizedConv2d)):
