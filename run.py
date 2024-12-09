@@ -147,7 +147,7 @@ def main():
     model = None
     kernel_size = args.kernel_size
     protectLayers = args.protect_layers
-    rt_size = args.rt_size # 2, 4, ... 64
+    rt_size = args.rt_size # 64, 32
     global_bitflip_budget = args.global_bitflip_budget
     local_bitflip_budget = args.local_bitflip_budget
     
@@ -159,23 +159,31 @@ def main():
 
     # print(protectLayers)
 
-    if args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts).to(device)
+    if args.model == "VGG3":
+        bitflips = [[] for _ in range(4)] 
+        affected_rts = [[] for _ in range(4)] 
+        misalign_faults = [[] for _ in range(4)] 
+
+    elif args.model == "VGG7":
+        bitflips = [[] for _ in range(8)] 
+        affected_rts = [[] for _ in range(8)] 
+        misalign_faults = [[] for _ in range(8)] 
+
+    elif args.model == "ResNet": #ResNet18
+        bitflips = [[] for _ in range(21)] 
+        affected_rts = [[] for _ in range(21)] 
+        misalign_faults = [[] for _ in range(21)] 
 
     else:
-        if args.model == "VGG3":
-            bitflips = [[] for _ in range(4)] 
-            affected_rts = [[] for _ in range(4)] 
-            misalign_faults = [[] for _ in range(4)] 
-        elif args.model == "VGG7":
-            bitflips = [[] for _ in range(8)] 
-            affected_rts = [[] for _ in range(8)] 
-            misalign_faults = [[] for _ in range(8)] 
-        else:
-            bitflips = []
-            affected_rts = []
-            misalign_faults = []
+        bitflips = []
+        affected_rts = []
+        misalign_faults = []
 
+
+    if args.model == "ResNet":
+        model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+
+    else:
         model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
 
