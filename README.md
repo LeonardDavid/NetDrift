@@ -134,5 +134,6 @@ $ bash ./run_auto.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
 ```
 Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
 
-## Others
+## Contact
+Maintaner: [leonard.bereholschi@tu-dortmund.de](leonard.bereholschi@tu-dortmund.de)
 
