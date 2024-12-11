@@ -147,16 +147,22 @@ fi
 
 echo ""
 
+# Iterate through the array and store indices of 0s
+for i in "${!PROTECT_LAYERS[@]}"; do
+  if [ "${PROTECT_LAYERS[i]}" -eq 0 ]; then
+    UNPROT_LAYER_IDS+=("$((i + 1))")
+  fi
+done
+
 ## Check what the argument contains
 if [[ $LAYER_CONFIG == *"ALL"* ]]; then
-    echo "Number of unprotected layers: ALL"
+    echo -e "${BLUE}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} ALL (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
 elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
-    echo "Number of unprotected layers: CUSTOM"
+    echo -e "${BLUE}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} CUSTOM (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
 elif [[ $LAYER_CONFIG =~ ^[0-9]+$ ]]; then
-    let "Np1=LAYER_CONFIG+1"
-    echo "Number of unprotected layers: only $Np1"
+    echo -e "${BLUE}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} INDIV (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
 else
-    echo "Invalid layer configuration (4th argument)."
+    echo -e "${RED}Invalid layer configuration $LAYER_CONFIG.${RESET}"
     # Break or exit the script
     exit 1
 fi
@@ -267,9 +273,11 @@ fi
 declare -a all_results  # Declare an array of arrays to store all results
 
 ## Main loop
-for p in "${PERRORS[@]}"
+for i in "${!PERRORS[@]}"
 do
-    echo -e "\n${GREEN}Running $NN_MODEL for $LOOPS loops with error: $p${RESET}\n"
+    p=${PERRORS[$i]}
+
+    echo -e "\n${GREEN}Run $((i + 1))/${#PERRORS[@]} with PERROR=$p on $NN_MODEL for $LOOPS inference iteration(s).\n"
     
     declare -a list     # stores results
 
@@ -279,7 +287,7 @@ do
         do
             if [ "${PROTECT_LAYERS[$layer]}" == 0 ]; then
                 let "L=layer+1"
-                echo -e "\n${YELLOW}UNprotected Layer: $L${RESET}\n"
+                echo -e "\n${YELLOW}UNprotected Layer: only $L -> INDIV${RESET}\n"
 
                 # PROTECT_LAYERS[$layer]=0
                 # echo "${PROTECT_LAYERS[@]}"
@@ -326,7 +334,7 @@ do
     else    # in the case of ALL, CUSTOM
 
         L=$LAYER_CONFIG
-        echo -e "\n${YELLOW}UNprotected Layer: $L${RESET}\n"
+        echo -e "\n${YELLOW}UNprotected Layer(s): $L (${UNPROT_LAYER_IDS[@]})${RESET}\n"
 
         # PROTECT_LAYERS[$layer]=0
         # echo "${PROTECT_LAYERS[@]}"
