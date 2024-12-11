@@ -257,7 +257,7 @@ def main():
         loops = args.loops
         
         for i in range(0, loops):
-            print("Inference #" + str(i))
+            print("Inference #" + str(i) + "/" + str(loops))
             all_accuracies.append(test_error(model, device, test_loader, perror))
             print("-----------------------------")
 
