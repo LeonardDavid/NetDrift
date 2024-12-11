@@ -115,29 +115,30 @@ if [ ! -d "$results_dir" ]; then
         echo "Directory $output_dir already exists."
     fi
 
+    echo ""
 
     if [ "$CALC_RESULTS" == "True" ] && [ ! -d "$all_results_dir" ]; then
         mkdir -p "$all_results_dir"
     else
-        echo "Flag CALC_RESULTS set to False."
+        echo -e "${RED}Flag CALC_RESULTS set to False.${RESET}"
     fi
 
     if [ "$CALC_BITFLIPS" == "True" ] && [ ! -d "$all_bitflips_dir" ]; then
         mkdir -p "$all_bitflips_dir"
     else
-        echo "Flag CALC_BITFLIPS set to False."
+        echo -e "${YELLOW}Flag CALC_BITFLIPS set to False.${RESET}"
     fi
 
     if [ "$CALC_MISALIGN_FAULTS" == "True" ] && [ ! -d "$all_misalign_faults_dir" ]; then
         mkdir -p "$all_misalign_faults_dir"
     else
-        echo "Flag CALC_MISALIGN_FAULTS set to False."
+        echo -e "${YELLOW}Flag CALC_MISALIGN_FAULTS set to False.${RESET}"
     fi
 
     if [ "$CALC_AFFECTED_RTS" == "True" ] && [ ! -d "$all_affected_rts_dir" ]; then
         mkdir -p "$all_affected_rts_dir"
     else
-        echo "Flag CALC_AFFECTED_RTS set to False."
+        echo -e "${YELLOW}Flag CALC_AFFECTED_RTS set to False.${RESET}"
     fi
 
 
@@ -156,11 +157,11 @@ done
 
 ## Check what the argument contains
 if [[ $LAYER_CONFIG == *"ALL"* ]]; then
-    echo -e "${BLUE}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} ALL (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
+    echo -e "${CYAN}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} ALL (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
 elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
-    echo -e "${BLUE}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} CUSTOM (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
+    echo -e "${CYAN}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} CUSTOM (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
 elif [[ $LAYER_CONFIG =~ ^[0-9]+$ ]]; then
-    echo -e "${BLUE}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} INDIV (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
+    echo -e "${CYAN}Number of unprotected layers is ${#UNPROT_LAYER_IDS[@]}/${#PROTECT_LAYERS[@]} INDIV (IDs: ${UNPROT_LAYER_IDS[@]})${RESET}"
 else
     echo -e "${RED}Invalid layer configuration $LAYER_CONFIG.${RESET}"
     # Break or exit the script
@@ -271,13 +272,14 @@ fi
 
 
 declare -a all_results  # Declare an array of arrays to store all results
+inference_time=0
 
 ## Main loop
 for i in "${!PERRORS[@]}"
 do
     p=${PERRORS[$i]}
 
-    echo -e "\n${GREEN}Run $((i + 1))/${#PERRORS[@]} with PERROR=$p on $NN_MODEL for $LOOPS inference iteration(s).\n"
+    echo -e "\n${GREEN}Run $((i + 1))/${#PERRORS[@]} with PERROR=$p on $NN_MODEL for $LOOPS inference iteration(s).${RESET}"
     
     declare -a list     # stores results
 
@@ -287,7 +289,7 @@ do
         do
             if [ "${PROTECT_LAYERS[$layer]}" == 0 ]; then
                 let "L=layer+1"
-                echo -e "\n${YELLOW}UNprotected Layer: only $L -> INDIV${RESET}\n"
+                echo -e "${YELLOW}UNprotected Layer: only $L -> INDIV${RESET}\n"
 
                 # PROTECT_LAYERS[$layer]=0
                 # echo "${PROTECT_LAYERS[@]}"
@@ -303,9 +305,9 @@ do
                 python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
 
                 if [ "$CALC_RESULTS" == "True" ]; then
-                    penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
+                    results_line=$(tail -n 2 "$output_file" | head -n 1)
                     # Remove square brackets and split values
-                    values=$(echo "$penultimate_line" | tr -d '[]')
+                    values=$(echo "$results_line" | tr -d '[]')
                 fi
                 if [ "$CALC_BITFLIPS" == "True" ]; then
                     bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
@@ -320,8 +322,14 @@ do
                     echo $affected_rts_line >> "$out_affected_rts_file"
                 fi
 
-                list+=("$values")
+                times_line=$(tail -n 11 "$output_file" | head -n 1)
+                times=$(echo "$times_line" | tr -d '[]' | tr ',' ' ')
+
+                for time in $times; do
+                    inference_time=$(echo "$inference_time + $time" | bc)
+                done
                 
+                list+=("$values")
                 # echo $list
                 
                 python scripts-python/plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
@@ -334,7 +342,7 @@ do
     else    # in the case of ALL, CUSTOM
 
         L=$LAYER_CONFIG
-        echo -e "\n${YELLOW}UNprotected Layer(s): $L (${UNPROT_LAYER_IDS[@]})${RESET}\n"
+        echo -e "${YELLOW}UNprotected Layer(s): $L (${UNPROT_LAYER_IDS[@]})${RESET}\n"
 
         # PROTECT_LAYERS[$layer]=0
         # echo "${PROTECT_LAYERS[@]}"
@@ -349,10 +357,11 @@ do
 
         python run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --test-batch-size=${TEST_BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET  --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
         
+
         if [ "$CALC_RESULTS" == "True" ]; then
-            penultimate_line=$(tail -n 2 "$output_file" | head -n 1)
+            results_line=$(tail -n 2 "$output_file" | head -n 1)
             # Remove square brackets and split values
-            values=$(echo "$penultimate_line" | tr -d '[]')
+            values=$(echo "$results_line" | tr -d '[]')
         fi
         if [ "$CALC_BITFLIPS" == "True" ]; then
             bitflips_line=$(tail -n 4 "$output_file" | head -n 1)
@@ -367,8 +376,14 @@ do
             echo $affected_rts_line >> "$out_affected_rts_file"
         fi
 
+        times_line=$(tail -n 11 "$output_file" | head -n 1)
+        times=$(echo "$times_line" | tr -d '[]' | tr ',' ' ')
+
+        for time in $times; do
+            inference_time=$(echo "$inference_time + $time" | bc)
+        done
+
         list+=("$values")
-        
         # echo $list
         
         python scripts-python/plot.py ${output_file} ${results_dir} ${NN_MODEL} ${LOOPS} ${p} ${L}
@@ -423,6 +438,12 @@ if [ "$CALC_AFFECTED_RTS" == "True" ]; then
     echo ""
     python scripts-python/calculate_avg_matrix.py ${out_affected_rts_file} 1
 fi
+
+hours=$(printf "%02d" $(echo "$inference_time/3600" | bc))
+minutes=$(printf "%02d" $(echo "($inference_time%3600)/60" | bc))
+seconds=$(printf "%06.3f" $(echo "$inference_time%60" | bc))
+
+echo -e "\n${CYAN}Total model inference times: ${hours}:${minutes}:${seconds}${RESET}"
 
 
 ## Reset layer configuration in case of INDIV
