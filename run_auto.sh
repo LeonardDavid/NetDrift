@@ -22,6 +22,8 @@
 #
 ##########################################################################################
 
+start_time=$(date +%s.%N)
+
 # source flags and colour definitions from conf file
 source flags.conf 
 
@@ -206,10 +208,16 @@ if [[ $LAYER_CONFIG == *"ALL"* ]]; then
 
     bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
 
+    total=$((${#PERRORS[@]}*$LOOPS))
+    echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"
+
 elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
     # echo "Number of unprotected layers: CUSTOM"
 
     bash run_auto_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+
+    total=$((${#PERRORS[@]}*$LOOPS))
+    echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"
 
 elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
     # echo "Number of unprotected layers: INDIVIDUAL"
@@ -246,7 +254,21 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
         PROTECT_LAYERS[$layer_id]=1
 
     done
+
+    echo -e "${YELLOW}Warning! Displayed total model inference times in this case (INDIV) are ${RED}FOR EACH${YELLOW} tested layer at a time (scroll up to see previous inference times) ${BLUE}TODO -> sum up into grand total${RESET}"
+
+    total=$((${#PERRORS[@]}*${LOOPS}*${layers_total}))
+    echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS}x${layers_total} = ${total}${RESET}"
+
 else
     echo "Invalid layer configuration $LAYER_CONFIG."
     exit 1
 fi
+end_time=$(date +%s.%N)
+
+elapsed_time=$(echo "$end_time - $start_time" | bc)
+hours=$(printf "%02d" $(echo "$elapsed_time/3600" | bc))
+minutes=$(printf "%02d" $(echo "($elapsed_time%3600)/60" | bc))
+seconds=$(printf "%06.3f" $(echo "$elapsed_time%60" | bc))
+
+echo -e "${PURPLE}Total script execution time: ${hours}:${minutes}:${seconds}${RESET}"

@@ -128,11 +128,11 @@ true_count_read = sum(1 for value in read_keys.values() if value == "True")
 
 # Assert whether there is at most one Execution flag turned on at the same time
 assert true_count_exec <= 1, f"\n\033[0;31mMore than one Execution flag in flags.conf has the value 'True': {exec_keys}\n\033[0m"
-print("\033[0;32mAssertion passed: At most one Execution flag in flags.conf has the value 'True'.\n\033[0m")
+print("Assertion passed: At most one Execution flag in flags.conf has the value 'True'.\n")
 
 # Assert whether there is at most one Execution flag turned on at the same time
 assert true_count_read <= 1, f"\n\033[0;31mMore than one Read flag in flags.conf has the value 'True': {read_keys}\n\033[0m"
-print("\033[0;32mAssertion passed: At most one Read flag in flags.conf has the value 'True'.\n\033[0m")
+print("Assertion passed: At most one Read flag in flags.conf has the value 'True'.\n")
 
 
 class QuantizedLinear(nn.Linear):

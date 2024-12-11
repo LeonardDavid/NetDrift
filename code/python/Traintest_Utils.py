@@ -6,7 +6,9 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
 import sys
+import time
 from datetime import datetime
+
 sys.path.append("code/python/")
 
 from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data
@@ -134,7 +136,13 @@ def test_error(model, device, test_loader, perror):
 
     print("Error rate: ", perror)
     
+    # start_time = time.perf_counter()
     accuracy = test(model, device, test_loader)
+    # end_time = time.perf_counter()
+    # elapsed_time = end_time-start_time
+    # minutes, seconds = divmod(elapsed_time, 60)
+    # formatted_time = f"{int(minutes):02}:{seconds:05.2f}"
+    # print(f"Elapsed time: {formatted_time}")
 
     # reset error models
     for layer in model.children():

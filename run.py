@@ -253,17 +253,37 @@ def main():
 
     if args.test_error is not None:
         all_accuracies = []
+        inference_times = []
         perror = args.perror
         loops = args.loops
         
         for i in range(0, loops):
             print("Inference #" + str(i) + "/" + str(loops))
+
+            start_time = time.perf_counter()
             all_accuracies.append(test_error(model, device, test_loader, perror))
+            end_time = time.perf_counter()
+
+            elapsed_time = end_time-start_time
+            inference_times.append(round(elapsed_time, 2))
+
+            minutes, seconds = divmod(elapsed_time, 60)
+            formatted_time = f"{int(minutes):02}:{seconds:05.2f}"
+            print(f"Elapsed time: {formatted_time}")
+
             print("-----------------------------")
+
+        minutes, seconds = divmod(sum(inference_times), 60)
+        total_inference_time = f"{int(minutes):02}:{seconds:05.2f}"
+        
 
         # to_dump_data = dump_exp_data(model, args, all_accuracies)
         # store_exp_data(to_dump_path, to_dump_data)
         # print("-----------------------------")
+        print("TOTAL INFERENCE TIME")
+        print(total_inference_time)
+        print(inference_times)
+        print("-----------------------------")
         print("affected_rts: ")
         print(model.affected_rts)
         print("misalign_faults: ")
