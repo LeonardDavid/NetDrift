@@ -186,7 +186,7 @@ class QuantizedLinear(nn.Linear):
 
             ### PRNT ###
 
-            if flags.get("PRNT_QWEIGHTS_BEFORE") == "True" and self.protectLayers[self.layerNR-1]==0:
+            if flags.get("PRNT_QWEIGHTS_BEFORE") == "True" and self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
                 list_of_integers = quantized_weight.cpu().tolist()
 
                 try:
@@ -403,7 +403,7 @@ class QuantizedLinear(nn.Linear):
                 quantized_weight = ErrorModel.apply(quantized_weight, self.index_offset, self.rt_size, self.error_model)
 
 
-                if self.protectLayers[self.layerNR-1]==0:
+                if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
 
                     ## absolute number of bitflips
                     if self.calc_bitflips == "True":
@@ -418,7 +418,7 @@ class QuantizedLinear(nn.Linear):
 
                 ### PRNT ###
 
-                if flags.get("PRNT_QWEIGHTS_AFTER") == "True" and self.protectLayers[self.layerNR-1]==0 and flags.get("PRNT_QWEIGHTS_AFTER_NRUN") == str(self.nr_run-1):
+                if flags.get("PRNT_QWEIGHTS_AFTER") == "True" and self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0 and flags.get("PRNT_QWEIGHTS_AFTER_NRUN") == str(self.nr_run-1):
                     list_of_integers = quantized_weight.cpu().tolist()
 
                     with open('qweights_shift' + str(self.nr_run-1) + '_' + str(self.layerNR) + '.txt', 'w') as f:
@@ -504,7 +504,7 @@ class QuantizedConv2d(nn.Conv2d):
 
             ### PRNT ###
 
-            if flags.get("PRNT_QWEIGHTS_BEFORE") == "True" and self.protectLayers[self.layerNR-1]==0:
+            if flags.get("PRNT_QWEIGHTS_BEFORE") == "True" and self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
                 list_of_integers = quantized_weight.cpu().tolist()
 
                 try:
@@ -723,7 +723,7 @@ class QuantizedConv2d(nn.Conv2d):
                 quantized_weight = apply_error_model(quantized_weight, self.index_offset, self.rt_size, self.error_model)
                 
 
-                if self.protectLayers[self.layerNR-1]==0:
+                if self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0:
 
                     ## absolute number of bitflips             
                     if self.calc_bitflips == "True":
@@ -738,7 +738,7 @@ class QuantizedConv2d(nn.Conv2d):
 
                 ### PRNT ###
 
-                if flags.get("PRNT_QWEIGHTS_AFTER") == "True" and self.protectLayers[self.layerNR-1]==0 and flags.get("PRNT_QWEIGHTS_AFTER_NRUN") == str(self.nr_run-1):
+                if flags.get("PRNT_QWEIGHTS_AFTER") == "True" and self.test_rtm is not None and self.protectLayers[self.layerNR-1]==0 and flags.get("PRNT_QWEIGHTS_AFTER_NRUN") == str(self.nr_run-1):
                     list_of_integers = quantized_weight.cpu().tolist()
 
                     with open('qweights_shift' + str(self.nr_run-1) + '_' + str(self.layerNR) + '.txt', 'w') as f:

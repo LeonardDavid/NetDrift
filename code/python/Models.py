@@ -13,6 +13,125 @@ class Scale(nn.Module):
 
     def forward(self, input):
         return input * self.scale
+    
+
+class MLP(nn.Module):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
+        super(MLP, self).__init__()
+        self.name = "MLP"
+        self.quantization = quantMethod
+        self.q_train = quantize_train
+        self.q_test = quantize_eval
+        self.error_model = error_model
+        self.htanh = nn.Hardtanh()
+        self.rt_size = rt_size
+        self.protectLayers = protectLayers
+        self.affected_rts = affected_rts
+        self.misalign_faults = misalign_faults
+        self.bitflips = bitflips
+        self.global_bitflip_budget = global_bitflip_budget
+        self.local_bitflip_budget = local_bitflip_budget
+
+        self.calc_results = calc_results
+        self.calc_bitflips = calc_bitflips
+        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_affected_rts = calc_affected_rts
+        
+        ### FP ###
+        # # number of hidden nodes in each layer (512)
+        # # linear layer (784 -> hidden_1)
+        # self.fc1 = nn.Linear(28 * 28, 512)
+        # # linear layer (n_hidden -> hidden_2)
+        # self.fc2 = nn.Linear(512, 512)
+        # # linear layer (n_hidden -> 10)
+        # self.fc3 = nn.Linear(512, 10)
+        # # dropout layer (p=0.2)
+        # # dropout prevents overfitting of data
+        # self.dropout = nn.Dropout(0.2)
+
+
+        self.resetOffsets()
+
+        ### BNN ###
+        # TODO bias = True?
+
+        self.fc1 = QuantizedLinear(28*28, 512, layerNr=1, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.qact1 = QuantizedActivation(quantization=self.quantization)
+
+        self.fc2 = QuantizedLinear(512, 512, layerNr=2, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.qact2 = QuantizedActivation(quantization=self.quantization)
+
+        self.fc3 = QuantizedLinear(512, 10, layerNr=3, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc3, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # self.scale = Scale()
+        self.dropout = nn.Dropout(0.2)
+        
+
+    def resetOffsets(self):
+
+        if self.rt_size > 28*28: 
+            fc1_y = 1
+        else:
+            fc1_y = int(28*28/self.rt_size+1) # +1 bc 784%64!=0
+        self.index_offset_fc1 = np.zeros((512, fc1_y))
+
+        if self.rt_size > 512: 
+            fc2_y = 1
+        else:
+            fc2_y = int(512/self.rt_size)
+        self.index_offset_fc2 = np.zeros((512, fc2_y))
+        
+        if self.rt_size > 2048: 
+            fc3_y = 1
+        else:
+            fc3_y = int(2048/self.rt_size)
+        self.index_offset_fc3 = np.zeros((10, fc3_y))
+
+
+    def forward(self, x):
+
+        ### FP ###
+        # # flatten image input
+        # x = x.view(-1, 28 * 28)
+
+        # # add hidden layer, with relu activation function
+        # x = F.relu(self.fc1(x))
+        # # add dropout layer
+        # x = self.dropout(x)
+
+        # # add hidden layer, with relu activation function
+        # x = F.relu(self.fc2(x))
+        # # add dropout layer
+        # x = self.dropout(x)
+
+        # # add output layer
+        # x = self.fc3(x)
+
+
+        ### BNN ###
+        # flatten image input
+        x = x.view(-1, 28 * 28)
+
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = self.htanh(x)
+        x = self.qact1(x)
+        # add dropout layer
+        x = self.dropout(x)
+
+
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = self.htanh(x)
+        x = self.qact2(x)
+        # add dropout layer
+        x = self.dropout(x)
+
+        x = self.fc3(x)
+
+
+        return x
 
 
 class VGG3(nn.Module):
