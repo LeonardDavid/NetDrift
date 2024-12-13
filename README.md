@@ -2,7 +2,11 @@
 
 Presentation [Paper TBP]()
 
-The NetDrift framework enables profiling BNNs on unreliable RTMs, facilitating the investigation into the impact of misalignment faults on model accuracy. It enables controlled error injection in selected BNN layers with varying fault rates and simulates the impact of accumulated misalignments in weight tensors of several BNN models (FashionMNIST, CIFAR10, ResNet18) stored in RTM. The framework allows for tuning reliability for performance and vice versa, providing an estimate of the number of inference iterations required for a BNN model to drop below a certain lower threshold, with no protection, limited protection, and full protection, along with the associated impact on performance.
+The NetDrift framework enables profiling BNNs on unreliable RTMs, facilitating the investigation into the impact of misalignment faults on model accuracy. 
+
+It enables controlled error injection in selected BNN layers with varying fault rates and simulates the impact of accumulated misalignments in weight tensors of several BNN models (FashionMNIST, CIFAR10, ResNet18) stored in RTM. 
+
+The framework allows for tuning reliability for performance and vice versa, providing an estimate of the number of inference iterations required for a BNN model to drop below a certain lower threshold, with no protection, limited protection, and full protection, along with the associated impact on performance.
 
 ## Prerequisites (Linux Ubuntu or WSL on Windows):
 
