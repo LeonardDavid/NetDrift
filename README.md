@@ -127,18 +127,24 @@ $ bash ./run_auto.sh {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_
 - `local_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
 
 ### Example in a table TODO
+
 ```
-$ bash ./run_auto.sh 0.1 PERRORS 3 FMNIST 1 64 CUSTOM 0
+bash ./run_auto.sh 0.01 PERRORS 0 MNIST 2 64 CUSTOM 0
+```
+Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
+
+```
+bash ./run_auto.sh 0.1 PERRORS 3 FMNIST 1 64 CUSTOM 0
 ```
 Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
 
 ```
-$ bash ./run_auto.sh 0.1 0.01 PERRORS 3 CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
+bash ./run_auto.sh 0.1 0.01 PERRORS 3 CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
 ```
 Executes at misalignment fault rates of 10% and 1% (separate runs): CIFAR with kernel_size 3 for 10 iterations with racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
 
 ```
-$ bash ./run_auto.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
+bash ./run_auto.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
 ```
 Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
 
