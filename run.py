@@ -203,7 +203,7 @@ def main():
 
     scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
 
-    print(model)
+    # print(model)
 
     # load training state or create new model
     if args.load_training_state is not None:
@@ -273,6 +273,10 @@ def main():
         
         for i in range(0, loops):
             print("Inference #" + str(i+1) + "/" + str(loops))
+
+            # # in case CUDA Memory errors arise
+            # torch.cuda.empty_cache()
+            # print("VRAM flushed")
 
             start_time = time.perf_counter()
             all_accuracies.append(test_error(model, device, test_loader, perror))
