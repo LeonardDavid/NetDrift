@@ -151,7 +151,7 @@ Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 ite
 ### Troubleshooting
 
 - In case CUDA Memory errors arise:
-- - flush the VRAM using `torch.cuda.empty_cache()` -> find line in Inference loop in `run.py`
+    - flush the VRAM using `torch.cuda.empty_cache()` -> find line in Inference loop in `run.py`
 
 - Set `TEST_BATCH_SIZE` in `run_auto_all.sh` for every NN_MODEL to adjust the amount of images pe batch executed at once in each inference iteration (changes stats and graphs, see terminal output)
    
