@@ -169,7 +169,20 @@ else
 fi
 
 ## Initialize parameters based on NN_MODEL
-if [ "$NN_MODEL" = "FMNIST" ]
+if [ "$NN_MODEL" = "MNIST" ]
+then
+    MODEL="MLP"
+    DATASET="MNIST"
+    TEST_BATCH_SIZE=10000 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
+    if [ "$KERNEL_SIZE" = 0 ]
+    then
+        MODEL_PATH="models/model_mnist9696_bnn.pt"
+    else
+        echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL (no kernel size needed, use 0 for MNIST)."
+        exit 1
+    fi
+
+elif [ "$NN_MODEL" = "FMNIST" ]
 then
     MODEL="VGG3"
     DATASET="FMNIST"
