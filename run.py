@@ -159,7 +159,13 @@ def main():
 
     # print(protectLayers)
 
-    if args.model == "VGG3":
+
+    if args.model == "MLP":
+        bitflips = [[] for _ in range(3)] 
+        affected_rts = [[] for _ in range(3)] 
+        misalign_faults = [[] for _ in range(3)] 
+
+    elif args.model == "VGG3":
         bitflips = [[] for _ in range(4)] 
         affected_rts = [[] for _ in range(4)] 
         misalign_faults = [[] for _ in range(4)] 
@@ -178,9 +184,15 @@ def main():
         bitflips = []
         affected_rts = []
         misalign_faults = []
+        
 
+    if args.model == "MLP":
+        ### FP ###
+        # model = nn_model()
+        ### BNN ### 
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
-    if args.model == "ResNet":
+    elif args.model == "ResNet":
         model = nn_model(BasicBlock, [2, 2, 2, 2], crit_train, crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=netdrift_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     else:
@@ -190,6 +202,8 @@ def main():
     optimizer = Clippy(model.parameters(), lr=args.lr)
 
     scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
+
+    # print(model)
 
     # load training state or create new model
     if args.load_training_state is not None:
@@ -258,7 +272,11 @@ def main():
         loops = args.loops
         
         for i in range(0, loops):
-            print("Inference #" + str(i) + "/" + str(loops))
+            print("Inference #" + str(i+1) + "/" + str(loops))
+
+            # # in case CUDA Memory errors arise
+            # torch.cuda.empty_cache()
+            # print("VRAM flushed")
 
             start_time = time.perf_counter()
             all_accuracies.append(test_error(model, device, test_loader, perror))
@@ -275,7 +293,14 @@ def main():
 
         minutes, seconds = divmod(sum(inference_times), 60)
         total_inference_time = f"{int(minutes):02}:{seconds:05.2f}"
-        
+
+        # print(model.fc1.weight)
+        # print(model.fc2.weight)
+        # print(model.fc3.weight)
+
+        # print(model.fc1.bias)
+        # print(model.fc2.bias)
+        # print(model.fc3.bias)
 
         # to_dump_data = dump_exp_data(model, args, all_accuracies)
         # store_exp_data(to_dump_path, to_dump_data)

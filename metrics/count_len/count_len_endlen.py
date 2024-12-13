@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 def load_data_from_file(filename):
   """
@@ -36,7 +37,7 @@ def count(data, arr_type, block_size):
             nr_elem = len(row) * 9 # conv kernels of 3x3, 5x5, 7x7 elements
 
             count = 0
-            arr_size = max(int(nr_elem/block_size),1)
+            arr_size = max(math.ceil(nr_elem/block_size),1)
             count_ones = np.zeros(arr_size)
             count_neg_ones = np.zeros(arr_size)
 
@@ -53,7 +54,7 @@ def count(data, arr_type, block_size):
             nr_elem = len(row)
 
             count = 0
-            arr_size = max(int(nr_elem/block_size),1)
+            arr_size = max(math.ceil(nr_elem/block_size),1)
             count_ones = np.zeros(arr_size)
             count_neg_ones = np.zeros(arr_size)
 
@@ -658,16 +659,19 @@ if __name__ == '__main__':
     gbb = 0.03  # global bitflip budget
     lbb = 1   # local bitflip budget
 
-    total_elems = [0, 576, 36864, 6422528, 20480]
+    # total_elems = [0, 576, 36864, 6422528, 20480] #FMNIST
+    total_elems = [0, 401408, 262144, 5120] # MNIST
 
-    # for layer in range(1,3):
-    for layer in range(1,5):
+    for layer in range(1,4):
+    # for layer in range(1,5):
 
         # layer = 2
-        if layer == 1 or layer == 2 or layer==0:
-            array_type = "3D"
-        elif layer == 3 or layer == 4:
-            array_type = "1D"
+        # if layer == 1 or layer == 2 or layer==0:
+        #     array_type = "3D"
+        # elif layer == 3 or layer == 4:
+        #     array_type = "1D"
+
+        array_type = "1D"
 
         total_elem = total_elems[layer]
 
@@ -686,7 +690,7 @@ if __name__ == '__main__':
         print_flag = False
 
         _1flip_flag = True
-        _1flip_flag_budget = True
+        _1flip_flag_budget = False
         _1flip_flag_col = False
         _1flip_flag_offset = False
 

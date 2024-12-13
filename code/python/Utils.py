@@ -7,7 +7,7 @@ from datetime import datetime
 import json
 
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
-from Models import VGG3, VGG7, ResNet, BasicBlock
+from Models import MLP, VGG3, VGG7, ResNet, BasicBlock
 
 def get_model_and_datasets(args):
     nn_model = None
@@ -15,6 +15,8 @@ def get_model_and_datasets(args):
     dataset1 = None
     dataset2 = None
 
+    if args.model == "MLP":
+        nn_model = MLP
     if args.model == "VGG3":
         nn_model = VGG3
         # model = nn_model().cuda()

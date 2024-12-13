@@ -99,7 +99,10 @@ shift
 
 
 ## Specify the number of total layers in NN model
-if [ "$NN_MODEL" = "FMNIST" ]
+if [ "$NN_MODEL" = "MNIST" ]
+then
+    layers_total=3
+elif [ "$NN_MODEL" = "FMNIST" ]
 then
     layers_total=4
 elif [ "$NN_MODEL" = "CIFAR" ]
@@ -109,7 +112,7 @@ elif [ "$NN_MODEL" = "RESNET" ]
 then 
     layers_total=21
 else
-    echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET${RESET}\n"
+    echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: MNIST, FMNIST, CIFAR, RESNET${RESET}\n"
     exit 1
 fi
 
@@ -143,7 +146,12 @@ if [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
 
         ## No specified layers => use DEFAULT CUSTOM configs
         ## Only 1 at a time
-        if [ "$NN_MODEL" = "FMNIST" ]
+        if [ "$NN_MODEL" = "MNIST" ]
+        then
+        
+            declare -a PROTECT_LAYERS=(0 0 1)
+
+        elif [ "$NN_MODEL" = "FMNIST" ]
         then
         
             declare -a PROTECT_LAYERS=(0 0 1 0)
@@ -166,7 +174,7 @@ if [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
             # declare -a PROTECT_LAYERS=(0 1 0 1 1 1 1 1 0 0 1 0 0 0 0 1 1 0 0 0 1)
 
         else
-            echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: FMNIST, CIFAR, RESNET${RESET}\n"
+            echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: MNIST, FMNIST, CIFAR, RESNET${RESET}\n"
             exit 1
         fi
     fi  
