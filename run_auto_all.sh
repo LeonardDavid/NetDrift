@@ -176,7 +176,8 @@ then
     TEST_BATCH_SIZE=10000 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
     if [ "$KERNEL_SIZE" = 0 ]
     then
-        MODEL_PATH="models/model_mnist9696_bnn.pt"
+        # MODEL_PATH="models/model_mnist9696_bnn.pt"
+        MODEL_PATH="models/model_mnist9418_bnn.pt"
     else
         echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL (no kernel size needed, use 0 for MNIST)."
         exit 1
