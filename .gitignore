@@ -6,6 +6,8 @@ experiments/
 
 # data/imagenette2
 
+nohup.out
+
 Dockerfile
 .dockerignore
 
