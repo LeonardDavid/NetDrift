@@ -15,14 +15,22 @@ from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, 
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 
 def binary_hingeloss(yhat, y, b=128):
-    #print("yhat", yhat.mean(dim=1))
-    #print("y", y)
-    # print("BINHINGE")
-    y_enc = 2 * torch.nn.functional.one_hot(y, yhat.shape[-1]) - 1.0
-    #print("y_enc", y_enc)
-    l = (b - y_enc * yhat).clamp(min=0)
-    #print(l)
+    print("BINHINGE")
+
+    # print("yhat", yhat.mean(dim=1)) # output <=> predictions
+    # print("y", y)                   # target <=> ground truth labels
+    
+    y_enc = 2 * torch.nn.functional.one_hot(y, yhat.shape[-1]) - 1.0 
+    
+    # l_MHL = max{0, (b - y_enc * yhat)}
+    l = (b - y_enc * yhat).clamp(min=0) 
+    
     return l.mean(dim=1) / b
+
+
+def racetrack_resilience():
+
+    return None
 
 class Clippy(torch.optim.Adam):
     def step(self, closure=None):

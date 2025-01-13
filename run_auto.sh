@@ -154,7 +154,8 @@ if [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
         elif [ "$NN_MODEL" = "FMNIST" ]
         then
         
-            declare -a PROTECT_LAYERS=(0 0 1 0)
+            declare -a PROTECT_LAYERS=(1 1 1 1)
+            # declare -a PROTECT_LAYERS=(0 0 1 0)
             # declare -a PROTECT_LAYERS=(0 0 1 1)
 
         elif [ "$NN_MODEL" = "CIFAR" ]

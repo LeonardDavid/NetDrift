@@ -111,7 +111,7 @@ torch::Tensor netdrift_cuda(
     }
   }
 
-  // std::cout<<"flat_index_offset:"<<std::endl;
+  // std::cout<<"flat_index_offset: "<<total_size<<std::endl;
   // for(int i = 0; i<total_size; i++){
   //   std::cout<<index_offset_flat[i]<<" ";
   // }

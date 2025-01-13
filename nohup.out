@@ -1,0 +1,36 @@
+Assertion passed: At most one Execution flag in flags.conf has the value 'True'.
+
+Assertion passed: At most one Read flag in flags.conf has the value 'True'.
+
+Available GPUs:  [0]
+Currently used GPU:  0
+Namespace(model='VGG3', dataset='FMNIST', performance_mode=None, train_model=1, load_model_path=None, gpu_num=0, batch_size=256, test_batch_size=1000, epochs=10, lr=0.001, gamma=0.5, step_size=25, no_cuda=False, dry_run=False, seed=1, log_interval=10, save_model='fmnist_ndf_mhl_L1234_p0000455', load_training_state=None, save_training_state=None, an_sim=None, mapping=None, mapping_distr=None, array_size=32, test_error=1, test_error_distr=None, print_accuracy=None, profile_time=None, extract_absfreq=None, extract_absfreq_resnet=None, test_rtm=1, kernel_size=3, perror=4.55e-05, loops=1, protect_layers=[0, 0, 0, 0], rt_size=64, global_bitflip_budget=0.0, local_bitflip_budget=0.0, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True)
+Train Epoch: 1 [0/60000 (0%)]	Loss: 2.301778
+Train Epoch: 1 [2560/60000 (4%)]	Loss: 0.646405
+Train Epoch: 1 [5120/60000 (9%)]	Loss: 0.578104
+Train Epoch: 1 [7680/60000 (13%)]	Loss: 0.446067
+Train Epoch: 1 [10240/60000 (17%)]	Loss: 0.511335
+Train Epoch: 1 [12800/60000 (21%)]	Loss: 0.455330
+Train Epoch: 1 [15360/60000 (26%)]	Loss: 0.459033
+Train Epoch: 1 [17920/60000 (30%)]	Loss: 0.451757
+Train Epoch: 1 [20480/60000 (34%)]	Loss: 0.343323
+Train Epoch: 1 [23040/60000 (38%)]	Loss: 0.331964
+Train Epoch: 1 [25600/60000 (43%)]	Loss: 0.418278
+Train Epoch: 1 [28160/60000 (47%)]	Loss: 0.421892
+Train Epoch: 1 [30720/60000 (51%)]	Loss: 0.563542
+Train Epoch: 1 [33280/60000 (55%)]	Loss: 0.516595
+Train Epoch: 1 [35840/60000 (60%)]	Loss: 0.425733
+Train Epoch: 1 [38400/60000 (64%)]	Loss: 0.575279
+Train Epoch: 1 [40960/60000 (68%)]	Loss: 0.431851
+Train Epoch: 1 [43520/60000 (72%)]	Loss: 0.591472
+Train Epoch: 1 [46080/60000 (77%)]	Loss: 0.541266
+Train Epoch: 1 [48640/60000 (81%)]	Loss: 0.325610
+Train Epoch: 1 [51200/60000 (85%)]	Loss: 0.434923
+Train Epoch: 1 [53760/60000 (89%)]	Loss: 0.461890
+Train Epoch: 1 [56320/60000 (94%)]	Loss: 0.314980
+Train Epoch: 1 [58880/60000 (98%)]	Loss: 0.442209
+Epoch training time elapsed: 227669ms
+
+Accuracy: 78.26%
+
+Test time elapsed: 9739ms

@@ -577,6 +577,7 @@ class QuantizedConv2d(nn.Conv2d):
                             for k in range(1, self.rt_size):
                                 shift += 1
                                 if(random.uniform(0.0, 1.0) < self.error_model.p):
+                                    # print(self.error_model.p)
                                     misalign_fault += 1
                                     # 50/50 random possibility of right or left misalign_fault
                                     if(random.choice([-1,1]) == 1):
