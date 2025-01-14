@@ -52,18 +52,50 @@ class MLP(nn.Module):
 
         self.resetOffsets()
 
-        ### BNN ###
+        ### 9696 BNN ###
+        # TODO bias = True?
+
+        # self.fc1 = QuantizedLinear(28*28, 512, layerNr=1, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # self.bn1 = nn.BatchNorm1d(512)
+        # self.qact1 = QuantizedActivation(quantization=self.quantization)
+
+        # self.fc2 = QuantizedLinear(512, 512, layerNr=2, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # self.bn2 = nn.BatchNorm1d(512)
+        # self.qact2 = QuantizedActivation(quantization=self.quantization)
+
+        # self.fc3 = QuantizedLinear(512, 10, layerNr=3, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc3, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # # self.scale = Scale()
+        # self.dropout = nn.Dropout(0.2)
+
+
+        ### 9418 BNN ###
         # TODO bias = True?
 
         self.fc1 = QuantizedLinear(28*28, 512, layerNr=1, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn1 = nn.BatchNorm1d(512)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc2 = QuantizedLinear(512, 512, layerNr=2, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
-        self.bn2 = nn.BatchNorm1d(512)
-        self.qact2 = QuantizedActivation(quantization=self.quantization)
+        # self.fc2 = QuantizedLinear(512, 512, layerNr=2, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # self.bn2 = nn.BatchNorm1d(512)
+        # self.qact2 = QuantizedActivation(quantization=self.quantization)
 
-        self.fc3 = QuantizedLinear(512, 10, layerNr=3, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc3, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.fc3 = QuantizedLinear(512, 10, layerNr=2, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc3, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # self.scale = Scale()
+        self.dropout = nn.Dropout(0.2)
+
+
+        ### xxx BNN ###
+        # TODO bias = True?
+
+        # self.fc1 = QuantizedLinear(28*28, 512, layerNr=1, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # self.bn1 = nn.BatchNorm1d(512)
+        # self.qact1 = QuantizedActivation(quantization=self.quantization)
+
+        # self.fc2 = QuantizedLinear(512, 512, layerNr=2, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        # self.bn2 = nn.BatchNorm1d(512)
+        # self.qact2 = QuantizedActivation(quantization=self.quantization)
+
+        self.fc3 = QuantizedLinear(28*28, 10, layerNr=1, protectLayers = self.protectLayers, affected_rts=self.affected_rts, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_fc3, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         # self.scale = Scale()
         self.dropout = nn.Dropout(0.2)
         
@@ -109,24 +141,68 @@ class MLP(nn.Module):
         # x = self.fc3(x)
 
 
-        ### BNN ###
+        ### 9696 BNN ###
+        # # flatten image input
+        # x = x.view(-1, 28 * 28)
+
+        # x = self.fc1(x)
+        # x = self.bn1(x)
+        # x = self.htanh(x)
+        # x = self.qact1(x)
+        # # add dropout layer
+        # x = self.dropout(x)
+
+
+        # x = self.fc2(x)
+        # x = self.bn2(x)
+        # x = self.htanh(x)
+        # x = self.qact2(x)
+        # # add dropout layer
+        # x = self.dropout(x)
+
+        # x = self.fc3(x)
+
+
+        ### 9418 BNN ###
+        # # flatten image input
+        # x = x.view(-1, 28 * 28)
+
+        # x = self.fc1(x)
+        # x = self.bn1(x)
+        # x = self.htanh(x)
+        # x = self.qact1(x)
+        # # add dropout layer
+        # x = self.dropout(x)
+
+
+        # x = self.fc2(x)
+        # x = self.bn2(x)
+        # x = self.htanh(x)
+        # x = self.qact2(x)
+        # # add dropout layer
+        # x = self.dropout(x)
+
+        # x = self.fc3(x)
+
+
+        ### xxx BNN ###
         # flatten image input
         x = x.view(-1, 28 * 28)
 
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = self.htanh(x)
-        x = self.qact1(x)
-        # add dropout layer
-        x = self.dropout(x)
+        # x = self.fc1(x)
+        # x = self.bn1(x)
+        # x = self.htanh(x)
+        # x = self.qact1(x)
+        # # add dropout layer
+        # x = self.dropout(x)
 
 
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = self.htanh(x)
-        x = self.qact2(x)
-        # add dropout layer
-        x = self.dropout(x)
+        # x = self.fc2(x)
+        # x = self.bn2(x)
+        # x = self.htanh(x)
+        # x = self.qact2(x)
+        # # add dropout layer
+        # x = self.dropout(x)
 
         x = self.fc3(x)
 

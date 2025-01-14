@@ -660,9 +660,14 @@ if __name__ == '__main__':
     lbb = 1   # local bitflip budget
 
     # total_elems = [0, 576, 36864, 6422528, 20480] #FMNIST
-    total_elems = [0, 401408, 262144, 5120] # MNIST
+    # total_elems = [0, 401408, 262144, 5120] # MNIST9696
+    # total_elems = [0, 401408, 5120] # MNIST9418
+    total_elems = [0, 7840] # MNIST8562
 
-    for layer in range(1,4):
+
+    for layer in range(1,2):
+    # for layer in range(1,3):
+    # for layer in range(1,4):
     # for layer in range(1,5):
 
         # layer = 2
