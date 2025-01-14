@@ -106,54 +106,76 @@ Print Flags & Parameter:
 - `PRNT_IND_OFF_AFTER_NRUN = 1` (select after how many runs to print if PRNT_IND_OFF_AFTER flag is set to True)
 
 
-### Launch
+### Launch 
+
+For Training
 ```
-$ bash ./run_test.sh {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+$ bash ./run.sh TRAIN {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+```
+
+For Testing
+```
+$ bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 ### Arguments:
-- `{arr_perrors}`: Array of misalignment fault rates to be tested (floats)
+- `OPERATION`: TRAIN or TEST 
+- `{arr_perrors}`: Array of misalignment fault rates to be tested/trained (floats)
 - **`PERRORS`: REQUIRED: array termination token**
-- `kernel_size`: size of convolutional kernel in convolutional layers
+- `kernel_size`: size of kernel used for calculations in convolutional layers (if none then use 0)
 - `nn_model`: FMNIST, CIFAR, RESNET
-- `loops`: amount of loops (0, 100]
+- `loops`: amount of loops the experiment should run (0, 100] (not used if OPERATION=TEST)
 - `rt_size`: racetrack/nanowire size (typically 64)
-- `layer_config`: unprotected layers configuration (ALL, CUSTOM, INDIV). Note that if no optional `{arr_layer_ids}` is specified, `CUSTOM` will execute `**DEFAULT** CUSTOM` defined manually in `run_test.sh` (see optional arguments below).
+- `{arr_layer_ids}`: [OPTIONAL] specify optional layer_ids in an array (starting at 1 upto total_layers) ONLY BEFORE `layer_config` WITH TERMINATION `CUSTOM`!
+- `layer_config`: unprotected layers configuration (ALL, CUSTOM, INDIV). Note that if no optional {arr_layer_ids} is specified, CUSTOM will execute DEFAULT CUSTOM defined manually in run.sh
 - `gpu_id`: ID of GPU to use for computations (0, 1) 
 
+### Additional required arguments if OPERATION = TRAIN
+- `epochs`: number of training epochs
+- `batch_size`: batch size
+- `lr`: learning rate
+- `step_size`: step size
+
 ### Optional arguments:
-- `{arr_layer_ids}`: specify optional layer_ids in an array (starting at 1 upto total_layers) **ONLY BEFORE `layer_config` WITH TERMINATION `CUSTOM`**!
 - `global_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
 - `local_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
 
-### Example in a table TODO
+### Example with OPERATION=TEST
 
 ```
-bash ./run_test.sh 0.01 PERRORS 0 MNIST 2 64 CUSTOM 0
+bash ./run.sh TEST 0.01 PERRORS 0 MNIST 2 64 CUSTOM 0
 ```
-Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_test.sh`)** on GPU 0.
+Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
 
 ```
-bash ./run_test.sh 0.1 PERRORS 3 FMNIST 1 64 CUSTOM 0
+bash ./run.sh TEST 0.1 PERRORS 3 FMNIST 1 64 CUSTOM 0
 ```
-Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_test.sh`)** on GPU 0.
+Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
 
 ```
-bash ./run_test.sh 0.1 0.01 PERRORS 3 CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
+bash ./run.sh TEST 0.1 0.01 PERRORS 3 CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
 ```
 Executes at misalignment fault rates of 10% and 1% (separate runs): CIFAR with kernel_size 3 for 10 iterations with racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
 
 ```
-bash ./run_test.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
+bash ./run.sh TEST 0.05 PERRORS 3 RESNET 10 64 INDIV 0
 ```
-Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
+Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0.
+
+### Example with OPERATION=TRAIN
+```
+bash ./run.sh TRAIN 0.0001 PERRORS 3 FMNIST 1 64 1 2 CUSTOM 0 10 256 0.001 25
+```
+Training at misalignment fault rates of 10^(-4): FMNIST with kernel_size 3 with racetrack of size 64 in which the **first and second layers are unprotected*** on GPU 0. Training parameters are: epochs=10, batch_size=256, learning_rate=0.001, step_size=25.
+
+
 
 ### Troubleshooting
 
 - In case CUDA Memory errors arise:
     - flush the VRAM using `torch.cuda.empty_cache()` -> find line in Inference loop in `run.py`
 
-- Set `TEST_BATCH_SIZE` in `run_test_all.sh` for every NN_MODEL to adjust the amount of images pe batch executed at once in each inference iteration (changes stats and graphs, see terminal output)
+- Set `TEST_BATCH_SIZE` in `run_all.sh` for every NN_MODEL to adjust the amount of images pe batch executed at once in each inference iteration (changes stats and graphs, see terminal output)
    
 ## Contact
 Maintaner [leonard.bereholschi@tu-dortmund.de](mailto:leonard.bereholschi@tu-dortmund.de)
