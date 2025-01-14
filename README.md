@@ -108,7 +108,7 @@ Print Flags & Parameter:
 
 ### Launch
 ```
-$ bash ./run_auto.sh {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+$ bash ./run_test.sh {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 ### Arguments:
@@ -118,7 +118,7 @@ $ bash ./run_auto.sh {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_
 - `nn_model`: FMNIST, CIFAR, RESNET
 - `loops`: amount of loops (0, 100]
 - `rt_size`: racetrack/nanowire size (typically 64)
-- `layer_config`: unprotected layers configuration (ALL, CUSTOM, INDIV). Note that if no optional `{arr_layer_ids}` is specified, `CUSTOM` will execute `**DEFAULT** CUSTOM` defined manually in `run_auto.sh` (see optional arguments below).
+- `layer_config`: unprotected layers configuration (ALL, CUSTOM, INDIV). Note that if no optional `{arr_layer_ids}` is specified, `CUSTOM` will execute `**DEFAULT** CUSTOM` defined manually in `run_test.sh` (see optional arguments below).
 - `gpu_id`: ID of GPU to use for computations (0, 1) 
 
 ### Optional arguments:
@@ -129,22 +129,22 @@ $ bash ./run_auto.sh {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_
 ### Example in a table TODO
 
 ```
-bash ./run_auto.sh 0.01 PERRORS 0 MNIST 2 64 CUSTOM 0
+bash ./run_test.sh 0.01 PERRORS 0 MNIST 2 64 CUSTOM 0
 ```
-Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
+Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_test.sh`)** on GPU 0.
 
 ```
-bash ./run_auto.sh 0.1 PERRORS 3 FMNIST 1 64 CUSTOM 0
+bash ./run_test.sh 0.1 PERRORS 3 FMNIST 1 64 CUSTOM 0
 ```
-Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_auto.sh`)** on GPU 0.
+Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run_test.sh`)** on GPU 0.
 
 ```
-bash ./run_auto.sh 0.1 0.01 PERRORS 3 CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
+bash ./run_test.sh 0.1 0.01 PERRORS 3 CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
 ```
 Executes at misalignment fault rates of 10% and 1% (separate runs): CIFAR with kernel_size 3 for 10 iterations with racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
 
 ```
-bash ./run_auto.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
+bash ./run_test.sh 0.05 PERRORS 3 RESNET 10 64 INDIV 0
 ```
 Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0
 
@@ -153,7 +153,7 @@ Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 ite
 - In case CUDA Memory errors arise:
     - flush the VRAM using `torch.cuda.empty_cache()` -> find line in Inference loop in `run.py`
 
-- Set `TEST_BATCH_SIZE` in `run_auto_all.sh` for every NN_MODEL to adjust the amount of images pe batch executed at once in each inference iteration (changes stats and graphs, see terminal output)
+- Set `TEST_BATCH_SIZE` in `run_test_all.sh` for every NN_MODEL to adjust the amount of images pe batch executed at once in each inference iteration (changes stats and graphs, see terminal output)
    
 ## Contact
 Maintaner [leonard.bereholschi@tu-dortmund.de](mailto:leonard.bereholschi@tu-dortmund.de)
