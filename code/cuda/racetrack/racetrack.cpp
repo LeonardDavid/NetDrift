@@ -2,7 +2,7 @@
 #include <vector>
 
 // CUDA forward declaration
-torch::Tensor netdrift_cuda(
+torch::Tensor racetrack_cuda(
     torch::Tensor input,
     float f01,
     float f10,
@@ -14,7 +14,7 @@ torch::Tensor netdrift_cuda(
 #define CHECK_CONTIGUOUS(x) AT_ASSERTM(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-torch::Tensor netdrift(
+torch::Tensor racetrack(
     torch::Tensor input,
     float f01,
     float f10,
@@ -22,9 +22,9 @@ torch::Tensor netdrift(
     float block_size
   ) {
   CHECK_INPUT(input);
-  return netdrift_cuda(input, f01, f10, index_offset, block_size);
+  return racetrack_cuda(input, f01, f10, index_offset, block_size);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("netdrift", &netdrift, "netdrift");
+  m.def("racetrack", &racetrack, "racetrack");
 }

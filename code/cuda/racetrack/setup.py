@@ -2,7 +2,7 @@ import setuptools
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 setuptools.setup(
-    name='netdrift',
+    name='racetrack',
     version="0.0.1",
     author='Mikail Yayla, Leonard David Bereholschi',
     author_email='mikail.yayla@tu-dortmund.de, leonard.bereholschi@tu-dortmund.de',
@@ -17,9 +17,9 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     ext_modules=[
-        CUDAExtension('netdrift', [
-            'netdrift.cpp',
-            'netdrift_kernel.cu',
+        CUDAExtension('racetrack', [
+            'racetrack.cpp',
+            'racetrack_kernel.cu',
         ]),
     ],
     cmdclass={

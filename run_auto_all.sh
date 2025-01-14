@@ -191,8 +191,8 @@ then
     TEST_BATCH_SIZE=10000 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
     if [ "$KERNEL_SIZE" = 3 ]
     then
-        # MODEL_PATH="models/model_fmnist9108.pt"
-        MODEL_PATH="model_fmnist_ndf_mhl_L1234_p000001.pt"
+        MODEL_PATH="models/model_fmnist9108.pt"
+        # MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L1234_p01.pt"
     elif [ "$KERNEL_SIZE" = 5 ]
     then
         MODEL_PATH="models/model_fmnist5x5_9077.pt"
