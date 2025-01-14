@@ -66,7 +66,6 @@ shift
 GPU_ID=$1       # 0         1       
 shift
 
-
 ## params fixed for RTM
 TEST_ERROR=1
 TEST_RTM=1
