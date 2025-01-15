@@ -214,7 +214,8 @@ then
         if [ "$KERNEL_SIZE" = 3 ]
         then
             MODEL_PATH="models/model_fmnist9108.pt"
-            # MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L1234_p01.pt"
+            # MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L4_p01.pt"
+            # MODEL_PATH="model_fmnist_rtfi_mhl_nobh_L1234_p0.00001.pt"
         elif [ "$KERNEL_SIZE" = 5 ]
         then
             MODEL_PATH="models/model_fmnist5x5_9077.pt"
@@ -226,7 +227,7 @@ then
             exit 1
         fi
     else
-        MODEL_PATH="fmnist_rtfi_nomhl_nobh_L${unprot_layers_string}"
+        MODEL_PATH="fmnist_rtfi_mhl_nobh_L${unprot_layers_string}"
     fi
 
 elif [ "$NN_MODEL" = "CIFAR" ]

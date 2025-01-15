@@ -15,7 +15,7 @@ from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, 
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 
 def binary_hingeloss(yhat, y, b=128):
-    print("BINHINGE")
+    # print("BINHINGE")
 
     # print("yhat", yhat.mean(dim=1)) # output <=> predictions
     # print("y", y)                   # target <=> ground truth labels
@@ -60,11 +60,17 @@ def train(args, model, device, train_loader, optimizer, epoch):
         optimizer.zero_grad()
         output = model(data)
         # loss = F.nll_loss(output, target)
-        if model.name == "ResNet18":
-            loss = model.traincriterion.applyCriterion(output, target).mean()
-        else:
-            criterion = nn.CrossEntropyLoss(reduction="none")
-            loss = criterion(output, target).mean()
+
+        # print(model.traincriterion.name)
+        loss = model.traincriterion.applyCriterion(output, target).mean()
+
+        ### Original SPICE-Torch
+        # if model.name == "ResNet18":
+        #     loss = model.traincriterion.applyCriterion(output, target).mean()
+        # else:
+        #     criterion = nn.CrossEntropyLoss(reduction="none")
+        #     loss = criterion(output, target).mean()
+
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -85,10 +91,16 @@ def test(model, device, test_loader, pr=1):
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            if model.name == "ResNet18":
-                test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
-            else:
-                test_loss += criterion(output, target).item()  # sum up batch loss
+
+            # print(model.testcriterion.name)
+            test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
+
+            ### Original SPICE-Torch
+            # if model.name == "ResNet18":
+            #     test_loss += model.testcriterion.applyCriterion(output, target).mean()  # sum up batch loss
+            # else:
+            #     test_loss += criterion(output, target).item()  # sum up batch loss
+
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
             
