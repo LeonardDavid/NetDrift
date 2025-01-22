@@ -7,6 +7,8 @@ import numpy as np
 import random
 
 import os
+import time
+import signal
 
 import metrics.ratio_blocks_ecc_ind_off.ratio_blocks_ecc_ind_off as ratio_blocks_io
 import metrics.count_len.count_len_endlen as endlen
@@ -373,9 +375,24 @@ class QuantizedLinear(nn.Linear):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        print("")
+                        start_time = time.time()
                         quantized_weight = quantized_weight.clone()
+                        end_time = time.time()
+                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+
+                        start_time = time.time()
                         endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
-                        print("endlen flip applied")
+                        end_time = time.time()
+                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print("")
+                        # print("endlen flip applied")
+
+                        
+                        # Interrupt the code execution immediately
+                        os.kill(os.getpid(), signal.SIGINT)
                                
 
                     ### #ENDLEN IND_OFF# ###
@@ -695,9 +712,23 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        print("")
+                        start_time = time.time()
                         quantized_weight = quantized_weight.clone()
+                        end_time = time.time()
+                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+
+                        start_time = time.time()
                         endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
-                        print("endlen flip applied")
+                        end_time = time.time()
+                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print("")
+                        # print("endlen flip applied")
+
+                        # Interrupt the code execution immediately
+                        os.kill(os.getpid(), signal.SIGINT)
 
                     
                     ### #ENDLEN IND_OFF# ###
