@@ -44,12 +44,12 @@ class RacetrackModel:
         return self.method(input, self.p, self.p, index_offset, rt_size)
 
 binarizepm1 = Quantization1(binarizePM1.binarize)
-racetrack_model = RacetrackModel(racetrack.racetrack, 0.1)
+racetrack_model = RacetrackModel(racetrack.racetrack, 0.0)
 
-# crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
-# crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
-crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
-crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
+crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
+crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
+# crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
+# crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
 
 q_train = True # quantization during training
 q_eval = True # quantization during evaluation
