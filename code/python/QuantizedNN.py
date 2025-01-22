@@ -373,6 +373,7 @@ class QuantizedLinear(nn.Linear):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        quantized_weight = quantized_weight.clone()
                         endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
                         print("endlen flip applied")
                                
@@ -694,6 +695,7 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        quantized_weight = quantized_weight.clone()
                         endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
                         print("endlen flip applied")
 

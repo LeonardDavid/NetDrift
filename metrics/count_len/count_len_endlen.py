@@ -26,7 +26,7 @@ def load_data_from_file(filename):
   return data.tolist()
 
 
-def count(data, arr_type, block_size):
+def count(data, arr_type, rt_size):
 
     total_ones = []
     total_neg_ones = []
@@ -37,7 +37,7 @@ def count(data, arr_type, block_size):
             nr_elem = len(row) * 9 # conv kernels of 3x3, 5x5, 7x7 elements
 
             count = 0
-            arr_size = max(math.ceil(nr_elem/block_size),1)
+            arr_size = max(math.ceil(nr_elem/rt_size),1)
             count_ones = np.zeros(arr_size)
             count_neg_ones = np.zeros(arr_size)
 
@@ -46,24 +46,24 @@ def count(data, arr_type, block_size):
                     for weight in item:
                         count += 1
                         if weight == 1:
-                            count_ones[int((count-1) / block_size)] += 1
+                            count_ones[int((count-1) / rt_size)] += 1
                         elif weight == -1:
-                            count_neg_ones[int((count-1) / block_size)] += 1
+                            count_neg_ones[int((count-1) / rt_size)] += 1
             
         elif arr_type == "1D":
             nr_elem = len(row)
 
             count = 0
-            arr_size = max(math.ceil(nr_elem/block_size),1)
+            arr_size = max(math.ceil(nr_elem/rt_size),1)
             count_ones = np.zeros(arr_size)
             count_neg_ones = np.zeros(arr_size)
 
             for item in row:
                 count += 1
                 if item == 1:
-                    count_ones[int((count-1) / block_size)] += 1
+                    count_ones[int((count-1) / rt_size)] += 1
                 elif item == -1:
-                    count_neg_ones[int((count-1) / block_size)] += 1
+                    count_neg_ones[int((count-1) / rt_size)] += 1
 
         # print(count_ones)
         # print(count_neg_ones)
@@ -77,7 +77,7 @@ def count(data, arr_type, block_size):
     return total_ones, total_neg_ones
 
 
-def count_len(array_type, data, shape, block_size):
+def count_len(array_type, data, shape, rt_size):
 
     block_gr = []
 
@@ -101,10 +101,10 @@ def count_len(array_type, data, shape, block_size):
                             # print(weight)
                             cnt += 1
                             # print(data[i][b][c][d])
-                            # print(str(data[i][b][c][d]) + " " + str(cnt-1) + "/" + str(block_size) + "=" + str(int((cnt-1) / block_size)) + "==" + str(j))
-                            # if cnt % block_size == 0:
+                            # print(str(data[i][b][c][d]) + " " + str(cnt-1) + "/" + str(rt_size) + "=" + str(int((cnt-1) / rt_size)) + "==" + str(j))
+                            # if cnt % rt_size == 0:
                             #     print("")
-                            if int((cnt-1) / block_size) == j:
+                            if int((cnt-1) / rt_size) == j:
                                 positions.append((b,c,d)) 
                                 # print(str(cnt) + ": " + "(" + str(b) + "," + str(c) + "," + str(d) + "): " + str(data[i][b][c][d]))
 
@@ -146,10 +146,10 @@ def count_len(array_type, data, shape, block_size):
                     # print(element)
                     cnt += 1
                     # print(data[i][b])
-                    # print(str(data[i][b]) + " " + str(cnt-1) + "/" + str(block_size) + "=" + str(int((cnt-1) / block_size)) + "==" + str(j))
-                    # if cnt % block_size == 0:
+                    # print(str(data[i][b]) + " " + str(cnt-1) + "/" + str(rt_size) + "=" + str(int((cnt-1) / rt_size)) + "==" + str(j))
+                    # if cnt % rt_size == 0:
                     #     print("")
-                    if int((cnt-1) / block_size) == j:
+                    if int((cnt-1) / rt_size) == j:
                         positions.append((b)) 
                         # print(str(cnt) + ": " + "(" + str(b) + "): " + str(data[i][b]))
 
@@ -309,7 +309,7 @@ def find(arr_tuples, block_gr):
     return pos_bitlen
 
 
-def find_with_bitflip_budget(arr_tuples, block_gr, block_size, total_elem, global_bitflip_budget, local_bitflip_budget):
+def find_with_bitflip_budget(arr_tuples, block_gr, rt_size, total_elem, global_bitflip_budget, local_bitflip_budget):
 
     pos_bitlen = []
     position = 0
@@ -325,7 +325,7 @@ def find_with_bitflip_budget(arr_tuples, block_gr, block_size, total_elem, globa
         pos = []
         nr_flips_local = 0
 
-        while len(arr_tuples[i]) > 0 and nr_flips_local < block_size * local_bitflip_budget:
+        while len(arr_tuples[i]) > 0 and nr_flips_local < rt_size * local_bitflip_budget:
             # print(f"({arr_tuples[i][0][0]}, {arr_tuples[i][0][1]}, {arr_tuples[i][0][2]})")
             
             # first tuple  always contains the maximum (it has been sorted previously)
@@ -365,7 +365,7 @@ def find_with_bitflip_budget(arr_tuples, block_gr, block_size, total_elem, globa
     return pos_bitlen
 
 
-def find_with_bitflip_budget_ind_off(arr_tuples, block_gr, ind_off_tuples, shape, block_size, total_elem, global_bitflip_budget, local_bitflip_budget):
+def find_with_bitflip_budget_ind_off(arr_tuples, block_gr, ind_off_tuples, shape, rt_size, total_elem, global_bitflip_budget, local_bitflip_budget):
 
     pos_bitlen = []
     position = 0
@@ -398,7 +398,7 @@ def find_with_bitflip_budget_ind_off(arr_tuples, block_gr, ind_off_tuples, shape
         pos = []
         nr_flips_local = 0
 
-        while len(arr_tuples[index_i]) > 0 and nr_flips_local < block_size * local_bitflip_budget:
+        while len(arr_tuples[index_i]) > 0 and nr_flips_local < rt_size * local_bitflip_budget:
             # print(arr_tuples[index_i])
             # print(f"({arr_tuples[i][0][0]}, {arr_tuples[i][0][1]}, {arr_tuples[i][0][2]})")
             
@@ -456,13 +456,14 @@ def flip_bits(data, positions, shape, array_type):
                             if cnt == positions[use_ind]:
                                 if use_ind < len(positions)-1:
                                     use_ind += 1
-                                data[i][b][c][d] *= -1
+                                # data[i][b][c][d] *= -1    # causes error when training, because of in-place operation *= applied directly to tensor
+                                data[i][b][c][d] = -data[i][b][c][d]
 
                             # print(data[i][b][c][d])
-                            # print(str(data[i][b][c][d]) + " " + str(cnt-1) + "/" + str(block_size) + "=" + str(int((cnt-1) / block_size)) + "==" + str(j))
-                            # if cnt % block_size == 0:
+                            # print(str(data[i][b][c][d]) + " " + str(cnt-1) + "/" + str(rt_size) + "=" + str(int((cnt-1) / rt_size)) + "==" + str(j))
+                            # if cnt % rt_size == 0:
                             #     print("")
-                            # if int((cnt-1) / block_size) == j:
+                            # if int((cnt-1) / rt_size) == j:
                             #     print(str(cnt) + ": " + "(" + str(b) + "," + str(c) + "," + str(d) + "): " + str(data[i][b][c][d]))
 
                 # print("")
@@ -474,13 +475,14 @@ def flip_bits(data, positions, shape, array_type):
                     if cnt == positions[use_ind]:
                         if use_ind < len(positions)-1:
                             use_ind += 1
-                        data[i][b] *= -1
+                        # data[i][b] *= -1    # causes error when training, because of in-place operation *= applied directly to tensor
+                        data[i][b] = -data[i][b]
 
                     # print(data[i][b])
-                    # print(str(data[i][b]) + " " + str(cnt-1) + "/" + str(block_size) + "=" + str(int((cnt-1) / block_size)) + "==" + str(j))
-                    # if cnt % block_size == 0:
+                    # print(str(data[i][b]) + " " + str(cnt-1) + "/" + str(rt_size) + "=" + str(int((cnt-1) / rt_size)) + "==" + str(j))
+                    # if cnt % rt_size == 0:
                     #     print("")
-                    # if int((cnt-1) / block_size) == j:
+                    # if int((cnt-1) / rt_size) == j:
                     #     print(str(cnt) + ": " + "(" + str(b) + "): " + str(data[i][b]))
                                                 
                 # print("")
@@ -489,7 +491,7 @@ def flip_bits(data, positions, shape, array_type):
         # print("")        
 
 
-def apply_1flip(array_type, block_size, data):
+def apply_1flip(array_type, rt_size, data):
     
     total_flips = 0
     
@@ -497,13 +499,13 @@ def apply_1flip(array_type, block_size, data):
     # print(data)
     # print("")
 
-    total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+    total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
 
     # print(total_ones)
     # print("")
 
     # count lengths of bit groups in each block
-    block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+    block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
 
     # print("block_groups:")
     # for len_gr in block_groups:
@@ -548,16 +550,16 @@ def apply_1flip(array_type, block_size, data):
 
     # # count lengths of bit groups in each block
     # # # ONLY IF SUBSEQUENT apply_2flip IS NEEDED (or for debugging)
-    # block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+    # block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
     
     # for len_gr in block_groups:
     #     print(len_gr)
     # print("")
 
 
-def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitflip_budget, local_bitflip_budget):
+def apply_1flip_ind_off(array_type, rt_size, data, index_offset, global_bitflip_budget, local_bitflip_budget):
     total_flips = 0
-    total_elem = len(index_offset)*len(index_offset[0])*block_size
+    total_elem = len(index_offset)*len(index_offset[0])*rt_size
     ind_off_shape = (len(index_offset), len(index_offset[0]))
 
 
@@ -573,7 +575,7 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitfl
     # print("")
 
     # count lengths of bit groups in each block
-    block_groups = count_len(array_type=array_type, data=data, shape=index_offset, block_size=block_size)
+    block_groups = count_len(array_type=array_type, data=data, shape=index_offset, rt_size=rt_size)
 
     # print("block_groups:")
     # for len_gr in block_groups:
@@ -615,7 +617,7 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitfl
     
     # print(ind_off_tuples)
 
-    pos1 = find_with_bitflip_budget_ind_off(arr_tuples=array_tuples, block_gr=block_groups, ind_off_tuples=ind_off_tuples, shape=ind_off_shape, block_size=block_size, total_elem=total_elem, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget)
+    pos1 = find_with_bitflip_budget_ind_off(arr_tuples=array_tuples, block_gr=block_groups, ind_off_tuples=ind_off_tuples, shape=ind_off_shape, rt_size=rt_size, total_elem=total_elem, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget)
 
     total_flips += len(pos1)
     # print(pos1)
@@ -638,7 +640,7 @@ def apply_1flip_ind_off(array_type, block_size, data, index_offset, global_bitfl
 
     # # count lengths of bit groups in each block
     # # # ONLY IF SUBSEQUENT apply_2flip IS NEEDED (or for debugging)
-    # block_groups = count_len(array_type=array_type, data=data, shape=index_offset, block_size=block_size)
+    # block_groups = count_len(array_type=array_type, data=data, shape=index_offset, rt_size=rt_size)
     
     # for len_gr in block_groups:
     #     print(len_gr)
@@ -652,8 +654,8 @@ if __name__ == '__main__':
 
     # min_bitgroup_size = 0 # which sizes of bit groups to include in metric, set to 0 for all sizes (including groups of 1 bit)
 
-    # block_size = 12
-    block_size = 64
+    # rt_size = 12
+    rt_size = 64
     err = 0.1
 
     gbb = 0.03  # global bitflip budget
@@ -769,12 +771,12 @@ if __name__ == '__main__':
                     print(f"{data_initial_shape} -> Transpose -> {np.shape(data)}")
 
                             
-            total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
-            # total_elem = len(total_ones) * len(total_ones[0]) * block_size
+            total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
+            # total_elem = len(total_ones) * len(total_ones[0]) * rt_size
             
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 print("block_groups:")
@@ -801,7 +803,7 @@ if __name__ == '__main__':
 
             if _1flip_flag_budget:
                 print(total_elem)
-                pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, block_size=block_size, total_elem=total_elem, global_bitflip_budget=gbb, local_bitflip_budget=lbb)
+                pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, rt_size=rt_size, total_elem=total_elem, global_bitflip_budget=gbb, local_bitflip_budget=lbb)
             else:
                 pos1 = find(arr_tuples=array_tuples, block_gr=block_groups)
 
@@ -825,7 +827,7 @@ if __name__ == '__main__':
                     data_before_shape = np.shape(data)
                     data = np.reshape(data.T, data_initial_shape)
                     
-                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
                     
                     print(f"{data_before_shape} -> Transpose + Reshape -> {np.shape(data)}")
 
@@ -860,7 +862,7 @@ if __name__ == '__main__':
                     data_before_shape = np.shape(data)
                     data = np.transpose(data)
 
-                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
                     
                     print(f"{data_before_shape} -> Transpose -> {np.shape(data)}")
 
@@ -889,7 +891,7 @@ if __name__ == '__main__':
                     f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -905,14 +907,14 @@ if __name__ == '__main__':
 
             ind_off = np.array([[0,-1,-2],[0,1,0]])
 
-            apply_1flip_ind_off(array_type=array_type, block_size=block_size, data=data, index_offset=ind_off, global_bitflip_budget=glb_bb, local_bitflip_budget=loc_bb)
+            apply_1flip_ind_off(array_type=array_type, rt_size=rt_size, data=data, index_offset=ind_off, global_bitflip_budget=glb_bb, local_bitflip_budget=loc_bb)
 
         ###################
         ### clean edges ###
         ###################
 
         if _1eflip_flag:
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
 
             if print_flag:
                 for len_gr in block_groups:
@@ -941,7 +943,7 @@ if __name__ == '__main__':
                 f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -962,10 +964,10 @@ if __name__ == '__main__':
             print(in_file2)
             data = load_data_from_file(in_file2)
 
-            total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+            total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
             
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -996,7 +998,7 @@ if __name__ == '__main__':
                 f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -1008,7 +1010,7 @@ if __name__ == '__main__':
         ###################
 
         if _2eflip_flag:
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
 
             if print_flag:
                 for len_gr in block_groups:
@@ -1037,7 +1039,7 @@ if __name__ == '__main__':
                 f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -1058,10 +1060,10 @@ if __name__ == '__main__':
             print(in_file3)
             data = load_data_from_file(in_file3)
 
-            total_ones, total_neg_ones = count(data=data, arr_type=array_type, block_size=block_size)
+            total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
             
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -1092,7 +1094,7 @@ if __name__ == '__main__':
                 f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -1104,7 +1106,7 @@ if __name__ == '__main__':
         ###################
 
         if _3eflip_flag:
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
 
             if print_flag:
                 for len_gr in block_groups:
@@ -1133,7 +1135,7 @@ if __name__ == '__main__':
                 f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, block_size=block_size)
+            block_groups = count_len(array_type=array_type, data=data, shape=total_ones, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
