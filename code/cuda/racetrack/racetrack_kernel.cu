@@ -25,7 +25,7 @@ __global__ void racetrack_kernel(
     float f01,
     float f10,
     unsigned long long seed0,
-    int block_size,
+    int rt_size,
     double* d_index_offset_flat,
     int row_size
   ) {
@@ -47,11 +47,11 @@ __global__ void racetrack_kernel(
     //   printf("%f ", d_index_offset_flat[c]);
     // }
 
-    // printf("%d\n", block_size);
+    // printf("%d\n", rt_size);
     size_t index = c*row_size + blockIdx.y;
-    // int bound = d - blockIdx.y*block_size - d_index_offset_flat[index];
-    if(0 <= d - d_index_offset_flat[index] && d_index_offset_flat[index] < row_size*block_size){
-    // if(0 <= bound && bound < block_size-1){
+    // int bound = d - blockIdx.y*rt_size - d_index_offset_flat[index];
+    if(0 <= d - d_index_offset_flat[index] && d_index_offset_flat[index] < row_size*rt_size){
+    // if(0 <= bound && bound < rt_size-1){
       // in legal bounds, read with offset (can be 0 -> read actual value)
       i_used = input[c][d-d_index_offset_flat[index]][e];
     }
@@ -73,7 +73,7 @@ torch::Tensor racetrack_cuda(
   float f01,
   float f10,
   std::vector<std::vector<double>> index_offset,
-  float block_size
+  float rt_size
 ) {
   // The number of thread blocks in a grid is usually dictated by the size of the data being processed, which typically exceeds the number of processors in the system.
   // dim3 threadsPerBlock(8,8,8)
@@ -145,8 +145,8 @@ torch::Tensor racetrack_cuda(
   const int input_size_z = input.size(2);
 
   int threads_x = 1; // per block, 8
-  // TODO maybe actually should be block_size??
-  int threads_y = block_size; // per block, 8
+  // TODO maybe actually should be rt_size??
+  int threads_y = rt_size; // per block, 8
   int threads_z = 1; // per block, 8
 
   #if DEBUG_1D
@@ -178,7 +178,7 @@ torch::Tensor racetrack_cuda(
         f01,
         f10,
         seed0,
-        int(block_size),
+        int(rt_size),
         d_index_offset_flat,
         row_size
     );

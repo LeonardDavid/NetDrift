@@ -259,7 +259,7 @@ then
             echo -e "${CYAN}Automatic testing using MODEL_PATH=$MODEL_PATH${RESET}"
         fi
     else
-        MODEL_PATH="fmnist_rtfi_nomhl_bh_L${unprot_layers_string}"
+        MODEL_PATH="fmnist_binfi_nomhl_nobh_L${unprot_layers_string}"
     fi
 
 elif [ "$NN_MODEL" = "CIFAR" ]

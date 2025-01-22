@@ -32,9 +32,15 @@ class ErrorModel(Function):
     @staticmethod
     def forward(ctx, input, index_offset, rt_size=64, error_model=None):
         output = input.clone().detach()
-        # print(index_offset)
-        output = error_model.applyErrorModel(output, index_offset, rt_size)
-        # print(output)
+        
+        if error_model.__class__.__name__ == 'RacetrackModel':
+            output = error_model.applyErrorModel(output, index_offset, rt_size)
+        elif error_model.__class__.__name__ == 'BinarizeFIModel':
+            output = error_model.applyErrorModel(output)
+        else:
+            print(f"Invalid error model {error_model}")
+            exit()        
+
         return output
 
     @staticmethod
