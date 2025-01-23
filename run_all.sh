@@ -70,6 +70,9 @@ shift
 TEST_ERROR=1
 TEST_RTM=1
 
+TRAIN_MODEL=0
+TEST_AUTO=0
+
 if [[ "$OPERATION" == "TRAIN" ]];
 then
     ## params for RTM training
@@ -83,16 +86,29 @@ then
     shift
     STEP_SIZE=$1    # 25
     shift
-else
-    TRAIN_MODEL=0
+
+elif [[ "$OPERATION" == *"TEST_AUTO"* ]];
+then
+    TEST_AUTO=1
+
+    GLOBAL_BITFLIP_BUDGET=0.0
+    LOCAL_BITFLIP_BUDGET=0.0
+
+    MODEL_PATH=$1
+    shift
+
+    MODEL_DIR=$(dirname "$MODEL_PATH")
+    MODEL_NAME=$(basename "$MODEL_PATH" .pt)
+
+elif [[ "$OPERATION" == "TEST" ]];
+then
+    # optional args
+    GLOBAL_BITFLIP_BUDGET=${1:-0.0}
+    shift
+    LOCAL_BITFLIP_BUDGET=${1:-0.0}
+    shift
+
 fi
-
-# optional args
-GLOBAL_BITFLIP_BUDGET=${1:-0.0}
-shift
-LOCAL_BITFLIP_BUDGET=${1:-0.0}
-shift
-
 
 if [ "$TRAIN_MODEL" = 0 ]; then
     ## variables & arrays
@@ -105,6 +121,10 @@ if [ "$TRAIN_MODEL" = 0 ]; then
 
     if [ "$CALC_RESULTS" == "True" ]; then
         all_results_dir="$results_dir/all_results"
+
+        if [ "$TEST_AUTO" = 1 ]; then
+            all_results_test_auto_dir="$MODEL_DIR/$OPERATION"
+        fi
     fi
     if [ "$CALC_BITFLIPS" == "True" ]; then
         all_bitflips_dir="$results_dir/all_bitflips"
@@ -130,6 +150,12 @@ if [ "$TRAIN_MODEL" = 0 ]; then
 
         if [ "$CALC_RESULTS" == "True" ] && [ ! -d "$all_results_dir" ]; then
             mkdir -p "$all_results_dir"
+
+            if [ "$TEST_AUTO" = 1 ]; then
+                if [ ! -d "$all_results_test_auto_dir" ]; then
+                    mkdir -p "$all_results_test_auto_dir"
+                fi
+            fi
         else
             echo -e "${RED}Flag CALC_RESULTS set to False.${RESET}"
         fi
@@ -201,7 +227,7 @@ then
             exit 1
         fi
     else
-        MODEL_PATH="mnist_rtfi_nomhl_nobh_L${unprot_layers_string}"
+        MODEL_PATH="" # mnist_rtfi_nomhl_bh_L${unprot_layers_string}
     fi
 
 elif [ "$NN_MODEL" = "FMNIST" ]
@@ -210,23 +236,30 @@ then
     DATASET="FMNIST"
     TEST_BATCH_SIZE=10000 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
 
-    if [ "$TRAIN_MODEL" = 0 ]; then
-        if [ "$KERNEL_SIZE" = 3 ]
+    if [ "$TRAIN_MODEL" = 0 ]
+    then
+        if [ "$TEST_AUTO" = 0 ]
         then
-            MODEL_PATH="models/model_fmnist9108.pt"
-            # MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L1234_p01.pt"
-        elif [ "$KERNEL_SIZE" = 5 ]
-        then
-            MODEL_PATH="models/model_fmnist5x5_9077.pt"
-        elif [ "$KERNEL_SIZE" = 7 ]
-        then
-            MODEL_PATH="models/model_fmnist7x7_8880.pt"
+            if [ "$KERNEL_SIZE" = 3 ]
+            then
+                # MODEL_PATH="models/model_fmnist9108.pt"
+                # MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L4_p01.pt"
+                MODEL_PATH="model_fmnist_rtfi_nomhl_bh_L1_p0.1.pt"
+            elif [ "$KERNEL_SIZE" = 5 ]
+            then
+                MODEL_PATH="models/model_fmnist5x5_9077.pt"
+            elif [ "$KERNEL_SIZE" = 7 ]
+            then
+                MODEL_PATH="models/model_fmnist7x7_8880.pt"
+            else
+                echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL."
+                exit 1
+            fi
         else
-            echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL."
-            exit 1
+            echo -e "${CYAN}Automatic testing using MODEL_PATH=$MODEL_PATH${RESET}"
         fi
     else
-        MODEL_PATH="fmnist_rtfi_nomhl_nobh_L${unprot_layers_string}"
+        MODEL_PATH="fmnist_binfi_nomhl_nobh_L${unprot_layers_string}"
     fi
 
 elif [ "$NN_MODEL" = "CIFAR" ]
@@ -305,6 +338,12 @@ if [ "$TRAIN_MODEL" = 0 ]; then
         out_results_file="$all_results_dir/all_results.txt"
         echo "" > "$out_results_file"
         > "$out_results_file"
+
+        if [ "$TEST_AUTO" = 1 ]; then
+            out_results_file_test_auto="$all_results_test_auto_dir/$MODEL_NAME.txt"
+            echo "" > "$out_results_file_test_auto"
+            > "$out_results_file_test_auto"
+        fi
     fi
     if [ "$CALC_BITFLIPS" == "True" ]; then
         out_bitflips_file="$all_bitflips_dir/all_bitflips.txt"
@@ -475,8 +514,11 @@ if [ "$TRAIN_MODEL" = 0 ]; then
     if [ "$CALC_RESULTS" == "True" ]; then
         # Loop through the outer array
         for outer_idx in "${!all_results[@]}"; do
-        # Print each inner array element with a space separator
-        echo "${all_results[$outer_idx]}" >> "$out_results_file"
+            # Print each inner array element with a space separator
+            echo "${all_results[$outer_idx]}" >> "$out_results_file"
+            if [ "$TEST_AUTO" = 1 ]; then
+                echo "${all_results[$outer_idx]}" >> "$out_results_file_test_auto"
+            fi
         done
 
         echo ""

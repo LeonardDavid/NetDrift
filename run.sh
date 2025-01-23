@@ -41,16 +41,19 @@ END2="END2"
 ## Specify the operation: TRAIN or TEST
 OPERATION=$1
 
-if [[ "$OPERATION" == "TRAIN" || "$OPERATION" == "TEST" ]];
+TRAIN_MODEL=0
+TEST_AUTO=0
+
+if [[ "$OPERATION" == "TRAIN" || "$OPERATION" == "TEST" || "$OPERATION" == *"TEST_AUTO"* ]]; 
 then
     echo -e "\n${CYAN}Executing $OPERATION Operation${RESET}\n"
-    if [ "$OPERATION" == TRAIN ]; then
+    if [ "$OPERATION" == "TRAIN" ]; then
         TRAIN_MODEL=1
-    else
-        TRAIN_MODEL=0
+    elif [ "$OPERATION" == *"TEST_AUTO"* ]; then
+        TEST_AUTO=1
     fi
 else
-    echo -e "\n${RED}$OPERATION not supported, check spelling, capitalization & available operations: TRAIN or TEST${RESET}\n"
+    echo -e "\n${RED}$OPERATION not supported, check spelling, capitalization & available operations: TRAIN or TEST or TEST_AUTO${RESET}\n"
     exit 1
 fi
 
@@ -114,15 +117,22 @@ if [ "$TRAIN_MODEL" = 1 ]; then
     shift
     STEP_SIZE=$1    # 25
     shift
+
+elif [ "$TEST_AUTO" = 1 ]; then
+
+    GLOBAL_BITFLIP_BUDGET=0.0
+    LOCAL_BITFLIP_BUDGET=0.0
+
+    MODEL_PATH=$1
+    shift
+
+else
+    # optional args
+    GLOBAL_BITFLIP_BUDGET=${1:-0.0}
+    shift
+    LOCAL_BITFLIP_BUDGET=${1:-0.0}
+    shift
 fi 
-
-# optional args
-GLOBAL_BITFLIP_BUDGET=${1:-0.0}
-shift
-LOCAL_BITFLIP_BUDGET=${1:-0.0}
-shift
-
-
 
 ## Specify the number of total layers in NN model
 if [ "$NN_MODEL" = "MNIST" ]
@@ -241,25 +251,32 @@ if [[ $LAYER_CONFIG == *"ALL"* ]]; then
     # echo "Number of unprotected layers: ALL"
     PROTECT_LAYERS=($(for i in $(seq 1 $layers_total); do echo 0; done))
 
-    if [ "$TRAIN_MODEL" = 0 ]; then
+    if [ "$TRAIN_MODEL" = 1 ]; then
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        
+    elif  [ "$TEST_AUTO" = 1 ]; then
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $MODEL_PATH
+
+    else
         bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         
         total=$((${#PERRORS[@]}*$LOOPS))
         echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"
-    else
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
     fi 
 
 elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
     # echo "Number of unprotected layers: CUSTOM"
 
-    if [ "$TRAIN_MODEL" = 0 ]; then
+    if [ "$TRAIN_MODEL" = 1 ]; then
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+    
+    elif  [ "$TEST_AUTO" = 1 ]; then
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $MODEL_PATH
+    else
         bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         
         total=$((${#PERRORS[@]}*$LOOPS))
-        echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"
-    else
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"        
     fi 
 
 elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
@@ -291,10 +308,12 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
         ###  $10: global_bitflip_budget: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
         ###  $11: local_bitflip_budget: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
      
-        if [ "$TRAIN_MODEL" = 0 ]; then
-            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $layer_id $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
-        else
+        if [ "$TRAIN_MODEL" = 1 ]; then
             bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $layer_id $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        elif [ "$TEST_AUTO" = 1 ]; then
+            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $layer_id $GPU_ID $MODEL_PATH
+        else
+            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $layer_id $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         fi 
 
         ## Reset for next iteration

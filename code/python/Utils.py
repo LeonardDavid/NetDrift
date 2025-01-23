@@ -9,6 +9,36 @@ import json
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 from Models import MLP, VGG3, VGG7, ResNet, BasicBlock
 
+
+class Binarization:
+    def __init__(self, method):
+        self.method = method
+    def applyQuantization(self, input):
+        return self.method(input)
+    
+class RacetrackModel:
+    def __init__(self, method, p):
+        self.method = method
+        self.p = p
+    def updateErrorModel(self, p_updated):
+        self.p = p_updated
+    def resetErrorModel(self):
+        self.p = 0
+    def applyErrorModel(self, input, index_offset, rt_size):
+        return self.method(input, self.p, self.p, index_offset, rt_size)
+    
+class BinarizeFIModel:
+    def __init__(self, method, p):
+        self.method = method
+        self.p = p
+    def updateErrorModel(self, p_updated):
+        self.p = p_updated
+    def resetErrorModel(self):
+        self.p = 0
+    def applyErrorModel(self, input):
+        return self.method(input, self.p, self.p)
+    
+
 def get_model_and_datasets(args):
     nn_model = None
     # model = None

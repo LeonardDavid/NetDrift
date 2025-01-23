@@ -211,13 +211,15 @@ class MLP(nn.Module):
 
 
 class VGG3(nn.Module):
-    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, train_crit=None, test_crit=None, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(VGG3, self).__init__()
         self.name = "VGG3"
         self.quantization = quantMethod
         self.q_train = quantize_train
         self.q_test = quantize_eval
         self.error_model = error_model
+        self.traincriterion = train_crit
+        self.testcriterion = test_crit
         self.htanh = nn.Hardtanh()
         self.kernel_size = kernel_size
         self.rt_size = rt_size
@@ -369,13 +371,15 @@ class VGG3(nn.Module):
 
 
 class VGG7(nn.Module):
-    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, train_crit=None, test_crit=None, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(VGG7, self).__init__()
         self.name = "VGG7"
         self.quantization = quantMethod
         self.q_train = quantize_train
         self.q_test = quantize_eval
         self.error_model = error_model
+        self.traincriterion = train_crit
+        self.testcriterion = test_crit
         self.kernel_size = kernel_size
         self.rt_size = rt_size
         self.htanh = nn.Hardtanh()
@@ -642,15 +646,15 @@ class BasicBlock(nn.Module):
     
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, train_crit, test_crit, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, quantize_train=True, quantize_eval=True, error_model=None, train_model=None, extract_absfreq=None, num_classes=10, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
+    def __init__(self, block, num_blocks, train_crit, test_crit, quantMethod=None,  quantize_train=True, quantize_eval=True, error_model=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, train_model=None, extract_absfreq=None, num_classes=10, test_rtm = None, kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(ResNet, self).__init__()
         self.name = "ResNet18"
-        self.traincriterion = train_crit
-        self.testcriterion = test_crit
         self.quantization = quantMethod
         self.q_train = quantize_train
         self.q_test = quantize_eval
         self.error_model = error_model
+        self.traincriterion = train_crit
+        self.testcriterion = test_crit
         self.an_sim = an_sim
         self.array_size = array_size
         self.mapping = mapping

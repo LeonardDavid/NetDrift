@@ -17,39 +17,32 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 sys.path.append("code/python/")
 
-from Utils import set_layer_mode, parse_args, get_model_and_datasets, print_tikz_data, cuda_profiler
+from Utils import parse_args, get_model_and_datasets, print_tikz_data, cuda_profiler
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 from Models import VGG3, VGG7, ResNet, BasicBlock
 from Traintest_Utils import train, test, test_error, Clippy, Criterion, binary_hingeloss
 
-import binarizePM1
-import racetrack
+from Utils import Binarization, RacetrackModel, BinarizeFIModel
+import binarizePM1, binarizeFI, racetrack
 
 
-class Quantization1:
-    def __init__(self, method):
-        self.method = method
-    def applyQuantization(self, input):
-        return self.method(input)
-    
-class RacetrackModel:
-    def __init__(self, method, p):
-        self.method = method
-        self.p = p
-    def updateErrorModel(self, p_updated):
-        self.p = p_updated
-    def resetErrorModel(self):
-        self.p = 0
-    def applyErrorModel(self, input, index_offset, rt_size):
-        return self.method(input, self.p, self.p, index_offset, rt_size)
+binarizepm1 = Binarization(binarizePM1.binarize)
+racetrack_model = RacetrackModel(racetrack.racetrack, 0.0)
+binarizefi_model = BinarizeFIModel(binarizeFI.binarizeFI, 0.0)
 
-binarizepm1 = Quantization1(binarizePM1.binarize)
-racetrack_model = RacetrackModel(racetrack.racetrack, 0.1)
 
-# crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
-# crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
-crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
-crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
+### specify error model for training
+
+error_model = racetrack_model
+# error_model = binarizefi_model
+
+
+### specify criterion for training
+ 
+crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
+crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
+# crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
+# crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
 
 q_train = True # quantization during training
 q_eval = True # quantization during evaluation
@@ -75,6 +68,7 @@ def main():
     print(args)
 
     racetrack_model.updateErrorModel(args.perror)
+    binarizefi_model.updateErrorModel(args.perror)
 
     train_kwargs = {'batch_size': args.batch_size}
     test_kwargs = {'batch_size': args.test_batch_size}
@@ -193,13 +187,13 @@ def main():
         ### FP ###
         # model = nn_model()
         ### BNN ### 
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=racetrack_model, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     elif args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2], train_crit=crit_train, test_crit=crit_test, quantMethod=binarizepm1, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, quantize_train=q_train, quantize_eval=q_eval, error_model=racetrack_model, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2],  quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     else:
-        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=racetrack_model, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(quantMethod=binarizepm1, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
 
     optimizer = Clippy(model.parameters(), lr=args.lr)

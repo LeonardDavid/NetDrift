@@ -7,7 +7,7 @@ torch::Tensor racetrack_cuda(
     float f01,
     float f10,
     std::vector<std::vector<double>> index_offset,
-    float block_size
+    float rt_size
   );
 
 #define CHECK_CUDA(x) AT_ASSERTM(x.type().is_cuda(), #x " must be a CUDA tensor")
@@ -19,10 +19,10 @@ torch::Tensor racetrack(
     float f01,
     float f10,
     std::vector<std::vector<double>> index_offset,
-    float block_size
+    float rt_size
   ) {
   CHECK_INPUT(input);
-  return racetrack_cuda(input, f01, f10, index_offset, block_size);
+  return racetrack_cuda(input, f01, f10, index_offset, rt_size);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

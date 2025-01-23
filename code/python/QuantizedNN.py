@@ -7,6 +7,8 @@ import numpy as np
 import random
 
 import os
+import time
+import signal
 
 import metrics.ratio_blocks_ecc_ind_off.ratio_blocks_ecc_ind_off as ratio_blocks_io
 import metrics.count_len.count_len_endlen as endlen
@@ -30,9 +32,15 @@ class ErrorModel(Function):
     @staticmethod
     def forward(ctx, input, index_offset, rt_size=64, error_model=None):
         output = input.clone().detach()
-        # print(index_offset)
-        output = error_model.applyErrorModel(output, index_offset, rt_size)
-        # print(output)
+        
+        if error_model.__class__.__name__ == 'RacetrackModel':
+            output = error_model.applyErrorModel(output, index_offset, rt_size)
+        elif error_model.__class__.__name__ == 'BinarizeFIModel':
+            output = error_model.applyErrorModel(output)
+        else:
+            print(f"Invalid error model {error_model}")
+            exit()        
+
         return output
 
     @staticmethod
@@ -373,8 +381,24 @@ class QuantizedLinear(nn.Linear):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        print("")
+                        start_time = time.time()
+                        quantized_weight = quantized_weight.clone()
+                        end_time = time.time()
+                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+
+                        start_time = time.time()
                         endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
-                        print("endlen flip applied")
+                        end_time = time.time()
+                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print("")
+                        # print("endlen flip applied")
+
+                        
+                        # Interrupt the code execution immediately
+                        os.kill(os.getpid(), signal.SIGINT)
                                
 
                     ### #ENDLEN IND_OFF# ###
@@ -694,8 +718,23 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        print("")
+                        start_time = time.time()
+                        quantized_weight = quantized_weight.clone()
+                        end_time = time.time()
+                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+
+                        start_time = time.time()
                         endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
-                        print("endlen flip applied")
+                        end_time = time.time()
+                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print("")
+                        # print("endlen flip applied")
+
+                        # Interrupt the code execution immediately
+                        os.kill(os.getpid(), signal.SIGINT)
 
                     
                     ### #ENDLEN IND_OFF# ###
