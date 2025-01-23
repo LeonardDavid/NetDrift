@@ -33,8 +33,8 @@ binarizefi_model = BinarizeFIModel(binarizeFI.binarizeFI, 0.0)
 
 ### specify error model for training
 
-# error_model = racetrack_model
-error_model = binarizefi_model
+error_model = racetrack_model
+# error_model = binarizefi_model
 
 
 ### specify criterion for training
