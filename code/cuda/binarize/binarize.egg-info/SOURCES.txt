@@ -1,7 +1,0 @@
-binarize.cpp
-binarize_kernel.cu
-setup.py
-binarize.egg-info/PKG-INFO
-binarize.egg-info/SOURCES.txt
-binarize.egg-info/dependency_links.txt
-binarize.egg-info/top_level.txt

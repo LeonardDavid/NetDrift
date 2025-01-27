@@ -1,9 +1,0 @@
-Metadata-Version: 2.1
-Name: binarize
-Version: 0.0.1
-Summary: Binarization to PM1 For PyTorch Tensors
-Author: Mikail Yayla
-Author-email: mikail.yayla@tu-dortmund.de
-Classifier: Programming Language :: Python :: 3
-Classifier: License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)
-Classifier: Operating System :: OS Independent
