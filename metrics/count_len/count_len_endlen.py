@@ -109,6 +109,7 @@ def count_len(array_type, data, rt_shape, rt_size):
                             # print(weight)
                             cnt += 1
                             # print(data[i][b][c][d])
+                            # print(current_element)
                             # print(str(data[i][b][c][d]) + " " + str(cnt-1) + "/" + str(rt_size) + "=" + str(int((cnt-1) / rt_size)) + "==" + str(j))
                             # if cnt % rt_size == 0:
                             #     print("")
@@ -196,6 +197,66 @@ def count_len(array_type, data, rt_shape, rt_size):
                 continue
             
             block_gr.append(len_gr)
+    # print("")
+    # print("flips: " + str(flips))
+        
+    return block_gr
+
+
+def count_len_new(data, rt_shape, rt_size):
+    block_gr = []
+
+    for i in range(rt_shape[0]):
+        for j in range(rt_shape[1]):
+
+            cnt = 0
+            current_element = None
+            current_length = 0
+            len_gr = []
+            positions = []
+
+            for b in range(len(data[i])):
+                # print(element)
+                cnt += 1
+                # print(data[i][b])
+                # print(str(data[i][b]) + " " + str(cnt-1) + "/" + str(rt_size) + "=" + str(int((cnt-1) / rt_size)) + "==" + str(j))
+                # if cnt % rt_size == 0:
+                #     print("")
+                if int((cnt-1) / rt_size) == j:
+                    positions.append((b)) 
+                    # print(str(cnt) + ": " + "(" + str(b) + "): " + str(data[i][b]))
+
+                    if current_element == None:
+                            current_element = data[i][b]
+                            current_length = 1
+                    elif data[i][b] == current_element:
+                        current_length += 1
+                    else:
+                        # if current_length > min_bitgroup_size: # which bit group sizes to exclude
+                        #     # instructions
+
+                        # print(int(current_length*current_element))
+                        len_gr.append(int(current_length*current_element))
+
+                        current_element = data[i][b]
+                        current_length = 1
+
+            # Handle the last element
+            # print(int(current_length*current_element))
+            len_gr.append(int(current_length*current_element))
+
+            # if current_length > min_bitgroup_size: # which bit group sizes to exclude
+            #     # instructions
+
+            # print(f"This block contains: {nr_groups[i][j]} groups (> {min_bitgroup_size}), total length: {length_groups[i][j]}, average length: {avg_len_groups[i][j]}")
+
+            current_element = None
+            
+            # print(positions)                                                
+            # print("")
+            
+            block_gr.append(len_gr)
+
     # print("")
     # print("flips: " + str(flips))
         
@@ -499,7 +560,37 @@ def flip_bits(data, positions, rt_shape, array_type):
                 # print("")
             else:
                 continue
-        # print("")        
+        # print("")      
+        # 
+
+def flip_bits_new(data, positions, rt_shape):
+
+    if len(positions) > 0:
+
+        use_ind = 0 # use index at this position for comparison
+        cnt = 0
+
+        for i in range(rt_shape[0]):
+
+            for b in range(len(data[i])):
+                    cnt += 1
+                    if cnt == positions[use_ind]:
+                        if use_ind < len(positions)-1:
+                            use_ind += 1
+                        # data[i][b] *= -1    # causes error when training, because of in-place operation *= applied directly to tensor
+                        data[i][b] = -data[i][b]
+
+                    # print(data[i][b])
+                    # print(str(data[i][b]) + " " + str(cnt-1) + "/" + str(rt_size) + "=" + str(int((cnt-1) / rt_size)) + "==" + str(j))
+                    # if cnt % rt_size == 0:
+                    #     print("")
+                    # if int((cnt-1) / rt_size) == j:
+                    #     print(str(cnt) + ": " + "(" + str(b) + "): " + str(data[i][b]))
+                                                
+                # print("")
+            else:
+                continue
+        # print("")     
 
 
 # def apply_1flip(array_type, rt_size, data):
@@ -665,6 +756,128 @@ def apply_1flip(array_type, rt_size, data):
     #     print(len_gr)
     # print("")
 
+def apply_1flip_new(array_type, rt_size, data, kernel_size):
+    
+    total_flips = 0
+    
+    # print(array_type)
+    # print(data)
+    # print("")
+
+    # start_time = time.time()
+    # total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
+    # print(f"count function took {time.time() - start_time:.4f} seconds")
+
+    # print("")
+    # print(total_ones)
+    # print(f"Shape of total_ones: {np.shape(total_ones)}")
+    # print(f"Shape of data: {np.shape(data)}")
+    # print("")
+
+    if array_type == "3D":
+        nr_elem = len(data[0]) * kernel_size * kernel_size # conv kernels of 3x3, 5x5, 7x7 elements
+
+        data_initial_shape = np.shape(data)
+        print(f"data initial shape: {data_initial_shape}")
+        # print(data)
+
+        # print("")
+        
+        # data = np.reshape(data, (-1, nr_elem))
+        data = data.reshape(-1, nr_elem).cpu().numpy()
+        print(f"data reshaped: {np.shape(data)}")
+        # print(data)
+
+        # print("")
+        # data=np.reshape(data, data_initial_shape)
+        # print(np.shape(data))
+        # print(data)
+    
+    elif array_type == "1D":
+        nr_elem = len(data[0]) 
+
+        # print(np.shape(data))
+        # print(data)
+    else:
+        print("Invalid array type")
+        exit() 
+    
+    rt_shape = (len(data), max(math.ceil(nr_elem/rt_size),1))
+    print(f"rt_shape: {rt_shape}")
+    # print("")
+
+    start_time = time.time()
+    # count lengths of bit groups in each block
+    block_groups = count_len_new(data=data, rt_shape=rt_shape, rt_size=rt_size)
+    print(f"count_len function took {time.time() - start_time:.4f} seconds")
+
+    # print("block_groups:")
+    # for len_gr in block_groups:
+    #     print(len_gr)
+    # print("")
+
+    start_time = time.time()
+    endlen_groups = sum_endlen(block_gr=block_groups)
+    print(f"sum_endlen function took {time.time() - start_time:.4f} seconds")
+
+    # print("endlen_groups:")
+    # for sum_len in endlen_groups:
+    #     print(sum_len)
+    # print("")
+
+    start_time = time.time()
+    array_tuples = create_tuples(block_gr=block_groups, endlen_gr=endlen_groups)
+    print(f"create_tuples function took {time.time() - start_time:.4f} seconds")
+
+    start_time = time.time()
+    array_tuples = sort_tuples(arr_tuples=array_tuples)
+    print(f"sort_tuples function took {time.time() - start_time:.4f} seconds")
+
+    # print("sorted array_tuples:")
+    # for tuples in array_tuples:
+    #     print(tuples)
+    # print("")
+
+    start_time = time.time()
+    pos1 = find(arr_tuples=array_tuples, block_gr=block_groups)
+    print(f"find function took {time.time() - start_time:.4f} seconds")
+
+    total_flips += len(pos1)
+    # print(pos1)
+    # print(len(pos1))
+    # print("")
+
+    start_time = time.time()
+    # flip positions of ones found previously
+    flip_bits_new(data=data, positions=pos1, rt_shape=rt_shape)
+    print(f"flip_bits function took {time.time() - start_time:.4f} seconds")
+    # print(data)
+    # print("")
+
+    if array_type == "3D":                
+        # print("")
+        data = np.reshape(data, data_initial_shape)
+        # data = torch.tensor(data).cuda()
+        print(f"data reshaped to initial shape: {np.shape(data)}")
+        # print(data)
+
+    # with open(out_file_flip1, "w") as f:
+    #     f.write("[")
+
+    #     # Write the list of integers to the file
+    #     for integer in data[:-1]:
+    #         f.write(str(integer) + ',\n')
+
+    #     f.write(str(data[-1]) + "]")
+
+    # # count lengths of bit groups in each block
+    # # # ONLY IF SUBSEQUENT apply_2flip IS NEEDED (or for debugging)
+    # block_groups = count_len(array_type=array_type, data=data, rt_shape=total_ones, rt_size=rt_size)
+    
+    # for len_gr in block_groups:
+    #     print(len_gr)
+    # print("")
+
 
 def apply_1flip_ind_off(array_type, rt_size, data, index_offset, global_bitflip_budget, local_bitflip_budget):
     total_flips = 0
@@ -763,31 +976,32 @@ if __name__ == '__main__':
 
     # min_bitgroup_size = 0 # which sizes of bit groups to include in metric, set to 0 for all sizes (including groups of 1 bit)
 
-    # rt_size = 12
-    rt_size = 64
+    kernel_size = 3
+
+    rt_size = 12
+    # rt_size = 64
     err = 0.1
 
     gbb = 0.03  # global bitflip budget
     lbb = 1   # local bitflip budget
 
-    # total_elems = [0, 576, 36864, 6422528, 20480] #FMNIST
+    total_elems = [0, 576, 36864, 6422528, 20480] #FMNIST
+
     # total_elems = [0, 401408, 262144, 5120] # MNIST9696
     # total_elems = [0, 401408, 5120] # MNIST9418
-    total_elems = [0, 7840] # MNIST8562
+    # total_elems = [0, 7840] # MNIST8562
 
 
     for layer in range(1,2):
-    # for layer in range(1,3):
-    # for layer in range(1,4):
-    # for layer in range(1,5):
 
-        # layer = 2
-        # if layer == 1 or layer == 2 or layer==0:
-        #     array_type = "3D"
-        # elif layer == 3 or layer == 4:
-        #     array_type = "1D"
+        layer = 2
+        # layer = 4
+        if layer == 1 or layer == 2 or layer==0:
+            array_type = "3D"
+        elif layer == 3 or layer == 4:
+            array_type = "1D"
 
-        array_type = "1D"
+        # array_type = "1D"
 
         total_elem = total_elems[layer]
 
@@ -802,8 +1016,8 @@ if __name__ == '__main__':
         ### variables ###
         #################
 
-        test_flag = False
-        print_flag = False
+        test_flag = True
+        print_flag = True
 
         _1flip_flag = True
         _1flip_flag_budget = False
@@ -848,44 +1062,51 @@ if __name__ == '__main__':
             out_file_flip3e = "q_out/qweights_orig_"+str(layer)+"_3flip_"+str(bitlen3)+".txt"
 
 
-        ###############
-        ### 1. flip ###
-        ###############
+        ###################
+        ### 1. flip new ###
+        ###################
 
         if _1flip_flag:
             print(in_file1)
             data = load_data_from_file(in_file1)
-
-            # column-wise blockhyp
-            if _1flip_flag_col:
-                
-                # for conv layers: reshape to 1D-type array and transpose (cols->rows), 
-                # to execute same steps for blockhyp but for the cols
-                if layer == 1 or layer == 2 or layer==0:
-                    array_type = "1D"
-                    
-                    data_initial_shape = np.shape(data)
-                    data = np.reshape(data,(data_initial_shape[0],-1)).T
-
-                    print(f"{data_initial_shape} -> Reshape + Transpose -> {np.shape(data)}")
-
-                # for linear layers: already 1D-type array, therefore only transpose (cols->rows), 
-                # to execute same steps for blockhyp but for the cols
-                elif layer == 3 or layer == 4:
-                    array_type = "1D"
-
-                    data_initial_shape = np.shape(data)
-                    data = np.transpose(data)
-
-                    print(f"{data_initial_shape} -> Transpose -> {np.shape(data)}")
-
-                            
-            total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
-            # total_elem = len(total_ones) * len(total_ones[0]) * rt_size
+                                
+            # total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
+            # rt_shape = np.shape(total_ones)
+            # print(np.shape(total_ones))
             
+            if array_type == "3D":
+                nr_elem = len(data[0]) * kernel_size * kernel_size # conv kernels of 3x3, 5x5, 7x7 elements
 
+                data_initial_shape = np.shape(data)
+                print(f"data initial shape: {data_initial_shape}")
+                # print(data)
+
+                # print("")
+                
+                data = np.reshape(data, (-1, nr_elem))
+                print(f"data reshaped: {np.shape(data)}")
+                # print(data)
+
+                # print("")
+                # data=np.reshape(data, data_initial_shape)
+                # print(np.shape(data))
+                # print(data)
+            
+            elif array_type == "1D":
+                nr_elem = len(data[0]) 
+
+                # print(np.shape(data))
+                # print(data)
+            else:
+                print("Invalid array type")
+                exit()
+
+            rt_shape = (len(data), max(math.ceil(nr_elem/rt_size),1))
+            print(rt_shape)
+            
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, rt_shape=total_ones, rt_size=rt_size)
+            # block_groups = count_len(array_type=array_type, data=data, rt_shape=rt_shape, rt_size=rt_size)
+            block_groups = count_len_new(data=data, rt_shape=rt_shape, rt_size=rt_size)
             
             if print_flag:
                 print("block_groups:")
@@ -924,7 +1145,8 @@ if __name__ == '__main__':
             print("")
 
             # flip positions of ones found previously
-            flip_bits(data=data, positions=pos1, rt_shape=total_ones, array_type=array_type)
+            # flip_bits(data=data, positions=pos1, rt_shape=rt_shape, array_type=array_type)
+            flip_bits_new(data=data, positions=pos1, rt_shape=rt_shape)
 
             # column-wise blcokhyp
             if _1flip_flag_col:
@@ -1000,7 +1222,212 @@ if __name__ == '__main__':
                     f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, rt_shape=total_ones, rt_size=rt_size)
+            # block_groups = count_len(array_type=array_type, data=data, rt_shape=rt_shape, rt_size=rt_size)
+            block_groups = count_len_new(data=data, rt_shape=rt_shape, rt_size=rt_size)
+            
+            if print_flag:
+                for len_gr in block_groups:
+                    print(len_gr)
+                print("")
+
+            if array_type == "3D":                
+                # print("")
+                data=np.reshape(data, data_initial_shape)
+                print(f"data reshaped to initial shape: {np.shape(data)}")
+                # print(data)
+            
+
+        elif _1flip_flag_offset:
+            print(in_file1)
+            data = load_data_from_file(in_file1)
+
+            glb_bb = 0.01
+            loc_bb = 1.0
+
+            ind_off = np.array([[0,-1,-2],[0,1,0]])
+
+            apply_1flip_ind_off(array_type=array_type, rt_size=rt_size, data=data, index_offset=ind_off, global_bitflip_budget=glb_bb, local_bitflip_budget=loc_bb)
+
+        exit()
+
+        ###############
+        ### 1. flip ###
+        ###############
+
+        if _1flip_flag:
+            print(in_file1)
+            data = load_data_from_file(in_file1)
+
+            # column-wise blockhyp
+            if _1flip_flag_col:
+                
+                # for conv layers: reshape to 1D-type array and transpose (cols->rows), 
+                # to execute same steps for blockhyp but for the cols
+                if layer == 1 or layer == 2 or layer==0:
+                    array_type = "1D"
+                    
+                    data_initial_shape = np.shape(data)
+                    data = np.reshape(data,(data_initial_shape[0],-1)).T
+
+                    print(f"{data_initial_shape} -> Reshape + Transpose -> {np.shape(data)}")
+
+                # for linear layers: already 1D-type array, therefore only transpose (cols->rows), 
+                # to execute same steps for blockhyp but for the cols
+                elif layer == 3 or layer == 4:
+                    array_type = "1D"
+
+                    data_initial_shape = np.shape(data)
+                    data = np.transpose(data)
+
+                    print(f"{data_initial_shape} -> Transpose -> {np.shape(data)}")
+
+                            
+            # total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
+            # total_elem = len(total_ones) * len(total_ones[0]) * rt_size
+            
+            if test_flag:
+                total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
+                rt_shape = np.shape(total_ones)
+                print(np.shape(total_ones))
+                
+                if array_type == "3D":
+                    nr_elem = len(data[0]) * 9 # conv kernels of 3x3, 5x5, 7x7 elements
+                elif array_type == "1D":
+                    nr_elem = len(data[0]) 
+                else:
+                    print("Invalid array type")
+                    exit()
+                rt_shape = (len(data), max(math.ceil(nr_elem/rt_size),1))
+                print(rt_shape)
+            else:
+                if array_type == "3D":
+                    nr_elem = len(data[0]) * 9 # conv kernels of 3x3, 5x5, 7x7 elements
+                elif array_type == "1D":
+                    nr_elem = len(data[0]) 
+                else:
+                    print("Invalid array type")
+                    exit()
+            
+                rt_shape = (len(data), max(math.ceil(nr_elem/rt_size),1))
+            
+
+            # count lengths of bit groups in each block
+            block_groups = count_len(array_type=array_type, data=data, rt_shape=rt_shape, rt_size=rt_size)
+            
+            if print_flag:
+                print("block_groups:")
+                for len_gr in block_groups:
+                    print(len_gr)
+                print("")
+
+            endlen_groups = sum_endlen(block_gr=block_groups)
+
+            if print_flag:
+                print("endlen_groups:")
+                for sum_len in endlen_groups:
+                    print(sum_len)
+                print("")
+
+            array_tuples = create_tuples(block_gr=block_groups, endlen_gr=endlen_groups)
+            array_tuples = sort_tuples(arr_tuples=array_tuples)
+
+            if print_flag:
+                print("sorted array_tuples:")
+                for tuples in array_tuples:
+                    print(tuples)
+                print("")
+
+            if _1flip_flag_budget:
+                print(total_elem)
+                pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, rt_size=rt_size, total_elem=total_elem, global_bitflip_budget=gbb, local_bitflip_budget=lbb)
+            else:
+                pos1 = find(arr_tuples=array_tuples, block_gr=block_groups)
+
+            total_flips += len(pos1)
+            if print_flag:
+                print(pos1)
+            print("")
+            print(len(pos1))
+            print("")
+
+            # flip positions of ones found previously
+            flip_bits(data=data, positions=pos1, rt_shape=rt_shape, array_type=array_type)
+
+            # column-wise blcokhyp
+            if _1flip_flag_col:
+
+                # transpose back (rows->cols), and reshape to original 3D shape
+                if layer == 1 or layer == 2 or layer == 0:
+                    array_type = "3D"
+
+                    data_before_shape = np.shape(data)
+                    data = np.reshape(data.T, data_initial_shape)
+                    
+                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
+                    
+                    print(f"{data_before_shape} -> Transpose + Reshape -> {np.shape(data)}")
+
+
+                    with open(out_file_flip1, 'w') as f:
+                        f.write('[')
+
+                        for i in range(data.shape[0]):
+                            f.write('[')
+                            for j in range(data.shape[1]):
+                                f.write('[')
+                                for k in range(data.shape[2]):
+                                    # Convert the subarray to a comma-separated string
+                                    subarray_str = ','.join(map(str, data[i, j, k]))
+                                    # Write the subarray string to the file
+                                    f.write('[' + subarray_str + ']')
+                                    if k < data.shape[2] - 1:
+                                        f.write(',')
+                                f.write(']')
+                                if j < data.shape[1] - 1:
+                                    f.write(',')
+                            f.write(']')
+                            if i < data.shape[0] - 1:
+                                f.write(',\n')
+
+                        f.write(']')
+
+                # only transpose back to original shape (rows->cols)
+                elif layer == 3 or layer == 4:
+                    array_type = "1D"
+
+                    data_before_shape = np.shape(data)
+                    data = np.transpose(data)
+
+                    total_ones, total_neg_ones = count(data=data, arr_type=array_type, rt_size=rt_size)
+                    
+                    print(f"{data_before_shape} -> Transpose -> {np.shape(data)}")
+
+
+                    with open(out_file_flip1, 'w') as f:
+                        f.write('[')
+
+                        for i in range(data.shape[0]):
+                            # Convert the subarray to a comma-separated string
+                            subarray_str = ','.join(map(str, data[i]))
+                            # Write the subarray string to the file
+                            f.write('[' + subarray_str + ']')
+                            if i < data.shape[0] - 1:
+                                f.write(',\n')
+
+                        f.write(']')
+
+            else:
+                with open(out_file_flip1, "w") as f:
+                    f.write("[")
+
+                    # Write the list of integers to the file
+                    for integer in data[:-1]:
+                        f.write(str(integer) + ',\n')
+
+                    f.write(str(data[-1]) + "]")
+
+            # count lengths of bit groups in each block
+            block_groups = count_len(array_type=array_type, data=data, rt_shape=rt_shape, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:
@@ -1023,7 +1450,7 @@ if __name__ == '__main__':
         ###################
 
         if _1eflip_flag:
-            block_groups = count_len(array_type=array_type, data=data, rt_shape=total_ones, rt_size=rt_size)
+            block_groups = count_len(array_type=array_type, data=data, rt_shape=rt_shape, rt_size=rt_size)
 
             if print_flag:
                 for len_gr in block_groups:
@@ -1039,7 +1466,7 @@ if __name__ == '__main__':
             print("")
 
 
-            flip_bits(data=data, positions=pos_edges, rt_shape=total_ones, array_type=array_type)
+            flip_bits(data=data, positions=pos_edges, rt_shape=rt_shape, array_type=array_type)
             
 
             with open(out_file_flip1e, "w") as f:
@@ -1052,7 +1479,7 @@ if __name__ == '__main__':
                 f.write(str(data[-1]) + "]")
 
             # count lengths of bit groups in each block
-            block_groups = count_len(array_type=array_type, data=data, rt_shape=total_ones, rt_size=rt_size)
+            block_groups = count_len(array_type=array_type, data=data, rt_shape=rt_shape, rt_size=rt_size)
             
             if print_flag:
                 for len_gr in block_groups:

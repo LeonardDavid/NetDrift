@@ -162,7 +162,7 @@ class QuantizedLinear(nn.Linear):
         if self.extract_absfreq is not None:
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
-        # self.kernel_size = kwargs.pop('kernel_size', False)
+        # self.kernel_size = kwargs.pop('kernel_size', None)
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
@@ -381,6 +381,8 @@ class QuantizedLinear(nn.Linear):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        kernel_size = 3 # TODO fix to read from argument
+
                         print("")
                         start_time = time.time()
                         quantized_weight = quantized_weight.clone()
@@ -390,7 +392,7 @@ class QuantizedLinear(nn.Linear):
                         # endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
 
                         start_time = time.time()
-                        endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+                        endlen.apply_1flip_new(array_type="1D", rt_size=self.rt_size, data=quantized_weight, kernel_size=kernel_size)
                         end_time = time.time()
                         print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
                         print("")
@@ -491,7 +493,7 @@ class QuantizedConv2d(nn.Conv2d):
         if self.extract_absfreq is not None:
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
-        # self.kernel_size = kwargs.pop('kernel_size', False)
+        # self.kernel_size = kwargs.pop('kernel_size', None)
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
@@ -718,6 +720,8 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+                        kernel_size = 3 # TODO fix to read from argument
+
                         print("")
                         start_time = time.time()
                         quantized_weight = quantized_weight.clone()
@@ -727,7 +731,7 @@ class QuantizedConv2d(nn.Conv2d):
                         # endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
 
                         start_time = time.time()
-                        endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+                        endlen.apply_1flip_new(array_type="3D", rt_size=self.rt_size, data=quantized_weight, kernel_size=kernel_size)
                         end_time = time.time()
                         print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
                         print("")
