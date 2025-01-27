@@ -5,7 +5,7 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 #     long_description = fh.read()
 
 setuptools.setup(
-    name='binarizePM1',
+    name='binarize',
     version="0.0.1",
     author='Mikail Yayla',
     author_email='mikail.yayla@tu-dortmund.de',
@@ -20,9 +20,9 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     ext_modules=[
-        CUDAExtension('binarizePM1', [
-            'binarizePM1.cpp',
-            'binarizePM1_kernel.cu',
+        CUDAExtension('binarize', [
+            'binarize.cpp',
+            'binarize_kernel.cu',
         ]),
     ],
     cmdclass={

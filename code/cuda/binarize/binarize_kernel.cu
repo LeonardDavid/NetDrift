@@ -10,7 +10,7 @@
 #define TPB_Z 8
 
 template <typename scalar_t>
-__global__ void binarizePM1_kernel(
+__global__ void binarize_kernel(
     torch::PackedTensorAccessor<scalar_t,3,torch::RestrictPtrTraits,size_t> input
   ) {
 
@@ -34,7 +34,7 @@ __global__ void binarizePM1_kernel(
   }
 }
 
-torch::Tensor binarizePM1_cuda(
+torch::Tensor binarize_cuda(
   torch::Tensor input
 ) {
 
@@ -75,8 +75,8 @@ torch::Tensor binarizePM1_cuda(
                     (input_size_y + threads_y - 1) / threads_y,
                     (input_size_z + threads_z - 1) / threads_z);
 
-  AT_DISPATCH_ALL_TYPES(input.type(), "binarizePM1_cuda", ([&] {
-    binarizePM1_kernel<scalar_t><<<blocks, threads>>>(
+  AT_DISPATCH_ALL_TYPES(input.type(), "binarize_cuda", ([&] {
+    binarize_kernel<scalar_t><<<blocks, threads>>>(
         input.packed_accessor<scalar_t,3,torch::RestrictPtrTraits,size_t>()
     );
   }));
