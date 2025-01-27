@@ -30,22 +30,27 @@ binarize_method = BinarizeMethod(binarize.binarize)
 racetrack_model = RacetrackModel(racetrack.racetrack, 0.0)
 binarizefi_model = BinarizeFIModel(binarizeFI.binarizeFI, 0.0)
 
+### specify quantization method for training & testing
 
-### specify error model for training
-
-error_model = racetrack_model
-# error_model = binarizefi_model
-
-
-### specify criterion for training
- 
-crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
-crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
-# crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
-# crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
+quant_method = binarize_method
 
 q_train = True # quantization during training
 q_eval = True # quantization during evaluation
+
+
+### specify error model for training & testing
+
+# error_model = racetrack_model
+error_model = binarizefi_model
+
+
+### specify criterion for training & testing
+ 
+# crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
+# crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
+crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
+crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
+
 
 def main():
     # Training settings
@@ -187,13 +192,13 @@ def main():
         ### FP ###
         # model = nn_model()
         ### BNN ### 
-        model = nn_model(quantMethod=binarize_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     elif args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2],  quantMethod=binarize_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2],  quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     else:
-        model = nn_model(quantMethod=binarize_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
