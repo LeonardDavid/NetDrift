@@ -9,6 +9,7 @@ import random
 import os
 import time
 import signal
+import math
 
 import metrics.ratio_blocks_ecc_ind_off.ratio_blocks_ecc_ind_off as ratio_blocks_io
 import metrics.count_len.count_len_endlen as endlen
@@ -381,24 +382,41 @@ class QuantizedLinear(nn.Linear):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
-                        kernel_size = 3 # TODO fix to read from argument
+
+                        # print("")
+                        # start_time = time.time()
+                        # quantized_weight = quantized_weight.clone()
+                        # end_time = time.time()
+                        # print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # start_time = time.time()
+                        # endlen.apply_1flip_old(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+                        # end_time = time.time()
+                        # print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        # print("")
+                        # # print("endlen flip applied")
 
                         print("")
-                        start_time = time.time()
-                        quantized_weight = quantized_weight.clone()
-                        end_time = time.time()
-                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
 
-                        # endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+                        qweight_initial_shape = quantized_weight.shape
+                        print(f"qweight initial shape: {qweight_initial_shape}")
+
+                        quantized_weight = quantized_weight.clone().view(-1)
+                        print(f"qweight reshaped: {quantized_weight.shape}")
+
+                        rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
+                        print(f"rt_shape: {rt_shape}")
 
                         start_time = time.time()
-                        endlen.apply_1flip_new(array_type="1D", rt_size=self.rt_size, data=quantized_weight, kernel_size=kernel_size)
+                        endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
                         end_time = time.time()
                         print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
                         print("")
                         # print("endlen flip applied")
 
-                        
+                        quantized_weight = quantized_weight.view(qweight_initial_shape)
+                        # print(f"qweight reshaped back: {quantized_weight.shape}")
+
                         # Interrupt the code execution immediately
                         os.kill(os.getpid(), signal.SIGINT)
                                
@@ -720,22 +738,40 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
-                        kernel_size = 3 # TODO fix to read from argument
+
+                        # print("")
+                        # start_time = time.time()
+                        # quantized_weight = quantized_weight.clone()
+                        # end_time = time.time()
+                        # print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # start_time = time.time()
+                        # endlen.apply_1flip_old(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+                        # end_time = time.time()
+                        # print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        # print("")
+                        # # print("endlen flip applied")
 
                         print("")
-                        start_time = time.time()
-                        quantized_weight = quantized_weight.clone()
-                        end_time = time.time()
-                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
 
-                        # endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+                        qweight_initial_shape = quantized_weight.shape
+                        print(f"qweight initial shape: {qweight_initial_shape}")
+
+                        quantized_weight = quantized_weight.clone().view(-1)
+                        print(f"qweight reshaped: {quantized_weight.shape}")
+
+                        rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
+                        print(f"rt_shape: {rt_shape}")
 
                         start_time = time.time()
-                        endlen.apply_1flip_new(array_type="3D", rt_size=self.rt_size, data=quantized_weight, kernel_size=kernel_size)
+                        endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
                         end_time = time.time()
                         print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
                         print("")
                         # print("endlen flip applied")
+
+                        quantized_weight = quantized_weight.view(qweight_initial_shape)
+                        print(f"qweight reshaped back: {quantized_weight.shape}")
 
                         # Interrupt the code execution immediately
                         os.kill(os.getpid(), signal.SIGINT)
