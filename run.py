@@ -40,16 +40,16 @@ q_eval = True # quantization during evaluation
 
 ### specify error model for training & testing
 
-# error_model = racetrack_model
-error_model = binarizefi_model
+error_model = racetrack_model
+# error_model = binarizefi_model
 
 
 ### specify criterion for training & testing
  
-# crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
-# crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
-crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
-crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
+crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
+crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
+# crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
+# crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
 
 
 def main():
