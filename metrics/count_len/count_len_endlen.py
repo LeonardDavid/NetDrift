@@ -190,8 +190,8 @@ def apply_1flip(data, rt_shape):
     print(f"find_pos function took {time.time() - start_time:.4f} seconds")
 
     # total_flips += len(pos1)
-    print(pos1)
-    print(len(pos1))
+    # print(pos1)
+    # print(len(pos1))
     # print("")
 
     start_time = time.time()
@@ -220,6 +220,93 @@ def apply_1flip(data, rt_shape):
     # print("")
 
 
+
+# Implements the blockhyp algorithm for a 1D tensor (e.g. a weight tensor)
+# If the tensor is 2D or 3D, it should be reshaped to 1D before calling this function
+# The tensor is modified in place
+# 
+# data: the tensor to be modified
+# rt_size: the size of the racetracks
+#
+def count_len_create_endlen_tuples(data, rt_size):
+    
+    # Specify the number of racetracks based on the size of the tensor and the racetrack size
+    rt = max(math.ceil(data.shape[0]/rt_size), 1)
+    print(f"rt_shape: {rt}x{rt_size}")
+
+    tuples = []
+
+    # For each racetrack...
+    for i in range(rt):
+        
+        # Initializations
+        rt_tuples = []                          # store the tuples containing the information of the sliding windows for each racetrack
+        count = 0                               # count the sign changes
+        k = 0                                   # index of the tuples
+        bitgroup = [0, 0, 0]                    # in a sliding window of size 3, store the lengths of bitgroups
+        i_mid = [0, 0, 0]                       # store the starting indices of the middle bitgroup
+        current_sign = data[i * rt_size]        # sign of the current bitgroup, initialize with sign of the first bitgroup
+
+        # ...of size rt_size bits
+        for j in range(rt_size):
+
+            # Iterate through every weight
+            index = i * rt_size + j
+
+            # This will first hit after the first bitgroup (because of the initialization), and then every time the sign changes
+            if data[index] != current_sign:
+                i_mid[(count+1)%3] = index      # store the starting index of the middle bitgroup
+                current_sign = -current_sign    # flip the sign to match the current bitgroup
+                count += 1                      # increment the count of sign changes
+
+                if count > 2:
+                    # Create tuple of format (tuple_index, bitgroup_length_of_window, required_flips, starting_index_of_middle_bitgroup)
+                    # Retrieve middle bitgroup by clever indexing using the sliding window property
+                    rt_tuples.append((k, sum(bitgroup), bitgroup[(k+1)%3], i_mid[(k+1)%3]))
+                    k += 1                      # increment the index of the tuples
+                    bitgroup[count%3] = 0       # reset the length of the current bitgroup
+            
+            # To save memory, after sliding the window, store the new bitgroup length in the unused part of the array
+            bitgroup[count%3] += 1 # <=> abs(data[index]) <=> increment the length of the current bitgroup 
+
+        # Handle the last tuple
+        rt_tuples.append((k, sum(bitgroup), bitgroup[(k+1)%3], i_mid[(k+1)%3]))
+
+        # Sort the list of tuples (tuple_index, endlen, flips, index_mid) by endlen descending, then by flips ascending
+        rt_tuples.sort(key=lambda x: (-x[1], x[2]))
+
+        tuples.append(rt_tuples)
+
+    return tuples
+
+
+def select_flip_bits(data, array_tuples):
+
+    # for each racetrack
+    for i in range(len(array_tuples)):
+        
+        print("")
+        print(f"array_tuples[{i}]: {array_tuples[i]}")        
+
+        # greedily select the bitgroups with the highest endlen, and the lowest number of required flips, as long as there are still available bitgroups left
+        while len(array_tuples[i]) > 0:
+
+            tuple_index = array_tuples[i][0][0]                         # first tuple  always contains the maximum (it has been sorted previously)
+            start_index_mid = array_tuples[i][0][3]                     # starting index of the middle bitgroup to be flipped
+            final_index_mid = start_index_mid + array_tuples[i][0][2]   # start index + required bitflips
+
+            print(f"array_tuples[{i}][0]: {array_tuples[i][0]}")
+            
+            # flip the middle bitgroup
+            for idx in range(start_index_mid, final_index_mid):
+                print(f"{idx}: flipped {data[idx]} -> {-data[idx]}")
+                data[idx] = -data[idx]
+
+            # remove selected tuple after storing it, along with its neighbouring tuples
+            array_tuples[i] = [t for t in array_tuples[i] if t[0] not in [tuple_index-1, tuple_index, tuple_index+1]]
+            print(f"array_tuples[{i}]: {array_tuples[i]}")
+
+
 if __name__ == '__main__':
     ## main ##
 
@@ -227,8 +314,10 @@ if __name__ == '__main__':
 
     kernel_size = 3
 
+    ### important variable
     rt_size = 12
     # rt_size = 64
+    
     err = 0.1
 
     gbb = 0.03  # global bitflip budget
@@ -323,129 +412,23 @@ if __name__ == '__main__':
                 data = np.reshape(data, -1)
                 print(f"data reshaped: {np.shape(data)}")
                                 
-            total_flips = 0
+            print(f"data before: {data}")
             
-            rt_shape = (max(math.ceil(data.shape[0]/rt_size),1), rt_size)
-            print(rt_shape)
+            # rt_shape = (max(math.ceil(data.shape[0]/rt_size),1), rt_size)
+            # print(rt_shape)
 
-            # count lengths of bit groups in each block
-            block_groups = count_len(data=data, rt_shape=rt_shape)
+            array_tuples = count_len_create_endlen_tuples(data=data, rt_size=rt_size)
 
-            # print(f"block_groups:")
-            # for len_gr in block_groups:
-            #     print(len_gr)
-            # print("")
+            select_flip_bits(data=data, array_tuples=array_tuples)
 
-            array_tuples = create_endlen_tuples(block_gr=block_groups)
-
-            # print("sorted array_tuples:")
-            # for tuples in array_tuples:
-            #     print(tuples)
-            # print("")
-
-            if _1flip_flag_budget:
-                print(total_elem)
-                pos1 = find_with_bitflip_budget(arr_tuples=array_tuples, block_gr=block_groups, rt_size=rt_size, total_elem=total_elem, global_bitflip_budget=gbb, local_bitflip_budget=lbb)
-            else:
-                pos1 = find_pos(arr_tuples=array_tuples, block_gr=block_groups)
-
-            total_flips += len(pos1)
-            if print_flag:
-                print(pos1)
-            print("")
-            print(len(pos1))
-            print("")
-
-            # flip positions of ones found previously
-            flip_bits(data=data, positions=pos1)
-
-            # column-wise blcokhyp
-            if _1flip_flag_col:
-
-                # transpose back (rows->cols), and reshape to original 3D shape
-                if layer == 1 or layer == 2 or layer == 0:
-                    array_type = "3D"
-
-                    data_before_shape = np.shape(data)
-                    data = np.reshape(data.T, data_initial_shape)
-                    
-                    total_ones, total_neg_ones = count_old(data=data, arr_type=array_type, rt_size=rt_size)
-                    
-                    print(f"{data_before_shape} -> Transpose + Reshape -> {np.shape(data)}")
-
-
-                    with open(out_file_flip1, 'w') as f:
-                        f.write('[')
-
-                        for i in range(data.shape[0]):
-                            f.write('[')
-                            for j in range(data.shape[1]):
-                                f.write('[')
-                                for k in range(data.shape[2]):
-                                    # Convert the subarray to a comma-separated string
-                                    subarray_str = ','.join(map(str, data[i, j, k]))
-                                    # Write the subarray string to the file
-                                    f.write('[' + subarray_str + ']')
-                                    if k < data.shape[2] - 1:
-                                        f.write(',')
-                                f.write(']')
-                                if j < data.shape[1] - 1:
-                                    f.write(',')
-                            f.write(']')
-                            if i < data.shape[0] - 1:
-                                f.write(',\n')
-
-                        f.write(']')
-
-                # only transpose back to original shape (rows->cols)
-                elif layer == 3 or layer == 4:
-                    array_type = "1D"
-
-                    data_before_shape = np.shape(data)
-                    data = np.transpose(data)
-
-                    total_ones, total_neg_ones = count_old(data=data, arr_type=array_type, rt_size=rt_size)
-                    
-                    print(f"{data_before_shape} -> Transpose -> {np.shape(data)}")
-
-
-                    with open(out_file_flip1, 'w') as f:
-                        f.write('[')
-
-                        for i in range(data.shape[0]):
-                            # Convert the subarray to a comma-separated string
-                            subarray_str = ','.join(map(str, data[i]))
-                            # Write the subarray string to the file
-                            f.write('[' + subarray_str + ']')
-                            if i < data.shape[0] - 1:
-                                f.write(',\n')
-
-                        f.write(']')
-
-            else:
-                with open(out_file_flip1, "w") as f:
-                    f.write("[")
-
-                    # Write the list of integers to the file
-                    for integer in data[:-1]:
-                        f.write(str(integer) + ',\n')
-
-                    f.write(str(data[-1]) + "]")
-
-            # count lengths of bit groups in each block
-            # block_groups = count_len(array_type=array_type, data=data, rt_shape=rt_shape, rt_size=rt_size)
-            block_groups = count_len(data=data, rt_shape=rt_shape)
-            
-            if print_flag:
-                for len_gr in block_groups:
-                    print(len_gr)
-                print("")
+            print(f"data after: {data}")
 
             if array_type == "3D":                
                 # print("")
                 data=np.reshape(data, data_initial_shape)
                 print(f"data reshaped to initial shape: {np.shape(data)}")
                 # print(data)
+
             
         elif _1flip_flag_offset:
             print(in_file1)

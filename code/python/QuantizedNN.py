@@ -12,8 +12,8 @@ import signal
 import math
 
 import metrics.ratio_blocks_ecc_ind_off.ratio_blocks_ecc_ind_off as ratio_blocks_io
-import metrics.count_len.count_len_endlen as endlen
 import metrics.binomial_revert.binomial_revert as bin_revert
+import metrics.blockhyp.blockhyp as blockhyp
 
 class Quantize(Function):
     @staticmethod
@@ -404,13 +404,14 @@ class QuantizedLinear(nn.Linear):
                         quantized_weight = quantized_weight.clone().view(-1)
                         print(f"qweight reshaped: {quantized_weight.shape}")
 
-                        rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
-                        print(f"rt_shape: {rt_shape}")
+                        # rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
+                        # print(f"rt_shape: {rt_shape}")
 
                         start_time = time.time()
-                        endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
+                        # endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
+                        blockhyp.blockhyp_algorithm(data=quantized_weight, rt_size=self.rt_size)
                         end_time = time.time()
-                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print(f"Time taken for blockhyp.blockhyp_algorithm: {end_time - start_time} seconds")
                         print("")
                         # print("endlen flip applied")
 
@@ -760,13 +761,14 @@ class QuantizedConv2d(nn.Conv2d):
                         quantized_weight = quantized_weight.clone().view(-1)
                         print(f"qweight reshaped: {quantized_weight.shape}")
 
-                        rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
-                        print(f"rt_shape: {rt_shape}")
+                        # rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
+                        # print(f"rt_shape: {rt_shape}")
 
                         start_time = time.time()
-                        endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
+                        # endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
+                        blockhyp.blockhyp_algorithm(data=quantized_weight, rt_size=self.rt_size)
                         end_time = time.time()
-                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print(f"Time taken for blockhyp.blockhyp_algorithm: {end_time - start_time} seconds")
                         print("")
                         # print("endlen flip applied")
 
