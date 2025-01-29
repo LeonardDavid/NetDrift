@@ -1,7 +1,0 @@
-binarizeFI.cpp
-binarizeFI_kernel.cu
-setup.py
-binarizeFI.egg-info/PKG-INFO
-binarizeFI.egg-info/SOURCES.txt
-binarizeFI.egg-info/dependency_links.txt
-binarizeFI.egg-info/top_level.txt

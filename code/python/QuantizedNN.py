@@ -9,10 +9,11 @@ import random
 import os
 import time
 import signal
+import math
 
 import metrics.ratio_blocks_ecc_ind_off.ratio_blocks_ecc_ind_off as ratio_blocks_io
-import metrics.count_len.count_len_endlen as endlen
 import metrics.binomial_revert.binomial_revert as bin_revert
+import metrics.blockhyp.blockhyp as blockhyp
 
 class Quantize(Function):
     @staticmethod
@@ -162,7 +163,7 @@ class QuantizedLinear(nn.Linear):
         if self.extract_absfreq is not None:
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
-        # self.kernel_size = kwargs.pop('kernel_size', False)
+        # self.kernel_size = kwargs.pop('kernel_size', None)
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
@@ -381,22 +382,42 @@ class QuantizedLinear(nn.Linear):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+
+                        # print("")
+                        # start_time = time.time()
+                        # quantized_weight = quantized_weight.clone()
+                        # end_time = time.time()
+                        # print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # start_time = time.time()
+                        # endlen.apply_1flip_old(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+                        # end_time = time.time()
+                        # print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        # print("")
+                        # # print("endlen flip applied")
+
                         print("")
-                        start_time = time.time()
-                        quantized_weight = quantized_weight.clone()
-                        end_time = time.time()
-                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
 
-                        # endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+                        qweight_initial_shape = quantized_weight.shape
+                        print(f"qweight initial shape: {qweight_initial_shape}")
+
+                        quantized_weight = quantized_weight.clone().view(-1)
+                        print(f"qweight reshaped: {quantized_weight.shape}")
+
+                        # rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
+                        # print(f"rt_shape: {rt_shape}")
 
                         start_time = time.time()
-                        endlen.apply_1flip(array_type="1D", rt_size=self.rt_size, data=quantized_weight)
+                        # endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
+                        blockhyp.blockhyp_algorithm(data=quantized_weight, rt_size=self.rt_size)
                         end_time = time.time()
-                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print(f"Time taken for blockhyp.blockhyp_algorithm: {end_time - start_time} seconds")
                         print("")
                         # print("endlen flip applied")
 
-                        
+                        quantized_weight = quantized_weight.view(qweight_initial_shape)
+                        # print(f"qweight reshaped back: {quantized_weight.shape}")
+
                         # Interrupt the code execution immediately
                         os.kill(os.getpid(), signal.SIGINT)
                                
@@ -491,7 +512,7 @@ class QuantizedConv2d(nn.Conv2d):
         if self.extract_absfreq is not None:
             self.absfreq = torch.zeros(self.array_size+1, dtype=int).cuda()
         self.test_rtm = kwargs.pop('test_rtm', False)
-        # self.kernel_size = kwargs.pop('kernel_size', False)
+        # self.kernel_size = kwargs.pop('kernel_size', None)
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
@@ -718,20 +739,41 @@ class QuantizedConv2d(nn.Conv2d):
 
                     ### #ENDLEN# ###
                     if flags.get("EXEC_ENDLEN") == "True":
+
+                        # print("")
+                        # start_time = time.time()
+                        # quantized_weight = quantized_weight.clone()
+                        # end_time = time.time()
+                        # print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
+
+                        # start_time = time.time()
+                        # endlen.apply_1flip_old(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+                        # end_time = time.time()
+                        # print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        # print("")
+                        # # print("endlen flip applied")
+
                         print("")
-                        start_time = time.time()
-                        quantized_weight = quantized_weight.clone()
-                        end_time = time.time()
-                        print(f"Time taken for quantized_weight.clone: {end_time - start_time} seconds")
 
-                        # endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+                        qweight_initial_shape = quantized_weight.shape
+                        print(f"qweight initial shape: {qweight_initial_shape}")
+
+                        quantized_weight = quantized_weight.clone().view(-1)
+                        print(f"qweight reshaped: {quantized_weight.shape}")
+
+                        # rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
+                        # print(f"rt_shape: {rt_shape}")
 
                         start_time = time.time()
-                        endlen.apply_1flip(array_type="3D", rt_size=self.rt_size, data=quantized_weight)
+                        # endlen.apply_1flip(data=quantized_weight, rt_shape=rt_shape)
+                        blockhyp.blockhyp_algorithm(data=quantized_weight, rt_size=self.rt_size)
                         end_time = time.time()
-                        print(f"Time taken for endlen.apply_1flip: {end_time - start_time} seconds")
+                        print(f"Time taken for blockhyp.blockhyp_algorithm: {end_time - start_time} seconds")
                         print("")
                         # print("endlen flip applied")
+
+                        quantized_weight = quantized_weight.view(qweight_initial_shape)
+                        print(f"qweight reshaped back: {quantized_weight.shape}")
 
                         # Interrupt the code execution immediately
                         os.kill(os.getpid(), signal.SIGINT)

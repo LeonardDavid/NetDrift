@@ -1,7 +1,0 @@
-racetrack.cpp
-racetrack_kernel.cu
-setup.py
-racetrack.egg-info/PKG-INFO
-racetrack.egg-info/SOURCES.txt
-racetrack.egg-info/dependency_links.txt
-racetrack.egg-info/top_level.txt

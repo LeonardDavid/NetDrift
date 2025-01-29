@@ -10,7 +10,7 @@ from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 from Models import MLP, VGG3, VGG7, ResNet, BasicBlock
 
 
-class Binarization:
+class BinarizeMethod:
     def __init__(self, method):
         self.method = method
     def applyQuantization(self, input):
