@@ -759,8 +759,11 @@ class QuantizedConv2d(nn.Conv2d):
                         qweight_initial_shape = quantized_weight.shape
                         # print(f"qweight initial shape: {qweight_initial_shape}")
 
+                        # print(f"before: {quantized_weight}")
+
                         quantized_weight = quantized_weight.clone().view(-1)
                         # print(f"qweight reshaped: {quantized_weight.shape}")
+
 
                         # rt_shape = (max(math.ceil(quantized_weight.shape[0]/self.rt_size),1), self.rt_size)
                         # print(f"rt_shape: {rt_shape}")
@@ -774,9 +777,11 @@ class QuantizedConv2d(nn.Conv2d):
                         # print("")
                         # print("endlen flip applied")
 
+
                         quantized_weight = quantized_weight.view(qweight_initial_shape)
                         # print(f"qweight reshaped back: {quantized_weight.shape}")
 
+                        # print(f"after: {quantized_weight}")
                         # # Interrupt the code execution immediately
                         # os.kill(os.getpid(), signal.SIGINT)
 
