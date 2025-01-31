@@ -244,7 +244,7 @@ then
             then
                 # MODEL_PATH="models/model_fmnist9108.pt"
                 # MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L4_p01.pt"
-                MODEL_PATH="model_fmnist_binfi_nomhl_nobh_L1_p0.0001.pt"
+                MODEL_PATH="models/phase4/model_fmnist_rtfi_mhl_bh_L1_p0.1.pt"
             elif [ "$KERNEL_SIZE" = 5 ]
             then
                 MODEL_PATH="models/model_fmnist5x5_9077.pt"

@@ -30,9 +30,9 @@ GPU_ID=0
 # PHASE_DIR="phase3"
 # PHASE_DIR="phase4"
 # PHASE_DIR="mm1"
-PHASE_DIR="mm2"
+# PHASE_DIR="mm2"
 # PHASE_DIR="mm3"
-# PHASE_DIR="mm4"
+PHASE_DIR="mm4"
 
 MODEL_DIR="models/$PHASE_DIR"
 
