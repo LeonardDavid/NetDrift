@@ -2,6 +2,8 @@
 
 Presentation [Paper on Springer Nature](https://doi.org/10.1007/978-3-031-78377-7_16)
 
+Models and other large files can be found [here](https://huggingface.co/leonarddavid/NetDrift-models/tree/main)
+
 The NetDrift framework enables profiling BNNs on unreliable RTMs, facilitating the investigation into the impact of misalignment faults on model accuracy. 
 
 It enables controlled error injection in selected BNN layers with varying fault rates and simulates the impact of accumulated misalignments in weight tensors of several BNN models (FashionMNIST, CIFAR10, ResNet18) stored in RTM. 
