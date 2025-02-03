@@ -389,10 +389,10 @@ class QuantizedLinear(nn.Linear):
                         quantized_weight = quantized_weight.clone().view(-1)
                         # print(f"qweight reshaped: {quantized_weight.shape}")
 
-                        start_time = time.time()
+                        # start_time = time.time()
                         # blockhyp.blockhyp_endlen_algorithm(data=quantized_weight, rt_size=self.rt_size)
                         blockhyp.blockhyp_endlen_algorithm_parallel(data=quantized_weight, rt_size=self.rt_size)
-                        end_time = time.time()
+                        # end_time = time.time()
                         # print(f"Time taken for blockhyp.blockhyp_endlen_algorithm: {end_time - start_time} seconds")
 
                         quantized_weight = quantized_weight.view(qweight_initial_shape)
@@ -726,10 +726,10 @@ class QuantizedConv2d(nn.Conv2d):
                         quantized_weight = quantized_weight.clone().view(-1)
                         # print(f"qweight reshaped: {quantized_weight.shape}")
 
-                        start_time = time.time()
+                        # start_time = time.time()
                         # blockhyp.blockhyp_endlen_algorithm(data=quantized_weight, rt_size=self.rt_size)
                         blockhyp.blockhyp_endlen_algorithm_parallel(data=quantized_weight, rt_size=self.rt_size)
-                        end_time = time.time()
+                        # end_time = time.time()
                         # print(f"Time taken for blockhyp.blockhyp_endlen_algorithm: {end_time - start_time} seconds")
 
                         quantized_weight = quantized_weight.view(qweight_initial_shape)
