@@ -3,8 +3,8 @@
 
 RTM_results/
 experiments/
-
-# data/imagenette2
+data/
+models/
 
 nohup.out
 

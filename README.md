@@ -172,6 +172,9 @@ Training at misalignment fault rates of 10^(-4): FMNIST with kernel_size 3 with 
 
 ### Troubleshooting
 
+- If errors during git cloning arise:
+    - increase the postBuffer size using `git config --global http.postBuffer 524288000`
+
 - In case CUDA Memory errors arise:
     - flush the VRAM using `torch.cuda.empty_cache()` -> find line in Inference loop in `run.py`
 
