@@ -1,6 +1,6 @@
 # NetDrift
 
-Presentation [Paper TBP]()
+Presentation [Paper TBP](https://doi.org/10.1007/978-3-031-78377-7_16)
 
 The NetDrift framework enables profiling BNNs on unreliable RTMs, facilitating the investigation into the impact of misalignment faults on model accuracy. 
 
