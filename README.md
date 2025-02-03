@@ -1,6 +1,6 @@
 # NetDrift
 
-Presentation [Paper](https://doi.org/10.1007/978-3-031-78377-7_16)
+Presentation [Paper on Springer Nature](https://doi.org/10.1007/978-3-031-78377-7_16)
 
 The NetDrift framework enables profiling BNNs on unreliable RTMs, facilitating the investigation into the impact of misalignment faults on model accuracy. 
 
