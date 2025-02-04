@@ -454,7 +454,7 @@ class QuantizedLinear(nn.Linear):
                         f.write(str(list_of_integers[-1]) + "]")
 
 
-                output = F.linear(input, quantized_weight)
+            output = F.linear(input, quantized_weight)
             return output
         else:
             quantized_weight = None
@@ -791,7 +791,7 @@ class QuantizedConv2d(nn.Conv2d):
                         f.write(str(list_of_integers[-1]) + "]")
 
 
-                output = F.conv2d(input, quantized_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            output = F.conv2d(input, quantized_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             return output
         else:
             quantized_weight = None
