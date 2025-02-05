@@ -310,20 +310,20 @@ class QuantizedLinear(nn.Linear):
                     ### BINOMIAL REVERT ###
 
                     # reset some index offset values above a certain threshold
-                    # quite theoretical as well, because this would mean that error correction is applied only to some blocks, but in practice it is either full ecc or no ecc
+                    # quite theoretical as well, because this would mean that error correction is applied only to some racetracks, but in practice it is either full ecc or no ecc
                     # some possible thresholds: cut 80% of the amount of values starting from the middle (0, 1, -1, 2, -2 etc) and leave 20% on the edges
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
                     if flags.get("EXEC_BIN_REVERT_MID") == "True":
                         # 80/20 from middle (total elements)
-                        # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_mid(self.index_offset)
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = bin_revert.revert_elements_2d_mid(self.index_offset)
                     
                     if flags.get("EXEC_BIN_REVERT_EDGES") == "True":
                         # 80/20 from edges (total bins)
-                        # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_edges(self.index_offset)
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = bin_revert.revert_elements_2d_edges(self.index_offset)
 
 
                     ### ODD2EVEN ###
@@ -335,17 +335,17 @@ class QuantizedLinear(nn.Linear):
                     # this would add some overhead in practice
 
                     if flags.get("EXEC_ODD2EVEN_DEC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] % 2 != 0:
-                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset % 2 != 0),
+                                                        self.index_offset - np.sign(self.index_offset),
+                                                        self.index_offset)
 
                     if flags.get("EXEC_ODD2EVEN_INC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] % 2 != 0:
-                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
-
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset % 2 != 0),
+                                                        self.index_offset + np.sign(self.index_offset),
+                                                        self.index_offset)
+                        
 
                     ### EVEN2ODD ###
 
@@ -356,17 +356,17 @@ class QuantizedLinear(nn.Linear):
                     # this would add some overhead in practice
 
                     if flags.get("EXEC_EVEN2ODD_DEC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
-                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset != 0) & (self.index_offset % 2 == 0), 
+                                                        self.index_offset - np.sign(self.index_offset), 
+                                                        self.index_offset)
 
                     if flags.get("EXEC_EVEN2ODD_INC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
-                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
-                    
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset != 0) & (self.index_offset % 2 == 0),
+                                                        self.index_offset + np.sign(self.index_offset),
+                                                        self.index_offset)
+                      
 
                     ### AT RUNTIME ###
 
@@ -648,20 +648,20 @@ class QuantizedConv2d(nn.Conv2d):
                     ### BINOMIAL REVERT ###
 
                     # reset some index offset values above a certain threshold
-                    # quite theoretical as well, because this would mean that error correction is applied only to some blocks, but in practice it is either full ecc or no ecc
+                    # quite theoretical as well, because this would mean that error correction is applied only to some racetracks, but in practice it is either full ecc or no ecc
                     # some possible thresholds: cut 80% of the amount of values starting from the middle (0, 1, -1, 2, -2 etc) and leave 20% on the edges
                     # or possibility 2: cut 80% of the total sizes starting from the edges (40% on the right, 40% on the left)
                     # significant overhead to be reckoned with, only for counting (and creating histogram)
 
                     if flags.get("EXEC_BIN_REVERT_MID") == "True":
                         # 80/20 from middle (total elements)
-                        # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_mid(self.index_offset)
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = bin_revert.revert_elements_2d_mid(self.index_offset)
                     
                     if flags.get("EXEC_BIN_REVERT_EDGES") == "True":
                         # 80/20 from edges (total bins)
-                        # if self.nr_run == 1:
-                        self.index_offset = bin_revert.revert_elements_2d_edges(self.index_offset)
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = bin_revert.revert_elements_2d_edges(self.index_offset)
 
 
                     ### ODD2EVEN ###
@@ -672,16 +672,16 @@ class QuantizedConv2d(nn.Conv2d):
                     # -> in future, we could create a best-case and worst-case, in which latter would be that shift error happens also during this "correction"
                     # this would add some overhead in practice
                     if flags.get("EXEC_ODD2EVEN_DEC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] % 2 != 0:
-                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset % 2 != 0),
+                                                        self.index_offset - np.sign(self.index_offset),
+                                                        self.index_offset)
 
                     if flags.get("EXEC_ODD2EVEN_INC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] % 2 != 0:
-                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset % 2 != 0),
+                                                        self.index_offset + np.sign(self.index_offset),
+                                                        self.index_offset)
 
 
                     ### EVEN2ODD ###
@@ -693,16 +693,16 @@ class QuantizedConv2d(nn.Conv2d):
                     # this would add some overhead in practice
                     
                     if flags.get("EXEC_EVEN2ODD_DEC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
-                                    self.index_offset[i][j] -= np.sign(self.index_offset[i][j])
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset != 0) & (self.index_offset % 2 == 0), 
+                                                        self.index_offset - np.sign(self.index_offset), 
+                                                        self.index_offset)
 
                     if flags.get("EXEC_EVEN2ODD_INC") == "True":
-                        for i in range(0, self.index_offset.shape[0]):      
-                            for j in range(0, self.index_offset.shape[1]):  
-                                if self.index_offset[i][j] != 0 and self.index_offset[i][j] % 2 == 0:
-                                    self.index_offset[i][j] += np.sign(self.index_offset[i][j])
+                        if self.nr_run % int(flags.get("EXEC_EVERY_NRUN")) == 0:
+                            self.index_offset = np.where((self.index_offset != 0) & (self.index_offset % 2 == 0),
+                                                        self.index_offset + np.sign(self.index_offset),
+                                                        self.index_offset)
 
 
                     ### AT RUNTIME ###

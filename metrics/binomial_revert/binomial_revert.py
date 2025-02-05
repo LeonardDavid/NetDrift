@@ -24,12 +24,32 @@ def revert_elements_2d_mid(arr):
     for idx in indices_to_revert_positive:
         flat_arr[np.where(flat_arr == positive_elements[idx])[0][0]] = 0
     
-    reverted_arr = flat_arr.reshape(arr.shape)
-    
-    return reverted_arr
+    return flat_arr.reshape(arr.shape)
 
 
 def revert_elements_2d_edges(arr):
+    flat_arr = arr.copy().flatten()  # Create a copy to avoid modifying original array
+    
+    # Get unique values for negative and positive elements
+    neg_uniques = np.unique(flat_arr[flat_arr < 0])
+    pos_uniques = np.unique(flat_arr[flat_arr > 0])
+    
+    # Calculate number of bins to revert
+    neg_revert = int(len(neg_uniques) * 0.5)
+    pos_revert = int(len(pos_uniques) * 0.5)
+    
+    # Create mask for values to set to zero
+    mask = np.isin(flat_arr, np.concatenate([
+        neg_uniques[:neg_revert],  # Smallest negative values
+        pos_uniques[-pos_revert:]  # Largest positive values
+    ]))
+    
+    # Set masked values to zero and reshape
+    flat_arr[mask] = 0
+    return flat_arr.reshape(arr.shape)
+
+
+def revert_elements_2d_edges_stepbystep(arr):
     flat_arr = arr.flatten()
     
     # Separate negative and positive elements (except 0)
@@ -57,10 +77,7 @@ def revert_elements_2d_edges(arr):
     for bin_value in bins_to_revert_positive:
         flat_arr[flat_arr == bin_value] = 0
     
-    
-    reverted_arr = flat_arr.reshape(arr.shape)
-    
-    return reverted_arr
+    return flat_arr.reshape(arr.shape)
 
 
 if __name__ == '__main__':
