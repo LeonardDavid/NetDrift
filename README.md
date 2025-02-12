@@ -15,38 +15,38 @@ The framework allows for tuning reliability for performance and vice versa, prov
 ### Anaconda3 instalation (from https://docs.anaconda.com/free/anaconda/install/linux/):
 
 ```
-$ curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
-$ bash ~/Downloads/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
-$ source <PATH_TO_CONDA>/bin/activate
-$ conda init
-$ source ~/.bashrc
+curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+bash ~/Downloads/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+source <PATH_TO_CONDA>/bin/activate
+conda init
+source ~/.bashrc
 ```
 
 ### Create conda environment from pre-made environment file:
 ```
-$ conda env create -f environment.yml
+conda env create -f environment.yml
 ```
 
 ### OR manually:
 - create conda environment:
 ```
-$ conda create -n netdrift python=3.10
-$ conda activate netdrift
+conda create -n netdrift python=3.10
+conda activate netdrift
 ```
 
 - Install nvidia-cuda-toolkit 
 ```
-$ sudo apt-get update 
-$ sudo apt install nvidia-cuda-toolkit
+sudo apt-get update 
+sudo apt install nvidia-cuda-toolkit
 ```
 or:
 ```
-$ conda install nvidia::cuda-toolkit
+conda install nvidia::cuda-toolkit
 ```
 
 - Install pytorch
 ```
-$ pip install torch torchvision torchaudio
+pip install torch torchvision torchaudio
 ```
 
 *Note: this installation assumes that the latest CUDA drivers are installed on the GPU.
@@ -54,8 +54,8 @@ If the GPU is older and does not support the latest drivers, then make suret hat
 
 - others:
 ```
-$ pip install matplotlib
-$ pip install scipy
+pip install matplotlib
+pip install scipy
 ```
 
 ## Run the Simulator
@@ -63,7 +63,7 @@ $ pip install scipy
 ### before first run (or after any changes in any CUDA kernels)
 - if there are errors on windows, try changing from CRLF to LF
 ```
-$ bash ./code/cuda/install_kernels.sh
+bash ./code/cuda/install_kernels.sh
 ```
 
 ### Set Flags in `flags.conf`:
@@ -74,50 +74,43 @@ Calculation Flags:
 - `CALC_MISALIGN_FAULTS: True/False` (_Calculate Misalignment Faults_ per layer for each inference iteration across PERRORS misalignment fault rates)
 - `CALC_AFFECTED_RTS: True/False` (_Calculate Affected Racetracks_ per layer for each inference iteration across PERRORS misalignment fault rates)
 
-NN Model Parameters:
-- `kernel_size: 3/5/7` (size of convolutional kernel in convolutional layers, depending on the available trained models)
-
-Execution Flags (**At most 1 EXEC flag in `flags.conf` can the value `True`**):
-- `EXEC_RATIO_BLOCKS_IND_OFF: True/False`
-- `EXEC_ENDLEN: True/False`
-- `EXEC_ENDLEN_IND_OFF: True/False`
-- `EXEC_ODD2EVEN_DEC: True/False`
-- `EXEC_ODD2EVEN_INC: True/False`
-- `EXEC_EVEN2ODD_DEC: True/False`
-- `EXEC_EVEN2ODD_INC: True/False`
-- `EXEC_BIN_REVERT_MID: True/False`
-- `EXEC_BIN_REVERT_EDGES: True/False`
+Execution Flags:
+- `EXEC_ENDLEN: True/False` (execute Blockhypothesis implementation using the Endlen optimization algorithm)
+- `EXEC_ODD2EVEN_DEC: True/False` (execute odd2even decreasing method)
+- `EXEC_ODD2EVEN_INC: True/False` (execute odd2even increasing method)
+- `EXEC_EVEN2ODD_DEC: True/False` (execute even2odd decreasing method)
+- `EXEC_EVEN2ODD_INC: True/False` (execute even2odd decreasing method)
+- `EXEC_BIN_REVERT_MID: True/False` (execute binomial revert from middle method)
+- `EXEC_BIN_REVERT_EDGES: True/False` (execute binomial revert from edges method)
+- `EXEC_EVERY_NRUN=uint` (select after how many runs to execute any EXEC_ flag that is set to True)
 
 Read Flags & Parameters (**At most 1 READ flag in `flags.conf` can the value `True`**):
-- `READ_ECC: True/False` (whether to read qweights for each unprotected layer from FOLDER_ECC)
-- `FOLDER_ECC = string` (select subfolder to read)
-- `READ_ECC_IND_OFF: True/False` (whether to read qweights for each unprotected layer from FOLDER_ECC_IND_OFF)
-- `FOLDER_ECC_IND_OFF = string` (select subfolder to read)
 - `READ_ENDLEN: True/False` (whether to read qweights for each unprotected layer from FOLDER_ENDLEN)
 - `FOLDER_ENDLEN: string` (select subfolder to read)
-- `TYPE_ENDLEN: string` (select which endlen type termination to read)
+- `READ_TEST: True/False` (whether to read test qweights for each unprotected layer from FOLDER_TEST)
+- `FOLDER_TEST: string` (select test subfolder to read)
 
 Print Flags & Parameter:
 - `PRNT_LAYER_NAME: True/False` (print unprotected layer types and numbers)
 - `PRNT_INPUT_FILE_INFO: True/False` (print qweights input file info for each unprotected layer if any READ flag set to True)
 - `PRNT_QWEIGHTS_BEFORE: True/False` (print to file entire weight tensor of each unprotected layer _before_ any modifications)
 - `PRNT_QWEIGHTS_AFTER: True/False` (print to file entire weight tensor of each unprotected layer _after_ modifications)
-- `PRNT_QWEIGHTS_AFTER_NRUN = 1` (select after how many runs to print if PRNT_QWEIGHTS_AFTER flag is set to True)
+- `PRNT_QWEIGHTS_AFTER_NRUN=uint` (select after how many runs to print if PRNT_QWEIGHTS_AFTER flag is set to True)
 - `PRNT_IND_OFF_BEFORE: True/False` (print to file index offsets of each unprotected layer _before_ any modifications)
 - `PRNT_IND_OFF_AFTER: True/False` (print to file index offsets of each unprotected layer _after_ modifications)
-- `PRNT_IND_OFF_AFTER_NRUN = 1` (select after how many runs to print if PRNT_IND_OFF_AFTER flag is set to True)
+- `PRNT_IND_OFF_AFTER_NRUN=uint` (select after how many runs to print if PRNT_IND_OFF_AFTER flag is set to True)
 
 
 ### Launch 
 
 For Training
 ```
-$ bash ./run.sh TRAIN {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+bash ./run.sh TRAIN {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 For Testing
 ```
-$ bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 ### Arguments:
