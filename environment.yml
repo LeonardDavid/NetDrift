@@ -175,4 +175,4 @@ dependencies:
       - wcwidth==0.2.13
       - webencodings==0.5.1
       - yarg==0.1.9
-prefix: /home/bereholschi/anaconda3/envs/netdrift
+prefix: ~/anaconda3/envs/netdrift

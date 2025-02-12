@@ -1,7 +1,10 @@
+.vscode/
+
 RTM_results/
 experiments/
 data/
 models/
+results_comb/
 
 nohup.out
 
@@ -11,6 +14,6 @@ Dockerfile
 .Identifier
 
 # Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class

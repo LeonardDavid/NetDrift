@@ -1,10 +1,11 @@
+import os
+import json
 import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
+
 import numpy as np
-import os
 from datetime import datetime
-import json
 
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 from Models import MLP, VGG3, VGG7, ResNet, BasicBlock
@@ -15,17 +16,6 @@ class BinarizeMethod:
         self.method = method
     def applyQuantization(self, input):
         return self.method(input)
-    
-class RacetrackModel:
-    def __init__(self, method, p):
-        self.method = method
-        self.p = p
-    def updateErrorModel(self, p_updated):
-        self.p = p_updated
-    def resetErrorModel(self):
-        self.p = 0
-    def applyErrorModel(self, input, index_offset, rt_size):
-        return self.method(input, self.p, self.p, index_offset, rt_size)
     
 class BinarizeFIModel:
     def __init__(self, method, p):
@@ -41,7 +31,6 @@ class BinarizeFIModel:
 
 def get_model_and_datasets(args):
     nn_model = None
-    # model = None
     dataset1 = None
     dataset2 = None
 
@@ -49,12 +38,13 @@ def get_model_and_datasets(args):
         nn_model = MLP
     if args.model == "VGG3":
         nn_model = VGG3
-        # model = nn_model().cuda()
     if args.model == "VGG7":
         nn_model = VGG7
-        # model = nn_model().cuda()
     if args.model == "ResNet":
-        nn_model = ResNet# nn_model(BasicBlock, [2, 2, 2, 2]).to(device)
+        nn_model = ResNet
+
+    # Create data directory if it doesn't exist
+    os.makedirs('data', exist_ok=True)
 
     if args.dataset == "MNIST":
         transform=transforms.Compose([
@@ -112,7 +102,15 @@ def get_model_and_datasets(args):
         dataset1 = datasets.CIFAR100('data', train=True, download=True, transform=transform_train)
         dataset2 = datasets.CIFAR100('data', train=False, transform=transform_test)
 
-    if args.dataset == "IMAGENETTE":
+    if args.dataset == "IMAGENETTE":        
+        # Check if Imagenette dataset exists
+        if not os.path.exists('data/imagenette2'):
+            print("Downloading Imagenette dataset...")
+            os.system('wget https://s3.amazonaws.com/fast-ai-imageclas/imagenette2.tgz -P data/')
+            print("Extracting Imagenette dataset...")
+            os.system('cd data && tar xzf imagenette2.tgz')
+            print("Dataset ready!")
+
         transform_train = transforms.Compose([
             transforms.Resize((64, 64)),
             transforms.RandomCrop(64, padding=4),
@@ -149,11 +147,11 @@ def parse_args(parser):
     parser.add_argument('--load-model-path', type=str, default=None, help='Specify path to model if it should be loaded')
     parser.add_argument('--gpu-num', type=int, default=0, metavar='N', help='Specify the GPU on which the training should be performed')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N', help='input batch size for training (default: 64)')
-    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N', help='input batch size for testing (default: 256)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N', help='number of epochs to train (default: 14)')
+    parser.add_argument('--test-batch-size', type=int, default=256, metavar='N', help='input batch size for testing (default: 256)')
+    parser.add_argument('--epochs', type=int, default=10, metavar='N', help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=1.0, metavar='LR', help='learning rate (default: 1.0)')
-    parser.add_argument('--gamma', type=float, default=0.5, metavar='M', help='Learning rate step gamma (default: 0.5)')
-    parser.add_argument('--step-size', type=int, default=25, metavar='M', help='Learning step size (default: 5)')
+    parser.add_argument('--gamma', type=float, default=0.1, metavar='M', help='Learning rate step gamma (default: 0.5)')
+    parser.add_argument('--step-size', type=int, default=5, metavar='M', help='Learning step size (default: 5)')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables CUDA training')
     parser.add_argument('--dry-run', action='store_true', default=False, help='quickly check a single pass')
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
@@ -174,6 +172,7 @@ def parse_args(parser):
     
     ## NetDrift RTM parameters
     parser.add_argument('--test_rtm', type=int, default=None, help='Whether to test the model using RTM misalignment faults')
+    parser.add_argument('--global_rt_mapping', type=str, default='MIX', help='Specify type of weight mapping onto RTM: row, col, custom')
     parser.add_argument('--kernel_size', type=int, default=None, help='Size of convolutional kernel in convolutional layers')
     parser.add_argument('--perror', type=float, default=0.0, help='Error rate with which to test the model')
     parser.add_argument('--loops', type=int, default=1, help='Amount of times the inference model is run (offsets accumulate!)')

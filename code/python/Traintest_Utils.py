@@ -5,13 +5,14 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
+
 import sys
 import time
 from datetime import datetime
 
 sys.path.append("code/python/")
 
-from Utils import set_layer_mode, parse_args, dump_exp_data, create_exp_folder, store_exp_data
+from Utils import set_layer_mode
 from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 
 def binary_hingeloss(yhat, y, b=128):
@@ -19,18 +20,13 @@ def binary_hingeloss(yhat, y, b=128):
 
     # print("yhat", yhat.mean(dim=1)) # output <=> predictions
     # print("y", y)                   # target <=> ground truth labels
-    
     y_enc = 2 * torch.nn.functional.one_hot(y, yhat.shape[-1]) - 1.0 
-    
+
     # l_MHL = max{0, (b - y_enc * yhat)}
     l = (b - y_enc * yhat).clamp(min=0) 
     
     return l.mean(dim=1) / b
 
-
-def racetrack_resilience():
-
-    return None
 
 class Clippy(torch.optim.Adam):
     def step(self, closure=None):
@@ -58,6 +54,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
+
         output = model(data)
         # loss = F.nll_loss(output, target)
 
@@ -122,9 +119,6 @@ def test_error(model, device, test_loader, perror):
     
     model.eval()
     set_layer_mode(model, "eval") # propagate informaton about eval to all layers
-   
-    # print("start")
-    # print(model.printIndexOffsets())
 
     if model.name == "ResNet18":
         for block in model.children():
