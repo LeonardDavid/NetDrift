@@ -128,6 +128,7 @@ $ bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_
 - `nn_model`: FMNIST, CIFAR, RESNET
 - `loops`: amount of loops the experiment should run (0, 100] (not used if OPERATION=TEST)
 - `rt_size`: racetrack/nanowire size (typically 64)
+- `global_rt_mapping`: mapping configuration of data onto racetracks: ROW, COL or MIX
 - `{arr_layer_ids}`: [OPTIONAL] specify optional layer_ids in an array (starting at 1 upto total_layers) ONLY BEFORE `layer_config` WITH TERMINATION `CUSTOM`!
 - `layer_config`: unprotected layers configuration (ALL, CUSTOM, INDIV). Note that if no optional {arr_layer_ids} is specified, CUSTOM will execute DEFAULT CUSTOM defined manually in run.sh
 - `gpu_id`: ID of GPU to use for computations (0, 1) 
@@ -145,30 +146,30 @@ $ bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_
 ### Example with OPERATION=TEST
 
 ```
-bash ./run.sh TEST 0.01 PERRORS 0 MNIST 2 64 CUSTOM 0
+bash ./run.sh TEST 0.01 PERRORS 0 MNIST 2 64 ROW CUSTOM 0
 ```
-Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
+Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with data mapped row-wise onto racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
 
 ```
-bash ./run.sh TEST 0.1 PERRORS 3 FMNIST 1 64 CUSTOM 0
+bash ./run.sh TEST 0.1 PERRORS 3 FMNIST 1 64 COL CUSTOM 0
 ```
-Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
+Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with data mapped column-wise onto racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
 
 ```
-bash ./run.sh TEST 0.1 0.01 PERRORS 3 CIFAR 10 64 1 5 CUSTOM 0 0.15 0.3
+bash ./run.sh TEST 0.1 0.01 PERRORS 3 CIFAR 10 64 MIX 1 5 CUSTOM 0 0.15 0.3
 ```
-Executes at misalignment fault rates of 10% and 1% (separate runs): CIFAR with kernel_size 3 for 10 iterations with racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
+Executes at misalignment fault rates of 10% and 1% (separate runs): CIFAR with kernel_size 3 for 10 iterations with data mapped mixed-wise onto racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
 
 ```
-bash ./run.sh TEST 0.05 PERRORS 3 RESNET 10 64 INDIV 0
+bash ./run.sh TEST 0.05 PERRORS 3 RESNET 10 64 MIX INDIV 0
 ```
-Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0.
+Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with data mapped mixed-wise onto racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0.
 
 ### Example with OPERATION=TRAIN
 ```
-bash ./run.sh TRAIN 0.0001 PERRORS 3 FMNIST 1 64 1 2 CUSTOM 0 10 256 0.001 25
+bash ./run.sh TRAIN 0.0001 PERRORS 3 FMNIST 1 64 ROW 1 2 CUSTOM 0 10 256 0.001 25
 ```
-Training at misalignment fault rates of 10^(-4): FMNIST with kernel_size 3 with racetrack of size 64 in which the **first and second layers are unprotected*** on GPU 0. Training parameters are: epochs=10, batch_size=256, learning_rate=0.001, step_size=25.
+Training at misalignment fault rates of 10^(-4): FMNIST with kernel_size 3 with data mapped row-wise onto racetracks of size 64 in which the **first and second layers are unprotected*** on GPU 0. Training parameters are: epochs=10, batch_size=256, learning_rate=0.001, step_size=25.
 
 
 
