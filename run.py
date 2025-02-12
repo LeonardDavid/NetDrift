@@ -71,8 +71,7 @@ def main():
     torch.cuda.set_device(gpu_select)
     # which GPU is currently used
     print("Currently used GPU: ", torch.cuda.current_device())
-
-    print(args)
+    print("")
 
     binarizefi_model.updateErrorModel(args.perror)
 
@@ -89,22 +88,6 @@ def main():
 
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
-
-    # print("")
-    # print(train_kwargs)
-    # train_features, train_labels = next(iter(train_loader))
-    # print(f"Feature batch shape: {train_features.size()}")
-    # print(f"Labels batch shape: {train_labels.size()}")
-    # print(test_kwargs)
-    # test_features, test_labels = next(iter(test_loader))
-    # print(f"Feature batch shape: {test_features.size()}")
-    # print(f"Labels batch shape: {test_labels.size()}")
-    # print("")
-    # # img = train_features[0].squeeze()
-    # # label = train_labels[0]
-    # # plt.imshow(img, cmap="gray")
-    # # plt.show()
-    # # print(f"Label: {label}")
 
     mac_mapping = None
     mac_mapping_distr = None
@@ -220,8 +203,6 @@ def main():
         for epoch in range(1, args.epochs + 1):
             torch.cuda.synchronize()
             since = int(round(time.time()*1000))
-
-            print(f"lr: {scheduler.get_last_lr()}")
             
             train(args, model, device, train_loader, optimizer, epoch)
             

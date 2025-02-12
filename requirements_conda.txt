@@ -12,6 +12,7 @@ bzip2=1.0.8=h5eee18b_5
 ca-certificates=2024.3.11=h06a4308_0
 certifi=2024.2.2=pypi_0
 charset-normalizer=3.3.2=pypi_0
+click=8.1.7=pypi_0
 contourpy=1.2.0=pypi_0
 cuda-cccl=12.4.99=0
 cuda-command-line-tools=12.4.0=0
@@ -51,6 +52,7 @@ cuda-visual-tools=12.4.0=0
 cycler=0.12.1=pypi_0
 decorator=5.1.1=pypi_0
 defusedxml=0.7.1=pypi_0
+docker-pycreds=0.4.0=pypi_0
 docopt=0.6.2=pypi_0
 executing=2.0.1=pypi_0
 fastjsonschema=2.19.1=pypi_0
@@ -58,6 +60,8 @@ filelock=3.13.1=pypi_0
 fonttools=4.50.0=pypi_0
 fsspec=2024.3.1=pypi_0
 gds-tools=1.9.0.20=0
+gitdb=4.0.11=pypi_0
+gitpython=3.1.43=pypi_0
 idna=3.6=pypi_0
 ipython=8.12.3=pypi_0
 jedi=0.19.1=pypi_0
@@ -102,6 +106,7 @@ libnvjpeg-dev=12.3.1.89=0
 libnvjpeg-static=12.3.1.89=0
 libstdcxx-ng=11.2.0=h1234567_1
 libuuid=1.41.5=h5eee18b_0
+llvmlite=0.44.0=pypi_0
 markupsafe=2.1.5=pypi_0
 matplotlib=3.8.3=pypi_0
 matplotlib-inline=0.1.6=pypi_0
@@ -113,6 +118,7 @@ nbformat=5.10.3=pypi_0
 ncurses=6.4=h6a678d5_0
 networkx=3.2.1=pypi_0
 nsight-compute=2024.1.0.13=0
+numba=0.61.0=pypi_0
 numpy=1.26.4=pypi_0
 nvidia-cublas-cu12=12.1.3.1=pypi_0
 nvidia-cuda-cupti-cu12=12.1.105=pypi_0
@@ -128,6 +134,7 @@ nvidia-nvjitlink-cu12=12.4.99=pypi_0
 nvidia-nvtx-cu12=12.1.105=pypi_0
 openssl=3.0.13=h7f8727e_0
 packaging=24.0=pypi_0
+pandas=2.2.3=pypi_0
 pandocfilters=1.5.1=pypi_0
 parso=0.8.3=pypi_0
 pexpect=4.9.0=pypi_0
@@ -137,20 +144,27 @@ pip=23.3.1=py310h06a4308_0
 pipreqs=0.5.0=pypi_0
 platformdirs=4.2.0=pypi_0
 prompt-toolkit=3.0.43=pypi_0
+protobuf=4.25.3=pypi_0
+psutil=5.9.8=pypi_0
 ptyprocess=0.7.0=pypi_0
 pure-eval=0.2.2=pypi_0
 pygments=2.17.2=pypi_0
 pyparsing=3.1.2=pypi_0
 python=3.10.13=h955ad1f_0
 python-dateutil=2.9.0.post0=pypi_0
+pytz=2024.2=pypi_0
+pyyaml=6.0.1=pypi_0
 pyzmq=25.1.2=pypi_0
 readline=8.2=h5eee18b_0
 referencing=0.34.0=pypi_0
 requests=2.31.0=pypi_0
 rpds-py=0.18.0=pypi_0
 scipy=1.12.0=pypi_0
+sentry-sdk=2.2.0=pypi_0
+setproctitle=1.3.3=pypi_0
 setuptools=68.2.2=py310h06a4308_0
 six=1.16.0=pypi_0
+smmap=5.0.1=pypi_0
 soupsieve=2.5=pypi_0
 sqlite=3.41.2=h5eee18b_0
 stack-data=0.6.3=pypi_0
@@ -164,8 +178,9 @@ tornado=6.4=pypi_0
 traitlets=5.14.2=pypi_0
 triton=2.2.0=pypi_0
 typing-extensions=4.10.0=pypi_0
-tzdata=2024a=h04d1e81_0
+tzdata=2024.2=pypi_0
 urllib3=2.2.1=pypi_0
+wandb=0.17.0=pypi_0
 wcwidth=0.2.13=pypi_0
 webencodings=0.5.1=pypi_0
 wheel=0.41.2=py310h06a4308_0

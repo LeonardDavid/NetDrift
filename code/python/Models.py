@@ -738,7 +738,6 @@ class ResNet(nn.Module):
         self.index_offset_lin1 = np.zeros((1, 1), dtype=np.int32)
 
     def initIndexOffsets(self):
-        print("global_rt_mapping: ", self.global_rt_mapping)
         if self.global_rt_mapping == "ROW":
             self.conv1_rt_mapping = "ROW"
             self.lin1_rt_mapping = "ROW"
