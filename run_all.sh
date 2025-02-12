@@ -16,6 +16,7 @@
 #   `nn_model`:                 FMNIST, CIFAR, RESNET
 #   `loops`:                    amount of loops the experiment should run (0, 100] (not used if OPERATION=TEST)
 #   `rt_size`:                  racetrack/nanowire size (typically 64)
+#   `global_rt_mapping`:        mapping configuration of data onto racetracks: ROW, COL or MIX
 #   `layer_config`:             unprotected layers configuration (ALL, CUSTOM, INDIV)
 #   `gpu_id`:                   ID of GPU to use for computations (0, 1) 
 #
@@ -60,6 +61,14 @@ shift
 LOOPS=$1        #
 shift
 RT_SIZE=$1      # 64
+shift
+GLOBAL_RT_MAPPING=$1 #      ROW     COL     MIX
+
+if [[ ! $GLOBAL_RT_MAPPING =~ ^(ROW|COL|MIX)$ ]]; then
+    echo -e "\n${RED}Global RT mapping ($GLOBAL_RT_MAPPING) must be ROW, COL, or MIX${RESET}\n"
+    exit 1
+fi
+
 shift
 LAYER_CONFIG=$1 # INDIV     ALL     CUSTOM
 shift
@@ -242,8 +251,8 @@ then
         then
             if [ "$KERNEL_SIZE" = 3 ]
             then
-                MODEL_PATH="models/model_fmnist9108.pt"
-                # MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L4_p01.pt"
+                # MODEL_PATH="models/model_fmnist9108.pt"
+                MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L4_p01.pt"
             elif [ "$KERNEL_SIZE" = 5 ]
             then
                 MODEL_PATH="models/model_fmnist5x5_9077.pt"
@@ -258,7 +267,15 @@ then
             echo -e "${CYAN}Automatic testing using MODEL_PATH=$MODEL_PATH${RESET}"
         fi
     else
-        MODEL_PATH="fmnist_rtfi_nomhl_bh_L${unprot_layers_string}"
+        if [ "$EXEC_EVEN2ODD_DEC" = "True" ]; then
+            MODEL_PATH="fmnist_rtfi_edgeodddec${STEP_SIZE}_n${EXEC_EVERY_NRUN}_L${unprot_layers_string}"
+        elif [ "$EXEC_EVEN2ODD_INC" = "True" ]; then
+            MODEL_PATH="fmnist_rtfi_edgeoddinc${STEP_SIZE}_n${EXEC_EVERY_NRUN}_L${unprot_layers_string}"
+        else
+            MODEL_PATH="fmnist_rtfi_mhl_nobh_L${unprot_layers_string}"
+        fi
+        echo -e "${CYAN}MODEL_PATH=$MODEL_PATH${RESET}"
+        # MODEL_PATH="fmnist_rtfi_mhl_nobh_L${unprot_layers_string}"
     fi
 
 elif [ "$NN_MODEL" = "CIFAR" ]
@@ -400,7 +417,7 @@ do
                     fi
                     output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                    python run.py --model=${MODEL} --dataset=${DATASET} --test-batch-size=${TEST_BATCH_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
+                    python run.py --model=${MODEL} --dataset=${DATASET} --test-batch-size=${TEST_BATCH_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --global_rt_mapping=${GLOBAL_RT_MAPPING} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
 
                     if [ "$CALC_RESULTS" == "True" ]; then
                         results_line=$(tail -n 2 "$output_file" | head -n 1)
@@ -434,7 +451,7 @@ do
 
                     # PROTECT_LAYERS[$layer]=1
                 else
-                    python3 run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --train-model=${TRAIN_MODEL} --save-model=${MODEL_PATH} --kernel_size=${KERNEL_SIZE} --rt_size=${RT_SIZE} --test_rtm=${TEST_RTM} --perror=${p} --gpu-num=$GPU_ID --protect_layers ${PROTECT_LAYERS[@]}
+                    python3 run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --train-model=${TRAIN_MODEL} --save-model=${MODEL_PATH} --kernel_size=${KERNEL_SIZE} --rt_size=${RT_SIZE} --test_rtm=${TEST_RTM} --global_rt_mapping=${GLOBAL_RT_MAPPING} --perror=${p} --gpu-num=$GPU_ID --protect_layers ${PROTECT_LAYERS[@]}
                 fi
             fi
         done
@@ -458,7 +475,7 @@ do
                 fi
                 output_file="$output_dir_L/output_${DATASET}_$L-$LOOPS-$p.txt"
 
-                python run.py --model=${MODEL} --dataset=${DATASET} --test-batch-size=${TEST_BATCH_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET  --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
+                python run.py --model=${MODEL} --dataset=${DATASET} --test-batch-size=${TEST_BATCH_SIZE} --test-error=${TEST_ERROR} --load-model-path=${MODEL_PATH} --loops=${LOOPS} --perror=$p --kernel_size=${KERNEL_SIZE} --test_rtm=${TEST_RTM} --global_rt_mapping=${GLOBAL_RT_MAPPING} --gpu-num=$GPU_ID --rt_size=$RT_SIZE --protect_layers ${PROTECT_LAYERS[@]} --global_bitflip_budget=$GLOBAL_BITFLIP_BUDGET --local_bitflip_budget=$LOCAL_BITFLIP_BUDGET  --calc_results=${CALC_RESULTS} --calc_bitflips=${CALC_BITFLIPS} --calc_misalign_faults=${CALC_MISALIGN_FAULTS} --calc_affected_rts=${CALC_AFFECTED_RTS} | tee "$output_file"
                 
 
                 if [ "$CALC_RESULTS" == "True" ]; then
@@ -493,7 +510,7 @@ do
                 
                 all_results+=("$list")
             else
-                python3 run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --train-model=${TRAIN_MODEL} --save-model=${MODEL_PATH} --kernel_size=${KERNEL_SIZE} --rt_size=${RT_SIZE} --test_rtm=${TEST_RTM} --perror=${p} --protect_layers ${PROTECT_LAYERS[@]} --gpu-num=$GPU_ID
+                python3 run.py --model=${MODEL} --dataset=${DATASET} --batch-size=${BATCH_SIZE} --epochs=${EPOCHS} --lr=${LR} --step-size=${STEP_SIZE} --test-error=${TEST_ERROR} --train-model=${TRAIN_MODEL} --save-model=${MODEL_PATH} --kernel_size=${KERNEL_SIZE} --rt_size=${RT_SIZE} --test_rtm=${TEST_RTM} --global_rt_mapping=${GLOBAL_RT_MAPPING} --perror=${p} --protect_layers ${PROTECT_LAYERS[@]} --gpu-num=$GPU_ID
             fi
     fi
 

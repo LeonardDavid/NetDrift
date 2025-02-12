@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
+
 import numpy as np
 import time
 import sys
@@ -22,34 +23,35 @@ from QuantizedNN import QuantizedLinear, QuantizedConv2d, QuantizedActivation
 from Models import VGG3, VGG7, ResNet, BasicBlock
 from Traintest_Utils import train, test, test_error, Clippy, Criterion, binary_hingeloss
 
-from Utils import BinarizeMethod, RacetrackModel, BinarizeFIModel
-import binarize, binarizeFI, racetrack
+from Utils import BinarizeMethod, BinarizeFIModel
+import binarize, binarizeFI
 
 
+### Specify and initialize binarization methods and error models
 binarize_method = BinarizeMethod(binarize.binarize)
-racetrack_model = RacetrackModel(racetrack.racetrack, 0.0)
 binarizefi_model = BinarizeFIModel(binarizeFI.binarizeFI, 0.0)
 
 ### specify quantization method for training & testing
-
 quant_method = binarize_method
 
-q_train = True # quantization during training
-q_eval = True # quantization during evaluation
-
+q_train = True  # quantization during training
+q_eval = True   # quantization during evaluation
 
 ### specify error model for training & testing
 
-error_model = racetrack_model
+# racetrack_model = "racetrack" 
+## If you want to use the racetrack model, set the error_model here to None
+## the appropriate model call will be selected in QuantizedNN.py, based on args.test_rtm=1
+error_model = None
+
+## Combination of racetrack model and bitflip model is possible
 # error_model = binarizefi_model
 
-
-### specify criterion for training & testing
- 
-crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
-crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
-# crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
-# crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
+### specify criterion for training & testing 
+# crit_train = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_train")
+# crit_test = Criterion(method=nn.CrossEntropyLoss(reduction="none"), name="CEL_test")
+crit_train = Criterion(binary_hingeloss, "MHL_train", param=128)
+crit_test = Criterion(binary_hingeloss, "MHL_test", param=128)
 
 
 def main():
@@ -72,7 +74,6 @@ def main():
 
     print(args)
 
-    racetrack_model.updateErrorModel(args.perror)
     binarizefi_model.updateErrorModel(args.perror)
 
     train_kwargs = {'batch_size': args.batch_size}
@@ -149,7 +150,8 @@ def main():
     model = None
     kernel_size = args.kernel_size
     protectLayers = args.protect_layers
-    rt_size = args.rt_size # 64, 32
+    rt_size = args.rt_size
+    rt_error = args.perror
     global_bitflip_budget = args.global_bitflip_budget
     local_bitflip_budget = args.local_bitflip_budget
     
@@ -159,9 +161,7 @@ def main():
     calc_misalign_faults = args.calc_misalign_faults
     calc_affected_rts = args.calc_affected_rts
 
-    # print(protectLayers)
-
-
+    # Initializations
     if args.model == "MLP":
         bitflips = [[] for _ in range(3)] 
         affected_rts = [[] for _ in range(3)] 
@@ -187,27 +187,25 @@ def main():
         affected_rts = []
         misalign_faults = []
         
-
+    # Define models
     if args.model == "MLP":
         ### FP ###
         # model = nn_model()
         ### BNN ### 
-        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_error=rt_error, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     elif args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2],  quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2],  quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, rt_error=rt_error, global_rt_mapping = args. global_rt_mapping, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     else:
-        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_error=rt_error, global_rt_mapping = args. global_rt_mapping, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
 
     scheduler = StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
 
-    # print(model)
-
-    # load training state or create new model
+    # Load training state from checkpoint (or create new model)
     if args.load_training_state is not None:
         print("Loaded training state: ", args.load_training_state)
         checkpoint = torch.load(args.load_training_state)
@@ -215,36 +213,38 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # epoch = checkpoint['epoch']
 
-    # print(model.name)
-    # create experiment folder and file
-    # to_dump_path = create_exp_folder(model)
-    # if not os.path.exists(to_dump_path):
-    #     open(to_dump_path, 'w').close()
-
+    # Training
     if args.train_model is not None:
         time_elapsed = 0
         times = []
         for epoch in range(1, args.epochs + 1):
             torch.cuda.synchronize()
             since = int(round(time.time()*1000))
+
+            print(f"lr: {scheduler.get_last_lr()}")
             
             train(args, model, device, train_loader, optimizer, epoch)
             
             time_elapsed += int(round(time.time()*1000)) - since
             print('Epoch training time elapsed: {}ms'.format(int(round(time.time()*1000)) - since))
-            # test(model, device, train_loader)
+            
             since = int(round(time.time()*1000))
             
-            test(model, device, test_loader)
+            acc = test(model, device, test_loader)
             
             time_elapsed += int(round(time.time()*1000)) - since
             print('Test time elapsed: {}ms'.format(int(round(time.time()*1000)) - since))
-            # test(model, device, train_loader)
+
+            # if acc > 69.42:
+            #     break
+
             scheduler.step()
 
+    # Save trained model
     if args.save_model is not None:
         torch.save(model.state_dict(), "model_{}.pt".format(args.save_model))
 
+    # Save checkpoint
     if args.save_training_state is not None:
         path = "model_checkpoint_{}.pt".format(args.save_training_state)
 
@@ -254,7 +254,7 @@ def main():
         'optimizer_state_dict': optimizer.state_dict(),
         }, path)
 
-    # load model
+    # Load model from path
     if args.load_model_path is not None:
             to_load = args.load_model_path
             print("Loaded model: ", to_load)
@@ -262,11 +262,7 @@ def main():
             print("-----------------------------")
             model.load_state_dict(torch.load(to_load, map_location='cuda:0'))
 
-    # if args.test_error is not None:
-    #     all_accuracies = test_error(model, device, test_loader)
-    #     to_dump_data = dump_exp_data(model, args, all_accuracies)
-    #     store_exp_data(to_dump_path, to_dump_data)
-
+    # Test
     if args.test_error is not None:
         all_accuracies = []
         inference_times = []
@@ -296,17 +292,6 @@ def main():
         minutes, seconds = divmod(sum(inference_times), 60)
         total_inference_time = f"{int(minutes):02}:{seconds:05.2f}"
 
-        # print(model.fc1.weight)
-        # print(model.fc2.weight)
-        # print(model.fc3.weight)
-
-        # print(model.fc1.bias)
-        # print(model.fc2.bias)
-        # print(model.fc3.bias)
-
-        # to_dump_data = dump_exp_data(model, args, all_accuracies)
-        # store_exp_data(to_dump_path, to_dump_data)
-        # print("-----------------------------")
         print("TOTAL INFERENCE TIME")
         print(total_inference_time)
         print(inference_times)
