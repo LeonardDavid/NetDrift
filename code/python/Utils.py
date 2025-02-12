@@ -43,6 +43,9 @@ def get_model_and_datasets(args):
     if args.model == "ResNet":
         nn_model = ResNet
 
+    # Create data directory if it doesn't exist
+    os.makedirs('data', exist_ok=True)
+
     if args.dataset == "MNIST":
         transform=transforms.Compose([
             transforms.ToTensor(),
@@ -99,7 +102,15 @@ def get_model_and_datasets(args):
         dataset1 = datasets.CIFAR100('data', train=True, download=True, transform=transform_train)
         dataset2 = datasets.CIFAR100('data', train=False, transform=transform_test)
 
-    if args.dataset == "IMAGENETTE":
+    if args.dataset == "IMAGENETTE":        
+        # Check if Imagenette dataset exists
+        if not os.path.exists('data/imagenette2'):
+            print("Downloading Imagenette dataset...")
+            os.system('wget https://s3.amazonaws.com/fast-ai-imageclas/imagenette2.tgz -P data/')
+            print("Extracting Imagenette dataset...")
+            os.system('cd data && tar xzf imagenette2.tgz')
+            print("Dataset ready!")
+
         transform_train = transforms.Compose([
             transforms.Resize((64, 64)),
             transforms.RandomCrop(64, padding=4),

@@ -16,7 +16,18 @@ def calculate_mean(data):
     for i in range(len(data[0])):
         index_values = [array[i] for array in data if array[i]]
         if index_values:
-            mean_values = [math.ceil(np.mean([val for val in sublist if val])) for sublist in zip(*index_values)]
+            mean_values = []
+            for sublist in zip(*index_values):
+                # Include all values (both zero and non-zero)
+                values = [val for val in sublist]
+                if values:
+                    mean_val = np.mean(values)
+                    if not np.isnan(mean_val):  # handle Nan values
+                        mean_values.append(math.ceil(mean_val))
+                    else:
+                        mean_values.append(0)
+                else:
+                    mean_values.append(0)
             means.append(mean_values)
         else:
             means.append([])

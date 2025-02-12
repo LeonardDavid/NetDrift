@@ -226,35 +226,6 @@ if [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
     fi  
 fi
 
-
-## Declare array of misalignment fault values (each entry represents a separate experiment execution, acting as a for-loop. Values can be distinct or equal or both)
-
-# declare -a PERRORS=(0.0)
-
-# declare -a PERRORS=(0.1)
-# declare -a PERRORS=(0.1 0.1)
-# declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
-
-# declare -a PERRORS=(0.05)
-# declare -a PERRORS=(0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05)
-
-# declare -a PERRORS=(0.01)
-# declare -a PERRORS=(0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01)
-
-# declare -a PERRORS=(0.001)
-# declare -a PERRORS=(0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001)
-
-# declare -a PERRORS=(0.0001)
-# declare -a PERRORS=(0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001)
-
-# declare -a PERRORS=(0.0000455)
-# declare -a PERRORS=(0.00001)
-# declare -a PERRORS=(0.000001)
-
-# declare -a PERRORS=(0.1 0.01 0.001 0.0001)
-# declare -a PERRORS=(0.0001 0.0000455 0.00001 0.000001)
-
-
 ## Call main script
 if [[ $LAYER_CONFIG == *"ALL"* ]]; then
     # echo "Number of unprotected layers: ALL"
@@ -300,23 +271,6 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
         PROTECT_LAYERS[$layer_id]=0
 
         ## Run the bash file
-        #
-        ##  required params:
-        ###  $1: array of PROTECT_LAYERS (integers)
-        ###  END1: first array termination token
-        ###  $3: array of PERRORS (floats)
-        ###  END2: second array termination token
-        ###
-        ###  $5: NN model           FMNIST, CIFAR, RESNET
-        ###  $6: loops              amount of loops (0, 100]
-        ###  $7: rt_size            racetrack/nanowire size (typically 64)
-        ###  $8: layer_id           unprotected layer
-        ###  $9: GPU_id             ID of GPU to use for computations (0, 1)
-        #
-        ##  optional params:
-        ###  $10: global_bitflip_budget: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
-        ###  $11: local_bitflip_budget: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
-     
         if [ "$TRAIN_MODEL" = 1 ]; then
             bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         elif [ "$TEST_AUTO" = 1 ]; then

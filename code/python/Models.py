@@ -41,7 +41,7 @@ class VGG3(nn.Module):
 
         self.calc_results = calc_results
         self.calc_bitflips = calc_bitflips
-        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_misalign_faults = calc_misalign_faults
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
@@ -223,7 +223,7 @@ class VGG7(nn.Module):
 
         self.calc_results = calc_results
         self.calc_bitflips = calc_bitflips
-        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_misalign_faults = calc_misalign_faults
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
@@ -502,12 +502,12 @@ class VGG7(nn.Module):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, layerNr=2, test_rtm = None, rt_size=64, global_rt_mapping="MIX", rt_error=0.0, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, error_model=None, train_model=None, extract_absfreq=None):
+    def __init__(self, in_planes, planes, stride=1, layerNr=2, test_rtm = None, rt_size=64, kernel_size=3, global_rt_mapping="MIX", rt_error=0.0, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, error_model=None, train_model=None, extract_absfreq=None):
         super(BasicBlock, self).__init__()
         self.htanh = nn.Hardtanh()
         self.layerNr = layerNr
-        self.kernel_conv1 = 3
-        self.kernel_conv2 = 3
+        self.kernel_conv1 = kernel_size
+        self.kernel_conv2 = kernel_size
         self.kernel_short = 1
         self.qact = QuantizedActivation(quantization=quantMethod)
 
@@ -523,7 +523,7 @@ class BasicBlock(nn.Module):
 
         self.calc_results = calc_results
         self.calc_bitflips = calc_bitflips
-        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_misalign_faults = calc_misalign_faults
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
@@ -677,7 +677,7 @@ class ResNet(nn.Module):
 
         self.calc_results = calc_results
         self.calc_bitflips = calc_bitflips
-        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_misalign_faults = calc_misalign_faults
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
@@ -712,7 +712,7 @@ class ResNet(nn.Module):
         for stride in strides:
 
             bblock = block(
-                self.in_planes, planes, stride, layerNr = self.layerNr, test_rtm = self.test_rtm, rt_size=self.rt_size, protectLayers=self.protectLayers, affected_rts=self.affected_rts, quantMethod=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mapping=self.mapping, mapping_distr=self.mapping_distr, sorted_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+                self.in_planes, planes, stride, layerNr = self.layerNr, rt_error=self.rt_error, global_rt_mapping=self.global_rt_mapping, test_rtm = self.test_rtm, rt_size=self.rt_size, kernel_size=self.kernel_size, protectLayers=self.protectLayers, affected_rts=self.affected_rts, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget, calc_results=self.calc_results, calc_bitflips=self.calc_bitflips, calc_misalign_faults=self.calc_misalign_faults, calc_affected_rts=self.calc_affected_rts, quantMethod=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mapping=self.mapping, mapping_distr=self.mapping_distr, sorted_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
 
             layers.append(bblock)
             self.in_planes = planes * block.expansion
@@ -812,7 +812,7 @@ class MLP(nn.Module):
 
         self.calc_results = calc_results
         self.calc_bitflips = calc_bitflips
-        self.calc_misalign_fault = calc_misalign_faults
+        self.calc_misalign_faults = calc_misalign_faults
         self.calc_affected_rts = calc_affected_rts
         
         ### FP ###

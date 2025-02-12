@@ -228,15 +228,13 @@ then
     if [ "$TRAIN_MODEL" = 0 ]; then
         if [ "$KERNEL_SIZE" = 0 ]
         then
-            # MODEL_PATH="models/model_mnist9696_bnn.pt"
-            # MODEL_PATH="models/model_mnist9418_bnn.pt"
-            MODEL_PATH="models/model_mnist8562_bnn.pt"
+            MODEL_PATH="models/model_mnist9696_bnn.pt"
         else
             echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL (no kernel size needed, use 0 for MNIST)."
             exit 1
         fi
     else
-        MODEL_PATH="" # mnist_rtfi_nomhl_bh_L${unprot_layers_string}
+        MODEL_PATH="mnist_rtfi_nomhl_nobh_L${unprot_layers_string}"
     fi
 
 elif [ "$NN_MODEL" = "FMNIST" ]
@@ -251,8 +249,7 @@ then
         then
             if [ "$KERNEL_SIZE" = 3 ]
             then
-                # MODEL_PATH="models/model_fmnist9108.pt"
-                MODEL_PATH="models/phase1/model_fmnist_rtfi_nomhl_nobh_L4_p01.pt"
+                MODEL_PATH="models/model_fmnist9108.pt"
             elif [ "$KERNEL_SIZE" = 5 ]
             then
                 MODEL_PATH="models/model_fmnist5x5_9077.pt"
@@ -272,10 +269,9 @@ then
         elif [ "$EXEC_EVEN2ODD_INC" = "True" ]; then
             MODEL_PATH="fmnist_rtfi_edgeoddinc${STEP_SIZE}_n${EXEC_EVERY_NRUN}_L${unprot_layers_string}"
         else
-            MODEL_PATH="fmnist_rtfi_mhl_nobh_L${unprot_layers_string}"
+            MODEL_PATH="fmnist_rtfi_nomhl_nobh_L${unprot_layers_string}"
         fi
         echo -e "${CYAN}MODEL_PATH=$MODEL_PATH${RESET}"
-        # MODEL_PATH="fmnist_rtfi_mhl_nobh_L${unprot_layers_string}"
     fi
 
 elif [ "$NN_MODEL" = "CIFAR" ]
@@ -288,7 +284,6 @@ then
         if [ "$KERNEL_SIZE" = 3 ]
         then
             MODEL_PATH="models/model_cifar8582.pt"
-            # MODEL_PATH="model_cifar8660.pt"
         else
             echo "Invalid KERNEL_SIZE $KERNEL_SIZE for $NN_MODEL."
             exit 1
@@ -318,35 +313,6 @@ else
     echo -e "\n${RED}$NN_MODEL not supported, check spelling, capitalization & available models: MNIST, FMNIST, CIFAR, RESNET${RESET}\n"
     exit
 fi
-# echo -e "${PROTECT_LAYERS[@]}"
-
-
-## Declare array of misalignment fault values (each entry represents a separate experiment execution, acting as a for-loop. Values can be distinct or equal or both)
-
-# declare -a PERRORS=(0.0)
-
-# declare -a PERRORS=(0.1)
-# declare -a PERRORS=(0.1 0.1)
-# declare -a PERRORS=(0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
-
-# declare -a PERRORS=(0.05)
-# declare -a PERRORS=(0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05 0.05)
-
-# declare -a PERRORS=(0.01)
-# declare -a PERRORS=(0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01)
-
-# declare -a PERRORS=(0.001)
-# declare -a PERRORS=(0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001)
-
-# declare -a PERRORS=(0.0001)
-# declare -a PERRORS=(0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001 0.0001)
-
-# declare -a PERRORS=(0.0000455)
-# declare -a PERRORS=(0.00001)
-# declare -a PERRORS=(0.000001)
-
-# declare -a PERRORS=(0.1 0.01 0.001 0.0001)
-# declare -a PERRORS=(0.0001 0.0000455 0.00001 0.000001)
 
 if [ "$TRAIN_MODEL" = 0 ]; then
     if [ "$CALC_RESULTS" == "True" ]; then
@@ -545,12 +511,13 @@ if [ "$TRAIN_MODEL" = 0 ]; then
         python scripts-python/calculate_avg.py ${out_results_file}
         echo "============================="
     fi
-    if [ "$CALC_BITFLIPS" == "True" ]; then
+
+    if [ "$CALC_AFFECTED_RTS" == "True" ]; then
         echo ""
-        echo -e "${CYAN}Average bitflips${RESET}"
+        echo -e "${CYAN}Average affected_rts${RESET}"
         echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
         echo ""
-        python scripts-python/calculate_avg_matrix.py ${out_bitflips_file} 1
+        python scripts-python/calculate_avg_matrix.py ${out_affected_rts_file} 1
     fi
     if [ "$CALC_MISALIGN_FAULTS" == "True" ]; then
         echo ""
@@ -559,12 +526,12 @@ if [ "$TRAIN_MODEL" = 0 ]; then
         echo ""
         python scripts-python/calculate_avg_matrix.py ${out_misalign_faults_file} 1
     fi
-    if [ "$CALC_AFFECTED_RTS" == "True" ]; then
+    if [ "$CALC_BITFLIPS" == "True" ]; then
         echo ""
-        echo -e "${CYAN}Average affected_rts${RESET}"
+        echo -e "${CYAN}Average bitflips${RESET}"
         echo "(per layer for each inference iteration across PERRORS misalignment fault rates):"
         echo ""
-        python scripts-python/calculate_avg_matrix.py ${out_affected_rts_file} 1
+        python scripts-python/calculate_avg_matrix.py ${out_bitflips_file} 1
     fi
 fi
 
