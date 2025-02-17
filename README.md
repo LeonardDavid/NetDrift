@@ -15,38 +15,38 @@ The framework allows for tuning reliability for performance and vice versa, prov
 ### Anaconda3 instalation (from https://docs.anaconda.com/free/anaconda/install/linux/):
 
 ```
-$ curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
-$ bash ~/Downloads/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
-$ source <PATH_TO_CONDA>/bin/activate
-$ conda init
-$ source ~/.bashrc
+curl -O https://repo.anaconda.com/archive/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+bash ~/Downloads/Anaconda3-<INSTALLER_VERSION>-Linux-x86_64.sh
+source <PATH_TO_CONDA>/bin/activate
+conda init
+source ~/.bashrc
 ```
 
 ### Create conda environment from pre-made environment file:
 ```
-$ conda env create -f environment.yml
+conda env create -f environment.yml
 ```
 
 ### OR manually:
 - create conda environment:
 ```
-$ conda create -n netdrift python=3.10
-$ conda activate netdrift
+conda create -n netdrift python=3.10
+conda activate netdrift
 ```
 
 - Install nvidia-cuda-toolkit 
 ```
-$ sudo apt-get update 
-$ sudo apt install nvidia-cuda-toolkit
+sudo apt-get update 
+sudo apt install nvidia-cuda-toolkit
 ```
 or:
 ```
-$ conda install nvidia::cuda-toolkit
+conda install nvidia::cuda-toolkit
 ```
 
 - Install pytorch
 ```
-$ pip install torch torchvision torchaudio
+pip install torch torchvision torchaudio
 ```
 
 *Note: this installation assumes that the latest CUDA drivers are installed on the GPU.
@@ -54,8 +54,8 @@ If the GPU is older and does not support the latest drivers, then make suret hat
 
 - others:
 ```
-$ pip install matplotlib
-$ pip install scipy
+pip install matplotlib
+pip install scipy
 ```
 
 ## Run the Simulator
@@ -63,7 +63,7 @@ $ pip install scipy
 ### before first run (or after any changes in any CUDA kernels)
 - if there are errors on windows, try changing from CRLF to LF
 ```
-$ bash ./code/cuda/install_kernels.sh
+bash ./code/cuda/install_kernels.sh
 ```
 
 ### Set Flags in `flags.conf`:
@@ -74,59 +74,53 @@ Calculation Flags:
 - `CALC_MISALIGN_FAULTS: True/False` (_Calculate Misalignment Faults_ per layer for each inference iteration across PERRORS misalignment fault rates)
 - `CALC_AFFECTED_RTS: True/False` (_Calculate Affected Racetracks_ per layer for each inference iteration across PERRORS misalignment fault rates)
 
-NN Model Parameters:
-- `kernel_size: 3/5/7` (size of convolutional kernel in convolutional layers, depending on the available trained models)
-
-Execution Flags (**At most 1 EXEC flag in `flags.conf` can the value `True`**):
-- `EXEC_RATIO_BLOCKS_IND_OFF: True/False`
-- `EXEC_ENDLEN: True/False`
-- `EXEC_ENDLEN_IND_OFF: True/False`
-- `EXEC_ODD2EVEN_DEC: True/False`
-- `EXEC_ODD2EVEN_INC: True/False`
-- `EXEC_EVEN2ODD_DEC: True/False`
-- `EXEC_EVEN2ODD_INC: True/False`
-- `EXEC_BIN_REVERT_MID: True/False`
-- `EXEC_BIN_REVERT_EDGES: True/False`
+Execution Flags:
+- `EXEC_ENDLEN: True/False` (execute Blockhypothesis implementation using the Endlen optimization algorithm)
+- `EXEC_ODD2EVEN_DEC: True/False` (execute odd2even decreasing method)
+- `EXEC_ODD2EVEN_INC: True/False` (execute odd2even increasing method)
+- `EXEC_EVEN2ODD_DEC: True/False` (execute even2odd decreasing method)
+- `EXEC_EVEN2ODD_INC: True/False` (execute even2odd decreasing method)
+- `EXEC_BIN_REVERT_MID: True/False` (execute binomial revert from middle method)
+- `EXEC_BIN_REVERT_EDGES: True/False` (execute binomial revert from edges method)
+- `EXEC_EVERY_NRUN=uint` (select after how many runs to execute any EXEC_ flag that is set to True)
 
 Read Flags & Parameters (**At most 1 READ flag in `flags.conf` can the value `True`**):
-- `READ_ECC: True/False` (whether to read qweights for each unprotected layer from FOLDER_ECC)
-- `FOLDER_ECC = string` (select subfolder to read)
-- `READ_ECC_IND_OFF: True/False` (whether to read qweights for each unprotected layer from FOLDER_ECC_IND_OFF)
-- `FOLDER_ECC_IND_OFF = string` (select subfolder to read)
 - `READ_ENDLEN: True/False` (whether to read qweights for each unprotected layer from FOLDER_ENDLEN)
 - `FOLDER_ENDLEN: string` (select subfolder to read)
-- `TYPE_ENDLEN: string` (select which endlen type termination to read)
+- `READ_TEST: True/False` (whether to read test qweights for each unprotected layer from FOLDER_TEST)
+- `FOLDER_TEST: string` (select test subfolder to read)
 
 Print Flags & Parameter:
 - `PRNT_LAYER_NAME: True/False` (print unprotected layer types and numbers)
 - `PRNT_INPUT_FILE_INFO: True/False` (print qweights input file info for each unprotected layer if any READ flag set to True)
 - `PRNT_QWEIGHTS_BEFORE: True/False` (print to file entire weight tensor of each unprotected layer _before_ any modifications)
 - `PRNT_QWEIGHTS_AFTER: True/False` (print to file entire weight tensor of each unprotected layer _after_ modifications)
-- `PRNT_QWEIGHTS_AFTER_NRUN = 1` (select after how many runs to print if PRNT_QWEIGHTS_AFTER flag is set to True)
+- `PRNT_QWEIGHTS_AFTER_NRUN=uint` (select after how many runs to print if PRNT_QWEIGHTS_AFTER flag is set to True)
 - `PRNT_IND_OFF_BEFORE: True/False` (print to file index offsets of each unprotected layer _before_ any modifications)
 - `PRNT_IND_OFF_AFTER: True/False` (print to file index offsets of each unprotected layer _after_ modifications)
-- `PRNT_IND_OFF_AFTER_NRUN = 1` (select after how many runs to print if PRNT_IND_OFF_AFTER flag is set to True)
+- `PRNT_IND_OFF_AFTER_NRUN=uint` (select after how many runs to print if PRNT_IND_OFF_AFTER flag is set to True)
 
 
 ### Launch 
 
 For Training
 ```
-$ bash ./run.sh TRAIN {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+bash ./run.sh TRAIN {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 For Testing
 ```
-$ bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 ### Arguments:
 - `OPERATION`: TRAIN or TEST 
+- `loops`: amount of loops the experiment should run (0, 100] (not used if OPERATION=TRAIN -> use `epochs` instead)
+- `nn_model`: FMNIST, CIFAR, RESNET
 - `{arr_perrors}`: Array of misalignment fault rates to be tested/trained (floats)
 - **`PERRORS`: REQUIRED: array termination token**
 - `kernel_size`: size of kernel used for calculations in convolutional layers (if none then use 0)
-- `nn_model`: FMNIST, CIFAR, RESNET
-- `loops`: amount of loops the experiment should run (0, 100] (not used if OPERATION=TEST)
+- `kernel_mapping`: mapping configuration of weights in kernels: ROW, COL, CLW, or ACW (i.e. clockwise or anti-clockwise)
 - `rt_size`: racetrack/nanowire size (typically 64)
 - `global_rt_mapping`: mapping configuration of data onto racetracks: ROW, COL or MIX
 - `{arr_layer_ids}`: [OPTIONAL] specify optional layer_ids in an array (starting at 1 upto total_layers) ONLY BEFORE `layer_config` WITH TERMINATION `CUSTOM`!
@@ -146,34 +140,35 @@ $ bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_
 ### Example with OPERATION=TEST
 
 ```
-bash ./run.sh TEST 0.01 PERRORS 0 MNIST 2 64 ROW CUSTOM 0
+bash ./run.sh TEST 2 MNIST 0.01 PERRORS 0 ROW 64 ROW CUSTOM 0
 ```
-Executes at misalignment fault rates of 1%: MNIST with kernel_size 0 (not needed but required argument) for 2 iterations with data mapped row-wise onto racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
+Testing for 2 inference iteration(s) the MNIST dataset at misalignment fault rates of 1%, using kernel of size 0 ROW (not needed but required arguments), racetrack of size 64 (tensor mapped row-wise onto racetrack) and protecting layers are **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
 
 ```
-bash ./run.sh TEST 0.1 PERRORS 3 FMNIST 1 64 COL CUSTOM 0
+bash ./run.sh TEST 1 FMNIST 0.1 PERRORS 3 CLW 64 COL CUSTOM 0
 ```
-Executes at misalignment fault rates of 10%: FMNIST with kernel_size 3 for 1 iteration with data mapped column-wise onto racetrack of size 64 using **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
+Testing for 1 inference iteration(s) the FMNIST dataset at misalignment fault rates of 10%, using kernel of size 3x3 (data mapped clockwise in kernel), racetrack of size 64 (tensor mapped column-wise onto racetrack) and protecting layers are **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
 
 ```
-bash ./run.sh TEST 0.1 0.01 PERRORS 3 CIFAR 10 64 MIX 1 5 CUSTOM 0 0.15 0.3
+bash ./run.sh TEST 10 CIFAR 0.1 0.01 PERRORS 3 COL 64 MIX 1 5 CUSTOM 0 0.15 0.3
 ```
-Executes at misalignment fault rates of 10% and 1% (separate runs): CIFAR with kernel_size 3 for 10 iterations with data mapped mixed-wise onto racetrack of size 64 with the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
+Testing for 10 inference iteration(s) the CIFAR dataset at misalignment fault rates of 10% and 1% (separate runs), using kernel of size 3x3 (data mapped column-wise in kernel), racetrack of size 64 (tensor ideally mix-mapped row-/column-wise onto racetrack) and the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
 
 ```
-bash ./run.sh TEST 0.05 PERRORS 3 RESNET 10 64 MIX INDIV 0
+bash ./run.sh TEST 10 RESNET 0.05 PERRORS 3 ACW 64 MIX INDIV 0
 ```
-Executes at misalignment fault rates of 5%: RESNET with kernel_size 3 for 10 iterations with data mapped mixed-wise onto racetrack of size 64 with **each layer at a time unprotected in individual runs** on GPU 0.
+Testing for 10 inference iteration(s) the RESNET dataset at misalignment fault rates of 5%, using kernel of size 3x3 (data mapped anticlockwise in kernel), racetrack of size 64 (tensor ideally mix-mapped row-/column-wise onto racetrack) and **each layer at a time unprotected in individual runs** on GPU 0.
 
 ### Example with OPERATION=TRAIN
 ```
-bash ./run.sh TRAIN 0.0001 PERRORS 3 FMNIST 1 64 ROW 1 2 CUSTOM 0 10 256 0.001 25
+bash ./run.sh TRAIN 1 FMNIST 0.0001 PERRORS 3 ROW 64 ROW 1 2 CUSTOM 0 10 256 0.001 25
 ```
-Training at misalignment fault rates of 10^(-4): FMNIST with kernel_size 3 with data mapped row-wise onto racetracks of size 64 in which the **first and second layers are unprotected*** on GPU 0. Training parameters are: epochs=10, batch_size=256, learning_rate=0.001, step_size=25.
-
+Training for 1 loop (not used for training -> use epochs instead) the FMNIST dataset at misalignment fault rates of 10^(-4), using kernel of size 3x3 (data mapped clockwise in kernel), racetrack of size 64 (tensor mapped row-wise onto racetrack) and the **first and second layers are unprotected*** on GPU 0. Training parameters are: epochs=10, batch_size=256, learning_rate=0.001, step_size=25.
 
 
 ### Troubleshooting
+- if there are errors on Windows when running `bash ./code/cuda/install_kernels.sh`
+    - try changing from CRLF to LF (or vice-versa)
 
 - If errors during git cloning arise:
     - increase the postBuffer size using `git config --global http.postBuffer 524288000`
@@ -183,6 +178,7 @@ Training at misalignment fault rates of 10^(-4): FMNIST with kernel_size 3 with 
 
 - Set `TEST_BATCH_SIZE` in `run_all.sh` for every NN_MODEL to adjust the amount of images pe batch executed at once in each inference iteration (changes stats and graphs, see terminal output)
    
+
 ## Contact
 Maintaner [leonard.bereholschi@tu-dortmund.de](mailto:leonard.bereholschi@tu-dortmund.de)
 

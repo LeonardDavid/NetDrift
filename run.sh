@@ -7,11 +7,12 @@
 # 
 #   ### Arguments:
 #   `OPERATION`:                TRAIN or TEST 
+#   `loops`:                    amount of loops the experiment should run (0, 100] (not used if OPERATION=TRAIN -> use `epochs` instead)
+#   `nn_model`:                 FMNIST, CIFAR, RESNET
 #   {arr_perrors}:              Array of misalignment fault rates to be tested/trained (floats)
 #   `PERRORS`:                  REQUIRED: array termination token
 #   `kernel_size`:              size of kernel used for calculations in convolutional layers (if none then use 0)
-#   `nn_model`:                 FMNIST, CIFAR, RESNET
-#   `loops`:                    amount of loops the experiment should run (0, 100] (not used if OPERATION=TEST)
+#   `kernel_mapping`:           mapping configuration of weights in kernels: ROW, COL, CLW, or ACW (i.e. clockwise or anti-clockwise)
 #   `rt_size`:                  racetrack/nanowire size (typically 64)
 #   `global_rt_mapping`:        mapping configuration of data onto racetracks: ROW, COL or MIX
 #   {arr_layer_ids}:            [OPTIONAL] specify optional layer_ids in an array (starting at 1 upto total_layers) ONLY BEFORE `layer_config` WITH TERMINATION `CUSTOM`!
@@ -59,6 +60,10 @@ else
 fi
 
 shift
+LOOPS=$1
+shift
+NN_MODEL="$1"
+shift
 PERRORS_TOKEN=$1
 
 ## Specify PERRORS array of misalignment faults to be tested. Values can be distinct or equal or both
@@ -77,12 +82,16 @@ else
 fi
 
 ## Required args
-shift # skip token necessary
+shift
 KERNEL_SIZE=$1
 shift
-NN_MODEL="$1"
-shift
-LOOPS=$1
+KERNEL_MAPPING=$1
+
+if [[ ! $KERNEL_MAPPING =~ ^(ROW|COL|CLW|ACW)$ ]]; then
+    echo -e "\n${RED}Kernel mapping ($KERNEL_MAPPING) must be ROW, COL, CLW, or ACW${RESET}\n"
+    exit 1
+fi
+
 shift
 RT_SIZE=$1
 shift
@@ -109,12 +118,9 @@ if [[ ! $LAYER_CONFIG =~ ^(ALL|CUSTOM|INDIV)$ ]]; then
     LAYER_CONFIG=$1
 fi
 
-## Remaining required args
-shift # skip token necessary
+shift
 GPU_ID=$1
 shift
-
-
 if [ "$TRAIN_MODEL" = 1 ]; then
     ## params for RTM training
 
@@ -232,13 +238,13 @@ if [[ $LAYER_CONFIG == *"ALL"* ]]; then
     PROTECT_LAYERS=($(for i in $(seq 1 $layers_total); do echo 0; done))
 
     if [ "$TRAIN_MODEL" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         
     elif  [ "$TEST_AUTO" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $MODEL_PATH
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $MODEL_PATH
 
     else
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         
         total=$((${#PERRORS[@]}*$LOOPS))
         echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"
@@ -248,12 +254,12 @@ elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
     # echo "Number of unprotected layers: CUSTOM"
 
     if [ "$TRAIN_MODEL" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
     
     elif  [ "$TEST_AUTO" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $MODEL_PATH
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $MODEL_PATH
     else
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         
         total=$((${#PERRORS[@]}*$LOOPS))
         echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"        
@@ -272,11 +278,11 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
 
         ## Run the bash file
         if [ "$TRAIN_MODEL" = 1 ]; then
-            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         elif [ "$TEST_AUTO" = 1 ]; then
-            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $MODEL_PATH
+            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $MODEL_PATH
         else
-            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $KERNEL_SIZE $NN_MODEL $LOOPS $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
         fi 
 
         ## Reset for next iteration

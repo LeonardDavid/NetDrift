@@ -129,7 +129,7 @@ def simulate_racetrack_kernel(rng_states, qweight_in, qweight_out, index_offset,
                     qweight_out[i, q_out_index] = 1 if rand > 0.5 else -1
 
 
-def racetrack_sim(quantized_weight, index_offset, rt_mapping, rt_size, rt_error, flags, nr_run, layerNR):
+def racetrack_sim(quantized_weight, index_offset, rt_size, rt_error, ap_reads, flags, nr_run, layerNR):
     """
     Simulates misalignment faults in racetrack memory using CUDA numba parallelization.
     This function simulates the behavior of racetrack memory, including position errors
@@ -140,12 +140,12 @@ def racetrack_sim(quantized_weight, index_offset, rt_mapping, rt_size, rt_error,
             The 2D quantized weight tensor to be stored in racetrack memory
         index_offset (numpy.ndarray): 
             2D Array storing position offsets for each racetrack
-        rt_mapping (str): 
-            Mapping strategy for data in racetrack ("ROW" or "COL")
         rt_size (int): 
             Size of each racetrack/number of bits per racetrack
         rt_error (float): 
             Probability of misalignment fault occurrence
+        ap_reads (int):
+            Number of access port reads to perform
         flags (dict): 
             Configuration flags for various simulation options (found in flags.conf)
         nr_run (int): 
@@ -156,7 +156,6 @@ def racetrack_sim(quantized_weight, index_offset, rt_mapping, rt_size, rt_error,
         tuple: Contains:
             - quantized_weight (torch.Tensor): Modified weight tensor as read out from racetrack memory
             - index_offset (numpy.ndarray): Updated position offsets for each racetrack
-            - shifts (int): Number of total shifts required to access every weight value stored on racetrack memory
             - misalign_faults_sum (int): Total number of misalignment faults which occured during read operations
     Notes:
         - quantized_weight expects a 2D tensor, if a different shaped tensor is passed, it must be reshaped to 2D before calling the function (e.g. for conv layers)
@@ -165,21 +164,6 @@ def racetrack_sim(quantized_weight, index_offset, rt_mapping, rt_size, rt_error,
         - Supports various modification flags like bin_revert, odd2even, blockhyp
         - Handles misalignment fault tracking when CALC_MISALIGN_FAULTS flag is enabled
     """
-
-    ## Specify the number of shifts required for the Access Port (AP) to read a single word from the racetrack
-
-    if rt_mapping == "ROW":
-        # When data is mapped row-wise, the AP requires rt_size shifts to read a single word L_i, i.e. 1 bit per shift
-        ap_reads = rt_size * rt_size
-        shifts = ap_reads - rt_size
-    elif rt_mapping == "COL":
-        # When data is mapped column-wise, the AP reads bit b_i from each racetrack, i.e. an entire word L_i per shift (e.g. multiple convolutions)
-        ap_reads = rt_size
-        shifts = ap_reads - 1
-    else:
-        print("Error: rt_mapping not defined")
-        exit()
-
 
     ## CUDA setup
     # Get the maximum number of threads per block for the current GPU, usually 1024
@@ -258,7 +242,7 @@ def racetrack_sim(quantized_weight, index_offset, rt_mapping, rt_size, rt_error,
     quantized_weight.copy_(torch.from_numpy(qweight_out_gpu.copy_to_host()))
 
 
-    return quantized_weight, index_offset, shifts, np.sum(misalign_faults)
+    return quantized_weight, index_offset, np.sum(misalign_faults)
 
 
 def execute_flags_index_offset(flags, index_offset, misalign_faults, nr_run, layerNR):

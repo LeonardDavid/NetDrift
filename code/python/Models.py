@@ -17,7 +17,7 @@ class Scale(nn.Module):
 
 
 class VGG3(nn.Module):
-    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, train_crit=None, test_crit=None, test_rtm = None, rt_error=0.0, global_rt_mapping = "MIX", kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, train_crit=None, test_crit=None, test_rtm = None, rt_error=0.0, global_rt_mapping = "MIX", kernel_size=3, kernel_mapping = "ROW", rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(VGG3, self).__init__()
         self.htanh = nn.Hardtanh()
         self.name = "VGG3"
@@ -45,6 +45,7 @@ class VGG3(nn.Module):
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
+        self.kernel_mapping = kernel_mapping
 
         self.initLayerDims()
         
@@ -53,11 +54,11 @@ class VGG3(nn.Module):
         else:
             self.initDefaultOffsets()
 
-        self.conv1 = QuantizedConv2d(self.conv1_x, self.conv1_y, layerNr=1, rt_mapping=self.conv1_rt_mapping, rt_error=self.rt_error, protectLayers = self.protectLayers, affected_rts=self.affected_rts, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = self.test_rtm, kernel_size=self.kernel_size, index_offset = self.index_offset_conv1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv1 = QuantizedConv2d(self.conv1_x, self.conv1_y, layerNr=1, rt_mapping=self.conv1_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers = self.protectLayers, affected_rts=self.affected_rts, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = self.test_rtm, kernel_size=self.kernel_size, index_offset = self.index_offset_conv1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
-        self.conv2 = QuantizedConv2d(self.conv2_x, self.conv2_y, layerNr=2, rt_mapping=self.conv2_rt_mapping, rt_error=self.rt_error, protectLayers = self.protectLayers, affected_rts=self.affected_rts, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = self.test_rtm, kernel_size=self.kernel_size, index_offset = self.index_offset_conv2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv2 = QuantizedConv2d(self.conv2_x, self.conv2_y, layerNr=2, rt_mapping=self.conv2_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers = self.protectLayers, affected_rts=self.affected_rts, padding=1, stride=1,  quantization=self.quantization, error_model=self.error_model, test_rtm = self.test_rtm, kernel_size=self.kernel_size, index_offset = self.index_offset_conv2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
 
@@ -106,7 +107,7 @@ class VGG3(nn.Module):
             self.conv1_rt_mapping = "ROW"
             self.conv2_rt_mapping = "ROW"
             self.fc1_rt_mapping = "ROW"
-            self.fc2_rt_mapping = "ROW"
+            self.fc2_rt_mapping = "ROW"    # Note that last linear layer ROW leads to high training instability
 
         elif self.global_rt_mapping == "COL":
             self.conv1_rt_mapping = "COL"
@@ -133,7 +134,7 @@ class VGG3(nn.Module):
             if math.ceil((self.fc2_y/self.rt_size))*self.fc2_x <= math.ceil((self.fc2_x)/self.rt_size)*self.fc2_y:
                 self.fc2_rt_mapping = "COL"
             else:
-                self.fc2_rt_mapping = "ROW"
+                self.fc2_rt_mapping = "ROW"    # Note that last linear layer ROW leads to high training instability
         else:
             print("No valid global_rt_mapping")
             exit()
@@ -199,7 +200,7 @@ class VGG3(nn.Module):
 
 
 class VGG7(nn.Module):
-    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, train_crit=None, test_crit=None, test_rtm = None, rt_error=0.0,  global_rt_mapping = "MIX", kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
+    def __init__(self, quantMethod=None, quantize_train=True, quantize_eval=True, error_model=None, train_crit=None, test_crit=None, test_rtm = None, rt_error=0.0,  global_rt_mapping = "MIX", kernel_size=3, kernel_mapping="ROW", rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(VGG7, self).__init__()
         self.htanh = nn.Hardtanh()
         self.name = "VGG7"
@@ -227,6 +228,7 @@ class VGG7(nn.Module):
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
+        self.kernel_mapping = kernel_mapping
 
         self.initLayerDims()
 
@@ -237,32 +239,32 @@ class VGG7(nn.Module):
 
         #CNN
         # block 1
-        self.conv1 = QuantizedConv2d(self.conv1_x, self.conv1_y, layerNr=1, rt_mapping=self.conv1_rt_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv1 = QuantizedConv2d(self.conv1_x, self.conv1_y, layerNr=1, rt_mapping=self.conv1_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn1 = nn.BatchNorm2d(128)
         self.qact1 = QuantizedActivation(quantization=self.quantization)
 
         # block 2
-        self.conv2 = QuantizedConv2d(self.conv2_x, self.conv2_y, layerNr=2, rt_mapping=self.conv2_rt_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv2 = QuantizedConv2d(self.conv2_x, self.conv2_y, layerNr=2, rt_mapping=self.conv2_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv2, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn2 = nn.BatchNorm2d(128)
         self.qact2 = QuantizedActivation(quantization=self.quantization)
 
         # block 3
-        self.conv3 = QuantizedConv2d(self.conv3_x, self.conv3_y, layerNr=3, rt_mapping=self.conv3_rt_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv3, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv3 = QuantizedConv2d(self.conv3_x, self.conv3_y, layerNr=3, rt_mapping=self.conv3_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv3, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn3 = nn.BatchNorm2d(256)
         self.qact3 = QuantizedActivation(quantization=self.quantization)
 
         # block 4
-        self.conv4 = QuantizedConv2d(self.conv4_x, self.conv4_y, layerNr=4, rt_mapping=self.conv4_rt_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv4, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv4 = QuantizedConv2d(self.conv4_x, self.conv4_y, layerNr=4, rt_mapping=self.conv4_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv4, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn4 = nn.BatchNorm2d(256)
         self.qact4 = QuantizedActivation(quantization=self.quantization)
 
         # block 5
-        self.conv5 = QuantizedConv2d(self.conv5_x, self.conv5_y, layerNr=5, rt_mapping=self.conv5_rt_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv5, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv5 = QuantizedConv2d(self.conv5_x, self.conv5_y, layerNr=5, rt_mapping=self.conv5_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv5, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn5 = nn.BatchNorm2d(512)
         self.qact5 = QuantizedActivation(quantization=self.quantization)
 
         # block 6
-        self.conv6 = QuantizedConv2d(self.conv6_x, self.conv6_y, layerNr=6, rt_mapping=self.conv6_rt_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv6, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
+        self.conv6 = QuantizedConv2d(self.conv6_x, self.conv6_y, layerNr=6, rt_mapping=self.conv6_rt_mapping, kernel_mapping=self.kernel_mapping, rt_error=self.rt_error, protectLayers=self.protectLayers, affected_rts=self.affected_rts, kernel_size=self.kernel_size, padding=1, stride=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv6, rt_size = self.rt_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, bias=False)
         self.bn6 = nn.BatchNorm2d(512)
         self.qact6 = QuantizedActivation(quantization=self.quantization)
 
@@ -324,7 +326,7 @@ class VGG7(nn.Module):
             self.conv5_rt_mapping = "ROW"
             self.conv6_rt_mapping = "ROW"
             self.fc1_rt_mapping = "ROW"
-            self.fc2_rt_mapping = "ROW"
+            self.fc2_rt_mapping = "ROW"    # Note that last linear layer ROW leads to high training instability
 
         elif self.global_rt_mapping == "COL":
             self.conv1_rt_mapping = "COL"
@@ -375,7 +377,7 @@ class VGG7(nn.Module):
             if math.ceil((self.fc2_y/self.rt_size))*self.fc2_x <= math.ceil((self.fc2_x)/self.rt_size)*self.fc2_y:
                 self.fc2_rt_mapping = "COL"
             else:
-                self.fc2_rt_mapping = "ROW"
+                self.fc2_rt_mapping = "ROW"    # Note that last linear layer ROW leads to high training instability
         else:
             print("No valid global_rt_mapping")
             exit()
@@ -502,7 +504,7 @@ class VGG7(nn.Module):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, layerNr=2, test_rtm = None, rt_size=64, kernel_size=3, global_rt_mapping="MIX", rt_error=0.0, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, error_model=None, train_model=None, extract_absfreq=None):
+    def __init__(self, in_planes, planes, stride=1, layerNr=2, test_rtm = None, rt_size=64, kernel_size=3, kernel_mapping="ROW", global_rt_mapping="MIX", rt_error=0.0, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True, quantMethod=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, error_model=None, train_model=None, extract_absfreq=None):
         super(BasicBlock, self).__init__()
         self.htanh = nn.Hardtanh()
         self.layerNr = layerNr
@@ -527,6 +529,7 @@ class BasicBlock(nn.Module):
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
+        self.kernel_mapping = kernel_mapping
 
         self.initLayerDims(in_planes, planes)
 
@@ -536,12 +539,12 @@ class BasicBlock(nn.Module):
             self.initDefaultOffsets()
 
         self.conv1 = QuantizedConv2d(
-            self.conv1_x, self.conv1_y, layerNr=self.layerNr, stride=stride, padding=1, quantization=quantMethod, kernel_size=self.kernel_conv1, rt_mapping=self.conv1_rt_mapping, rt_error=self.rt_error, protectLayers=protectLayers, affected_rts=self.affected_rts, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, error_model=error_model, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, train_model=train_model, extract_absfreq=extract_absfreq, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx, performance_mode=performance_mode, bias=False)
+            self.conv1_x, self.conv1_y, layerNr=self.layerNr, stride=stride, padding=1, quantization=quantMethod, kernel_size=self.kernel_conv1, kernel_mapping=self.kernel_mapping, rt_mapping=self.conv1_rt_mapping, rt_error=self.rt_error, protectLayers=protectLayers, affected_rts=self.affected_rts, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, error_model=error_model, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, train_model=train_model, extract_absfreq=extract_absfreq, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx, performance_mode=performance_mode, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         self.layerNr += 1
 
         self.conv2 = QuantizedConv2d(
-            self.conv2_x, self.conv2_y, layerNr=self.layerNr, stride=1, padding=1, quantization=quantMethod, kernel_size=self.kernel_conv2, rt_mapping=self.conv2_rt_mapping, rt_error=self.rt_error, protectLayers=protectLayers, affected_rts=self.affected_rts, test_rtm = test_rtm, index_offset=self.index_offset_conv2, rt_size = self.rt_size, error_model=error_model, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, train_model=train_model, extract_absfreq=extract_absfreq, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx, performance_mode=performance_mode,  bias=False)
+            self.conv2_x, self.conv2_y, layerNr=self.layerNr, stride=1, padding=1, quantization=quantMethod, kernel_size=self.kernel_conv2, kernel_mapping=self.kernel_mapping, rt_mapping=self.conv2_rt_mapping, rt_error=self.rt_error, protectLayers=protectLayers, affected_rts=self.affected_rts, test_rtm = test_rtm, index_offset=self.index_offset_conv2, rt_size = self.rt_size, error_model=error_model, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts, train_model=train_model, extract_absfreq=extract_absfreq, an_sim=an_sim, array_size=array_size, mac_mapping=mapping, mac_mapping_distr=mapping_distr, sorted_mac_mapping_idx=sorted_mapping_idx, performance_mode=performance_mode,  bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.layerNr += 1
 
@@ -643,7 +646,7 @@ class BasicBlock(nn.Module):
     
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, train_crit, test_crit, quantMethod=None,  quantize_train=True, quantize_eval=True, error_model=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, train_model=None, extract_absfreq=None, num_classes=10, test_rtm = None, rt_error=0.0, global_rt_mapping = "MIX", kernel_size=3, rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
+    def __init__(self, block, num_blocks, train_crit, test_crit, quantMethod=None,  quantize_train=True, quantize_eval=True, error_model=None, an_sim=None, array_size=None, mapping=None, mapping_distr=None, sorted_mapping_idx=None, performance_mode=None, train_model=None, extract_absfreq=None, num_classes=10, test_rtm = None, rt_error=0.0, global_rt_mapping = "MIX", kernel_size=3, kernel_mapping="ROW", rt_size=64, protectLayers=[], affected_rts=[], misalign_faults=[], bitflips=[], global_bitflip_budget=0.05, local_bitflip_budget=0.1, calc_results=True, calc_bitflips=True, calc_misalign_faults=True, calc_affected_rts=True):
         super(ResNet, self).__init__()
         self.htanh = nn.Hardtanh()
         self.name = "ResNet18"
@@ -681,6 +684,7 @@ class ResNet(nn.Module):
         self.calc_affected_rts = calc_affected_rts
 
         self.global_rt_mapping = global_rt_mapping
+        self.kernel_mapping = kernel_mapping
 
         self.initLayerDims(block, num_classes)
 
@@ -691,7 +695,7 @@ class ResNet(nn.Module):
 
         self.layerNr = 1
         self.conv1 = QuantizedConv2d(
-            self.conv1_x, self.conv1_y, affected_rts=self.affected_rts, layerNr=self.layerNr, rt_mapping=self.conv1_rt_mapping, rt_error=self.rt_error, protectLayers = self.protectLayers, kernel_size=self.kernel_size, stride=1, padding=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, bias=False, array_size=self.array_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts)
+            self.conv1_x, self.conv1_y, affected_rts=self.affected_rts, layerNr=self.layerNr, rt_mapping=self.conv1_rt_mapping, kernel_mapping = self.kernel_mapping, rt_error=self.rt_error, protectLayers = self.protectLayers, kernel_size=self.kernel_size, stride=1, padding=1, quantization=self.quantization, error_model=self.error_model, test_rtm = test_rtm, index_offset = self.index_offset_conv1, rt_size = self.rt_size, bias=False, array_size=self.array_size, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts)
         self.bn1 = nn.BatchNorm2d(64)
 
         self.layerNr += 1
@@ -712,7 +716,7 @@ class ResNet(nn.Module):
         for stride in strides:
 
             bblock = block(
-                self.in_planes, planes, stride, layerNr = self.layerNr, rt_error=self.rt_error, global_rt_mapping=self.global_rt_mapping, test_rtm = self.test_rtm, rt_size=self.rt_size, kernel_size=self.kernel_size, protectLayers=self.protectLayers, affected_rts=self.affected_rts, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget, calc_results=self.calc_results, calc_bitflips=self.calc_bitflips, calc_misalign_faults=self.calc_misalign_faults, calc_affected_rts=self.calc_affected_rts, quantMethod=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mapping=self.mapping, mapping_distr=self.mapping_distr, sorted_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
+                self.in_planes, planes, stride, layerNr = self.layerNr, rt_error=self.rt_error, global_rt_mapping=self.global_rt_mapping, kernel_mapping=self.kernel_mapping, test_rtm = self.test_rtm, rt_size=self.rt_size, kernel_size=self.kernel_size, protectLayers=self.protectLayers, affected_rts=self.affected_rts, misalign_faults=self.misalign_faults, bitflips=self.bitflips, global_bitflip_budget=self.global_bitflip_budget, local_bitflip_budget=self.local_bitflip_budget, calc_results=self.calc_results, calc_bitflips=self.calc_bitflips, calc_misalign_faults=self.calc_misalign_faults, calc_affected_rts=self.calc_affected_rts, quantMethod=self.quantization, an_sim=self.an_sim, array_size=self.array_size, mapping=self.mapping, mapping_distr=self.mapping_distr, sorted_mapping_idx=self.sorted_mapping_idx, performance_mode=self.performance_mode, error_model=self.error_model, train_model=self.train_model, extract_absfreq=self.extract_absfreq)
 
             layers.append(bblock)
             self.in_planes = planes * block.expansion
@@ -738,9 +742,10 @@ class ResNet(nn.Module):
         self.index_offset_lin1 = np.zeros((1, 1), dtype=np.int32)
 
     def initIndexOffsets(self):
+        print("global_rt_mapping: ", self.global_rt_mapping)
         if self.global_rt_mapping == "ROW":
             self.conv1_rt_mapping = "ROW"
-            self.lin1_rt_mapping = "ROW"
+            self.lin1_rt_mapping = "ROW"    # Note that last linear layer ROW leads to high training instability
 
         elif self.global_rt_mapping == "COL":
             self.conv1_rt_mapping = "COL"
@@ -755,7 +760,7 @@ class ResNet(nn.Module):
             if math.ceil((self.lin1_y/self.rt_size))*self.lin1_x <= math.ceil((self.lin1_x)/self.rt_size)*self.lin1_y:
                 self.lin1_rt_mapping = "COL"
             else:
-                self.lin1_rt_mapping = "ROW"
+                self.lin1_rt_mapping = "ROW"    # Note that last linear layer ROW leads to high training instability
         else:
             print("No valid global_rt_mapping")
             exit()

@@ -45,7 +45,7 @@ def get_model_and_datasets(args):
 
     # Create data directory if it doesn't exist
     os.makedirs('data', exist_ok=True)
-
+    
     if args.dataset == "MNIST":
         transform=transforms.Compose([
             transforms.ToTensor(),
@@ -102,7 +102,7 @@ def get_model_and_datasets(args):
         dataset1 = datasets.CIFAR100('data', train=True, download=True, transform=transform_train)
         dataset2 = datasets.CIFAR100('data', train=False, transform=transform_test)
 
-    if args.dataset == "IMAGENETTE":        
+    if args.dataset == "IMAGENETTE":
         # Check if Imagenette dataset exists
         if not os.path.exists('data/imagenette2'):
             print("Downloading Imagenette dataset...")
@@ -110,7 +110,7 @@ def get_model_and_datasets(args):
             print("Extracting Imagenette dataset...")
             os.system('cd data && tar xzf imagenette2.tgz')
             print("Dataset ready!")
-
+        
         transform_train = transforms.Compose([
             transforms.Resize((64, 64)),
             transforms.RandomCrop(64, padding=4),
@@ -172,7 +172,8 @@ def parse_args(parser):
     
     ## NetDrift RTM parameters
     parser.add_argument('--test_rtm', type=int, default=None, help='Whether to test the model using RTM misalignment faults')
-    parser.add_argument('--global_rt_mapping', type=str, default='MIX', help='Specify type of weight mapping onto RTM: row, col, custom')
+    parser.add_argument('--global_rt_mapping', type=str, default='MIX', help='Specify type of weight mapping onto RTM: ROW, COL, MIX')
+    parser.add_argument('--kernel_mapping', type=str, default='ROW', help='Specify type of kernel mapping: ROW, COL, CLW, ACW')
     parser.add_argument('--kernel_size', type=int, default=None, help='Size of convolutional kernel in convolutional layers')
     parser.add_argument('--perror', type=float, default=0.0, help='Error rate with which to test the model')
     parser.add_argument('--loops', type=int, default=1, help='Amount of times the inference model is run (offsets accumulate!)')

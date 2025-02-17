@@ -71,7 +71,8 @@ def main():
     torch.cuda.set_device(gpu_select)
     # which GPU is currently used
     print("Currently used GPU: ", torch.cuda.current_device())
-    print("")
+
+    print(args)
 
     binarizefi_model.updateErrorModel(args.perror)
 
@@ -88,6 +89,22 @@ def main():
 
     train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
+
+    # print("")
+    # print(train_kwargs)
+    # train_features, train_labels = next(iter(train_loader))
+    # print(f"Feature batch shape: {train_features.size()}")
+    # print(f"Labels batch shape: {train_labels.size()}")
+    # print(test_kwargs)
+    # test_features, test_labels = next(iter(test_loader))
+    # print(f"Feature batch shape: {test_features.size()}")
+    # print(f"Labels batch shape: {test_labels.size()}")
+    # print("")
+    # # img = train_features[0].squeeze()
+    # # label = train_labels[0]
+    # # plt.imshow(img, cmap="gray")
+    # # plt.show()
+    # # print(f"Label: {label}")
 
     mac_mapping = None
     mac_mapping_distr = None
@@ -178,10 +195,10 @@ def main():
         model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_error=rt_error, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     elif args.model == "ResNet":
-        model = nn_model(BasicBlock, [2, 2, 2, 2],  quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, rt_error=rt_error, global_rt_mapping = args. global_rt_mapping, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(BasicBlock, [2, 2, 2, 2],  quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, an_sim=args.an_sim, array_size=args.array_size, mapping=mac_mapping, mapping_distr=mac_mapping_distr, sorted_mapping_idx=sorted_mac_mapping_idx, performance_mode=args.performance_mode, train_model=args.train_model, extract_absfreq=args.extract_absfreq, test_rtm = args.test_rtm, rt_error=rt_error, global_rt_mapping = args. global_rt_mapping, kernel_size=kernel_size, kernel_mapping=args.kernel_mapping, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
     else:
-        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_error=rt_error, global_rt_mapping = args. global_rt_mapping, kernel_size=kernel_size, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
+        model = nn_model(quantMethod=quant_method, quantize_train=q_train, quantize_eval=q_eval, error_model=error_model, train_crit=crit_train, test_crit=crit_test, test_rtm = args.test_rtm, rt_error=rt_error, global_rt_mapping = args. global_rt_mapping, kernel_size=kernel_size, kernel_mapping=args.kernel_mapping, rt_size = rt_size, protectLayers = protectLayers, affected_rts=affected_rts, misalign_faults=misalign_faults, bitflips=bitflips, global_bitflip_budget=global_bitflip_budget, local_bitflip_budget=local_bitflip_budget, calc_results=calc_results, calc_bitflips=calc_bitflips, calc_misalign_faults=calc_misalign_faults, calc_affected_rts=calc_affected_rts).to(device)
 
 
     optimizer = Clippy(model.parameters(), lr=args.lr)
@@ -203,6 +220,8 @@ def main():
         for epoch in range(1, args.epochs + 1):
             torch.cuda.synchronize()
             since = int(round(time.time()*1000))
+
+            print(f"lr: {scheduler.get_last_lr()}")
             
             train(args, model, device, train_loader, optimizer, epoch)
             

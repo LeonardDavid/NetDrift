@@ -172,7 +172,6 @@ class QuantizedLinear(nn.Linear):
         self.calc_affected_rts = kwargs.pop('calc_affected_rts', None)
         
         self.nr_run = 1
-        self.q_weight = None
         super(QuantizedLinear, self).__init__(*args, **kwargs)
 
     def forward(self, input):
@@ -246,8 +245,17 @@ class QuantizedLinear(nn.Linear):
                         if self.calc_bitflips == "True":
                             quantized_weight_init = quantized_weight
 
-                        misalign_fault = 0  # number of misalignment faults
-                        shift = 0           # number of shifts (used for reading)
+                        ## Specify the number of shifts required for the Access Port (AP) to read a single word from the racetrack
+                        if self.rt_mapping == "ROW":
+                            # When data is mapped row-wise, the AP requires rt_size shifts to read a single word L_i, i.e. 1 bit per shift
+                            ap_reads = self.rt_size * self.rt_size
+                            shifts = ap_reads - self.rt_size
+                        elif self.rt_mapping == "COL":
+                            # When data is mapped column-wise, the AP reads bit b_i from each racetrack, i.e. an entire word L_i per shift (e.g. multiple convolutions)
+                            ap_reads = self.rt_size
+                            shifts = ap_reads - 1
+                        else:
+                            raise ValueError(f"Invalid racetrack mapping: {self.rt_mapping}")
                         
                         # Transpose quantized_weight if rt_mapping is set to column-wise, in order to have the same internal representation
                         # This is necessary in order for the racetrack simulation kernel to execute the same allocations and operations, regardless of rt_mapping
@@ -256,13 +264,14 @@ class QuantizedLinear(nn.Linear):
                             quantized_weight = quantized_weight.t().contiguous()
 
                         ## Compute index_offset and read out the misaligned quantized_weight based on index_offset for each racetracks
-                        quantized_weight, self.index_offset, shift, misalign_fault = racetrack_sim(quantized_weight=quantized_weight.clone(), index_offset=self.index_offset, 
-                                                                                                                    rt_mapping=self.rt_mapping, rt_size=self.rt_size, rt_error=self.rt_error,
+                        quantized_weight, self.index_offset, misalign_fault = racetrack_sim(quantized_weight=quantized_weight.clone(), index_offset=self.index_offset, 
+                                                                                                                    rt_size=self.rt_size, rt_error=self.rt_error, ap_reads=ap_reads,
                                                                                                                     flags=flags, nr_run=self.nr_run, layerNR=self.layerNR)
                         # Transpose quantized_weight back to original shape if rt_mapping is set to column-wise 
                         # This is necessary for the following operations to work correctly (and in case rt_mapping is mixed and the following layer has different mapping)
                         if self.rt_mapping == "COL":
                             quantized_weight = quantized_weight.t()
+
 
                         ## Number of misalignment faults 
                         if self.calc_misalign_faults == "True":
@@ -341,6 +350,7 @@ class QuantizedConv2d(nn.Conv2d):
         self.test_rtm = kwargs.pop('test_rtm', False)
         self.rt_error = kwargs.pop('rt_error', None)
         self.rt_mapping = kwargs.pop('rt_mapping', None)
+        self.kernel_mapping = kwargs.pop('kernel_mapping', None)
         self.index_offset = kwargs.pop('index_offset', None)
         self.rt_size = kwargs.pop('rt_size', None)
         self.protectLayers = kwargs.pop('protectLayers', None)
@@ -356,7 +366,6 @@ class QuantizedConv2d(nn.Conv2d):
         self.calc_affected_rts = kwargs.pop('calc_affected_rts', None)
 
         self.nr_run = 1
-        self.q_weight = None
         super(QuantizedConv2d, self).__init__(*args, **kwargs)
 
     def forward(self, input):
@@ -430,15 +439,49 @@ class QuantizedConv2d(nn.Conv2d):
                         ## Needed to calculate absolute number of bitflips
                         if self.calc_bitflips == "True":
                             quantized_weight_init = quantized_weight
+                        
+                        ## Specify the number of shifts required for the Access Port (AP) to read a single word from the racetrack
+                        if self.rt_mapping == "ROW":
+                            # When data is mapped row-wise, the AP requires rt_size shifts to read a single word L_i, i.e. 1 bit per shift
+                            ap_reads = self.rt_size * self.rt_size
+                            shifts = ap_reads - self.rt_size
+                        elif self.rt_mapping == "COL":
+                            # When data is mapped column-wise, the AP reads bit b_i from each racetrack, i.e. an entire word L_i per shift (e.g. multiple convolutions)
+                            ap_reads = self.rt_size
+                            shifts = ap_reads - 1
+                        else:
+                            raise ValueError(f"Invalid racetrack mapping: {self.rt_mapping}")
 
-                        misalign_fault = 0  # number of misalignment faults
-                        shift = 0           # number of shifts (used for reading)
+                        # TODO tests
+                        # Original shape is [out_channels, in_channels, self.kernel_size, self.kernel_size]
+                        quantized_weight_initial_shape = quantized_weight.shape
+
+                        # If the kernel mapping is specified, rearrange the weights in each kernel in the specified order
+                        match self.kernel_mapping:
+                            case "ROW":
+                                # default order/rev_order (not needed)
+                                pass
+                            case "COL":
+                                order = col_indices_3x3
+                                rev_order = reverse_col_indices_3x3 
+                            case "CLW":
+                                order = clw_indices_3x3
+                                rev_order = reverse_clw_indices_3x3
+                            case "ACW":
+                                order = acw_indices_3x3
+                                rev_order = reverse_acw_indices_3x3
+                            case _:
+                                raise ValueError(f"Invalid kernel mapping: {self.kernel_mapping}")
+                            
+                        # print("quantized_weight before:", quantized_weight)
+                        # Rearrange the weights in each kernel in specified order (COLumnwise, CLockWise, AntiClockWise) -> ROWwise is default
+                        if self.kernel_mapping != "ROW":
+                            quantized_weight = rearrange_kernel_weights(quantized_weight, order)
 
                         # Reshape quantized_weight to 2D tensor, since convolutional weights are 4D
                         # This is necessary for the racetrack simulation kernel to execute the same allocations and operations, regardless of the input shape
-                        quantized_weight_initial_shape = quantized_weight.shape
                         quantized_weight = quantized_weight.view(quantized_weight.size(0), -1)
-
+                        
                         # Transpose quantized_weight if rt_mapping is set to column-wise, in order to have the same internal representation
                         # This is necessary in order for the racetrack simulation kernel to execute the same allocations and operations, regardless of rt_mapping
                         if self.rt_mapping == "COL":
@@ -446,8 +489,8 @@ class QuantizedConv2d(nn.Conv2d):
                             quantized_weight = quantized_weight.t().contiguous()
                             
                         ## Compute index_offset and read out the misaligned quantized_weight based on index_offset for each racetracks
-                        quantized_weight, self.index_offset, shift, misalign_fault = racetrack_sim(quantized_weight=quantized_weight.clone(), index_offset=self.index_offset, 
-                                                                                                                    rt_mapping=self.rt_mapping, rt_size=self.rt_size, rt_error=self.rt_error,
+                        quantized_weight, self.index_offset, misalign_fault = racetrack_sim(quantized_weight=quantized_weight.clone(), index_offset=self.index_offset, 
+                                                                                                                    rt_size=self.rt_size, rt_error=self.rt_error, ap_reads=ap_reads,
                                                                                                                     flags=flags, nr_run=self.nr_run, layerNR=self.layerNR)
 
                         # Transpose quantized_weight back to original shape if rt_mapping is set to column-wise 
@@ -455,11 +498,22 @@ class QuantizedConv2d(nn.Conv2d):
                         if self.rt_mapping == "COL":
                             quantized_weight = quantized_weight.t()
 
-                        # Reshape quantized_weight back to initial shape
-                        # This is necessary for the following operations to work correctly
-                        quantized_weight = quantized_weight.view(quantized_weight_initial_shape)
+                        # If each kernel has been rearranged previously in a specified order, rearrange them back to the original order
+                        if self.kernel_mapping != "ROW":
+                            # First reshape 2D back to 3D [out_channels, in_channels, self.kernel_size * self.kernel_size]
+                            quantized_weight = quantized_weight.view(quantized_weight_initial_shape[0], 
+                                                                quantized_weight_initial_shape[1], 
+                                                                quantized_weight_initial_shape[2] * quantized_weight_initial_shape[3])
+                            
+                            # Then rearrange back to initial order and reshape tensor back to 4D
+                            quantized_weight = quantized_weight[..., rev_order].view(quantized_weight_initial_shape)
+                        else:
+                            # If instead the default ROWwise mapping was used for the kernel, then simply reshape from 2D->4D to initial shape (without changes due to kernel mapping)
+                            # This is necessary for the following operations to work correctly
+                            quantized_weight = quantized_weight.view(quantized_weight_initial_shape)
 
-                        # Number of misalignment faults
+
+                        ## Number of misalignment faults
                         if self.calc_misalign_faults == "True":
                             self.misalign_faults[self.layerNR-1].append(misalign_fault)
                         
@@ -517,3 +571,40 @@ class QuantizedConv2d(nn.Conv2d):
             output = F.conv2d(input, quantized_weight, quantized_bias, self.stride,
                               self.padding, self.dilation, self.groups)
             return output
+
+
+# Define rearrangement indices for a 3x3 kernel
+col_indices_3x3 = torch.tensor([0, 3, 6, 1, 4, 7, 2, 5, 8])
+clw_indices_3x3 = torch.tensor([0, 1, 2, 5, 8, 7, 6, 3, 4])
+acw_indices_3x3 = torch.tensor([0, 3, 6, 7, 8, 5, 2, 1, 4])
+
+# Define reverse rearrangement indices for a 3x3 kernel
+reverse_col_indices_3x3 = torch.tensor([0, 3, 6, 1, 4, 7, 2, 5, 8])
+reverse_clw_indices_3x3 = torch.tensor([0, 1, 2, 7, 8, 3, 6, 5, 4])
+reverse_acw_indices_3x3 = torch.tensor([0, 7, 6, 1, 8, 5, 2, 3, 4])
+
+def rearrange_kernel_weights(weights, order):
+    """
+    Rearranges 4D convolutional weights to have specified-ordered kernels.
+    Args:
+        weights: Input tensor of shape [out_channels, in_channels, kernel_size, kernel_size]
+        order: Indices to rearrange the 3x3 kernels
+    Returns:
+        Reshaped tensor with specified-ordered 3x3 kernels
+    """
+    out_channels, in_channels, h, w = weights.shape # h = w = self.kernel_size
+    assert h == w == 3, "Only 3x3 kernels are supported (for now)"
+    
+    # Reshape to [out_channels * in_channels, 3, 3]
+    kernels = weights.view(-1, h, w)
+    
+    # Process each kernel
+    clockwise_kernels = []
+    for kernel in kernels:
+        flat_kernel = kernel.view(-1)
+        clockwise_kernel = flat_kernel[order]
+        clockwise_kernels.append(clockwise_kernel)
+    
+    # Stack and reshape back to [out_channels, in_channels, 9]
+    clockwise_weights = torch.stack(clockwise_kernels)
+    return clockwise_weights.view(out_channels, in_channels, h * w)
