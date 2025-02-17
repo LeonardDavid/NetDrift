@@ -105,12 +105,12 @@ Print Flags & Parameter:
 
 For Training
 ```
-bash ./run.sh TRAIN {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+bash ./run.sh TRAIN {loops} {nn_model} {arr_perrors} PERRORS {kernel_size} {kernel_mapping} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 For Testing
 ```
-bash ./run.sh TEST {arr_perrors} PERRORS {kernel_size} {nn_model} {loops} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
+bash ./run.sh TEST {loops} {nn_model} {arr_perrors} PERRORS {kernel_size} {kernel_mapping} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
 ```
 
 ### Arguments:
