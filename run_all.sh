@@ -5,128 +5,198 @@
 #   
 #   Automation script for running RTM misalignment fault simulation for BNNs
 # 
-#   ### Arguments:
-#
-#   `PROTECT_LAYERS`:           array of layers to be protected (in the format PROTECT_LAYERS[layer_id+1]={1:protected | 0:unprotected})
-#   END1:                       first array termination token
-#   `PERRORS`:                  Array of misalignment fault rates to be tested/trained (floats)
-#   END2:                       second array termination token
-#   `OPERATION`:                TRAIN or TEST 
-#   `loops`:                    amount of loops the experiment should run (0, 100] (not used if OPERATION=TRAIN -> use `epochs` instead)
-#   `nn_model`:                 FMNIST, CIFAR, RESNET
-#   `kernel_size`:              size of kernel used for calculations in convolutional layers (if none then use 0)
-#   `kernel_mapping`:           mapping configuration of weights in kernels: ROW, COL, CLW, or ACW (i.e. clockwise or anti-clockwise)
-#   `rt_size`:                  racetrack/nanowire size (typically 64)
-#   `global_rt_mapping`:        mapping configuration of data onto racetracks: ROW, COL or MIX
-#   `layer_config`:             unprotected layers configuration (ALL, CUSTOM, INDIV)
-#   `gpu_id`:                   ID of GPU to use for computations (0, 1) 
-#
-#   ### Additional required arguments if OPERATION = TRAIN
-#   `epochs`:                   number of training epochs
-#   `batch_size`:               batch size
-#   `lr`:                       learning rate
-#   `step_size`:                step size
-#
-#   ### Optional arguments:
-#   `global_bitflip_budget`:    default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
-#   `local_bitflip_budget`:     default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
+#   Arguments:
+#     --protect-layers, -pl   Array of layer protection flags (space-separated, 1:protected | 0:unprotected)
+#     --perrors, -p           Array of misalignment fault rates (space-separated)
+#     --operation, -o         TRAIN or TEST or TEST_AUTO
+#     --loops, -l             Number of experiment loops (0-100] (if --operation=TRAIN -> use --epochs instead)
+#     --model, -m             Neural network model (MNIST|FMNIST|CIFAR|RESNET)
+#     --kernel-size, -ks      Kernel size for conv layers (0 if none)
+#     --kernel-mapping, -km   Mapping configuration of weights in kernels (ROW|COL|CLW|ACW)
+#     --rt-size, -rs          Racetrack size (typically 64)
+#     --rt-mapping, -rm       Mapping configuration of data onto racetracks (ROW|COL|MIX)
+#     --layer-config, -lc     Layer configuration of unprotected layers (ALL|CUSTOM|INDIV)
+#     --gpu, -g               GPU ID to run computations on (0|1)
+#   
+#   Training specific options:
+#     --epochs, -e            Number of training epochs
+#     --batch-size, -bs       Batch size
+#     --learning-rate, -lr    Learning rate
+#     --step-size, -ss        Step size
+#   
+#   Optional:
+#     --model-path, -mp       Path to model file to be used for TEST and TEST_AUTO
+#     --global-budget, -gb    Global bitflip budget (0.0-1.0]
+#     --local-budget, -lb     Local bitflip budget (0.0-1.0]
+#     --help, -h              Show this help message
 #
 ##########################################################################################
 
 # source flags and colour definitions from conf file
 source flags.conf 
 
-# Read the first array - PROTECT_LAYERS (assumes the array ends with "END1")
-PROTECT_LAYERS=()
-while [[ $1 != "END1" ]]; do
-    PROTECT_LAYERS+=("$1")
-    shift
+# Default values
+TRAIN_MODEL=0
+TEST_MODEL=0
+TEST_AUTO=0
+GLOBAL_BITFLIP_BUDGET=0.0
+LOCAL_BITFLIP_BUDGET=0.0
+
+## params fixed for RTM
+TEST_ERROR=1
+TEST_RTM=1
+
+print_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  --protect-layers, -pl   Array of layer protection flags (space-separated, 1:protected | 0:unprotected)"
+    echo "  --perrors, -p           Array of misalignment fault rates (space-separated)"
+    echo "  --operation, -o         TRAIN or TEST or TEST_AUTO"
+    echo "  --loops, -l             Number of experiment loops (0-100] (if --operation=TRAIN -> use --epochs instead)"
+    echo "  --model, -m             Neural network model (MNIST|FMNIST|CIFAR|RESNET)"
+    echo "  --kernel-size, -ks      Kernel size for conv layers (0 if none)"
+    echo "  --kernel-mapping, -km   Mapping configuration of weights in kernels (ROW|COL|CLW|ACW)"
+    echo "  --rt-size, -rs          Racetrack size (typically 64)"
+    echo "  --rt-mapping, -rm       Mapping configuration of data onto racetracks (ROW|COL|MIX)"
+    echo "  --layer-config, -lc     Layer configuration of unprotected layers (ALL|CUSTOM|INDIV)"
+    echo "  --gpu, -g               GPU ID to run computations on (0|1)"
+    echo ""
+    echo "Training specific options:"
+    echo "  --epochs, -e            Number of training epochs"
+    echo "  --batch-size, -bs       Batch size"
+    echo "  --learning-rate, -lr    Learning rate"
+    echo "  --step-size, -ss        Step size"
+    echo ""
+    echo "Optional:"
+    echo "  --model-path, -mp       Path to model file to be used for TEST and TEST_AUTO"
+    echo "  --global-budget, -gb    Global bitflip budget (0.0-1.0]"
+    echo "  --local-budget, -lb     Local bitflip budget (0.0-1.0]"
+    echo "  --help, -h              Show this help message"
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --protect-layers|-pl)
+            PROTECT_LAYERS=()
+            shift
+            # Read all arguments until the next flag
+            while [[ $# -gt 0 && ! $1 =~ ^(-{1,2}) ]]; do
+                PROTECT_LAYERS+=("$1")
+                shift
+            done
+            ;;
+        --perrors|-p)
+            PERRORS=()
+            shift
+            # Read all arguments until the next flag
+            while [[ $# -gt 0 && ! $1 =~ ^(-{1,2}) ]]; do
+                PERRORS+=("$1")
+                shift
+            done
+            ;;
+        --operation|-o)
+            OPERATION="$2"
+            shift 2
+            ;;
+        --loops|-l)
+            LOOPS="$2"
+            shift 2
+            ;;
+        --model|-m)
+            NN_MODEL="$2"
+            shift 2
+            ;;
+        --kernel-size|-ks)
+            KERNEL_SIZE="$2"
+            shift 2
+            ;;
+        --kernel-mapping|-km)
+            KERNEL_MAPPING="$2"
+            shift 2
+            ;;
+        --rt-size|-rs)
+            RT_SIZE="$2"
+            shift 2
+            ;;
+        --rt-mapping|-rm)
+            GLOBAL_RT_MAPPING="$2"
+            shift 2
+            ;;
+        --layer-config|-lc)
+            LAYER_CONFIG="$2"
+            shift 2
+            ;;
+        --gpu|-g)
+            GPU_ID="$2"
+            shift 2
+            ;;
+        --model-path|-mp)
+            MODEL_PATH="$2"
+            shift 2
+            ;;
+        --epochs|-e)
+            EPOCHS="$2"
+            shift 2
+            ;;
+        --batch-size|-bs)
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
+        --learning-rate|-lr)
+            LR="$2"
+            shift 2
+            ;;
+        --step-size|-ss)
+            STEP_SIZE="$2"
+            shift 2
+            ;;
+        --global-budget|-gb)
+            GLOBAL_BITFLIP_BUDGET="$2"
+            shift 2
+            ;;
+        --local-budget|-lb)
+            LOCAL_BITFLIP_BUDGET="$2"
+            shift 2
+            ;;
+        --help|-h)
+            print_usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown parameter: $1"
+            print_usage
+            exit 1
+            ;;
+    esac
 done
-shift # Skip the "END1" token
 
-# Read the second array - PERRORS (assumes the array ends with "END2")
-PERRORS=()
-while [[ $1 != "END2" ]]; do
-    PERRORS+=("$1")
-    shift
-done
-shift # Skip the "END2" token
-
-# required args
-OPERATION=$1    # TRAIN     TEST
-shift
-LOOPS=$1        #
-shift
-NN_MODEL="$1"   # FMNIST    CIFAR   RESNET
-shift
-
-KERNEL_SIZE=$1  # 3         5       7
-shift
-KERNEL_MAPPING=$1   #       ROW     COL     CLW     ACW
-
+## Check if all required arguments are provided correctly
 if [[ ! $KERNEL_MAPPING =~ ^(ROW|COL|CLW|ACW)$ ]]; then
     echo -e "\n${RED}Kernel mapping ($KERNEL_MAPPING) must be ROW, COL, CLW, or ACW${RESET}\n"
     exit 1
 fi
-
-shift
-RT_SIZE=$1      # 64
-shift
-GLOBAL_RT_MAPPING=$1 #      ROW     COL     MIX
 
 if [[ ! $GLOBAL_RT_MAPPING =~ ^(ROW|COL|MIX)$ ]]; then
     echo -e "\n${RED}Global RT mapping ($GLOBAL_RT_MAPPING) must be ROW, COL, or MIX${RESET}\n"
     exit 1
 fi
 
-shift
-LAYER_CONFIG=$1 # INDIV     ALL     CUSTOM
-shift
-GPU_ID=$1       # 0         1       
-shift
-
-## params fixed for RTM
-TEST_ERROR=1
-TEST_RTM=1
-
-TRAIN_MODEL=0
-TEST_AUTO=0
 
 if [[ "$OPERATION" == "TRAIN" ]];
 then
-    ## params for RTM training
     TRAIN_MODEL=1
-    
-    EPOCHS=$1       # 10
-    shift
-    BATCH_SIZE=$1   # 256
-    shift
-    LR=$1           # 0.001
-    shift
-    STEP_SIZE=$1    # 25
-    shift
+
+elif [[ "$OPERATION" == "TEST" ]];
+then
+    TEST_MODEL=1
 
 elif [[ "$OPERATION" == *"TEST_AUTO"* ]];
 then
     TEST_AUTO=1
 
-    GLOBAL_BITFLIP_BUDGET=0.0
-    LOCAL_BITFLIP_BUDGET=0.0
-
-    MODEL_PATH=$1
-    shift
-
     MODEL_DIR=$(dirname "$MODEL_PATH")
     MODEL_NAME=$(basename "$MODEL_PATH" .pt)
-
-elif [[ "$OPERATION" == "TEST" ]];
-then
-    # optional args
-    GLOBAL_BITFLIP_BUDGET=${1:-0.0}
-    shift
-    LOCAL_BITFLIP_BUDGET=${1:-0.0}
-    shift
-
 fi
 
 if [ "$TRAIN_MODEL" = 0 ]; then
@@ -252,6 +322,8 @@ then
     MODEL="VGG3"
     DATASET="FMNIST"
     TEST_BATCH_SIZE=10000 # adjust to execute TEST_BATCH_SIZE/batches images at once in each inference iteration
+    # !TODO different TEST_BATCH_SIZEs + in combination with 10000/TEST_BATCH_SIZE = N index_offset iterations that do not execute inference (consistency -> test before and after)
+    # TEST_BATCH_SIZE=200 # 500/250...
 
     if [ "$TRAIN_MODEL" = 0 ]
     then

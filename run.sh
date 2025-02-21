@@ -4,53 +4,179 @@
 #   LDB
 #   
 #   Helper script for automating array generation and ease of use of main script for running RTM misalignment fault simulation for BNNs
-# 
-#   ### Arguments:
-#   `OPERATION`:                TRAIN or TEST 
-#   `loops`:                    amount of loops the experiment should run (0, 100] (not used if OPERATION=TRAIN -> use `epochs` instead)
-#   `nn_model`:                 FMNIST, CIFAR, RESNET
-#   {arr_perrors}:              Array of misalignment fault rates to be tested/trained (floats)
-#   `PERRORS`:                  REQUIRED: array termination token
-#   `kernel_size`:              size of kernel used for calculations in convolutional layers (if none then use 0)
-#   `kernel_mapping`:           mapping configuration of weights in kernels: ROW, COL, CLW, or ACW (i.e. clockwise or anti-clockwise)
-#   `rt_size`:                  racetrack/nanowire size (typically 64)
-#   `global_rt_mapping`:        mapping configuration of data onto racetracks: ROW, COL or MIX
-#   {arr_layer_ids}:            [OPTIONAL] specify optional layer_ids in an array (starting at 1 upto total_layers) ONLY BEFORE `layer_config` WITH TERMINATION `CUSTOM`!
-#   `layer_config`:             unprotected layers configuration (ALL, CUSTOM, INDIV). Note that if no optional {arr_layer_ids} is specified, CUSTOM will execute DEFAULT CUSTOM defined manually in run.sh
-#   `gpu_id`:                   ID of GPU to use for computations (0, 1) 
 #
-#   ### Additional required arguments if OPERATION = TRAIN
-#   `epochs`:                   number of training epochs
-#   `batch_size`:               batch size
-#   `lr`:                       learning rate
-#   `step_size`:                step size
-#
-#   ### Optional arguments:
-#   `global_bitflip_budget`:    default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
-#   `local_bitflip_budget`:     default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
+#   Arguments:
+#     --operation, -o         TRAIN or TEST or TEST_AUTO
+#     --loops, -l             Number of experiment loops (0-100] (if --operation=TRAIN -> use --epochs instead)
+#     --model, -m             Neural network model (MNIST|FMNIST|CIFAR|RESNET)
+#     --perrors, -p           Array of misalignment fault rates (space-separated)
+#     --kernel-size, -ks      Kernel size for conv layers (0 if none)
+#     --kernel-mapping, -km   Mapping configuration of weights in kernels (ROW|COL|CLW|ACW)
+#     --rt-size, -rs          Racetrack size (typically 64)
+#     --rt-mapping, -rm       Mapping configuration of data onto racetracks (ROW|COL|MIX)
+#     --layer-config, -lc     Layer configuration of unprotected layers (ALL|CUSTOM|INDIV)
+#     --layers, -ls           Layer IDs array to be left unprotected (space-separated, if --layer-config=CUSTOM)
+#     --gpu, -g               GPU ID to run computations on (0|1)
+#   
+#   Training specific options:
+#     --epochs, -e            Number of training epochs
+#     --batch-size, -bs       Batch size
+#     --learning-rate, -lr    Learning rate
+#     --step-size, -ss        Step size
+#   
+#   Optional:
+#     --model-path, -mp       Path to model file to be used for TEST and TEST_AUTO
+#     --global-budget, -gb    Global bitflip budget (0.0-1.0]
+#     --local-budget, -lb     Local bitflip budget (0.0-1.0]
+#     --help, -h              Show this help message
 #
 ##########################################################################################
-
-start_time=$(date +%s.%N)
 
 # source flags and colour definitions from conf file
 source flags.conf 
 
-## Fixed ending tokens for array arguments when calling main script
-END1="END1"
-END2="END2"
-
-## Specify the operation: TRAIN or TEST
-OPERATION=$1
-
+# Default values
 TRAIN_MODEL=0
+TEST_MODEL=0
 TEST_AUTO=0
+GLOBAL_BITFLIP_BUDGET=0.0
+LOCAL_BITFLIP_BUDGET=0.0
 
+print_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  --operation, -o         TRAIN or TEST or TEST_AUTO"
+    echo "  --loops, -l             Number of experiment loops (0-100] (if --operation=TRAIN -> use --epochs instead)"
+    echo "  --model, -m             Neural network model (MNIST|FMNIST|CIFAR|RESNET)"
+    echo "  --perrors, -p           Array of misalignment fault rates (space-separated)"
+    echo "  --kernel-size, -ks      Kernel size for conv layers (0 if none)"
+    echo "  --kernel-mapping, -km   Mapping configuration of weights in kernels (ROW|COL|CLW|ACW)"
+    echo "  --rt-size, -rs          Racetrack size (typically 64)"
+    echo "  --rt-mapping, -rm       Mapping configuration of data onto racetracks (ROW|COL|MIX)"
+    echo "  --layer-config, -lc     Layer configuration of unprotected layers (ALL|CUSTOM|INDIV)"
+    echo "  --layers, -ls           Layer IDs array to be left unprotected (space-separated, if --layer-config=CUSTOM)"
+    echo "  --gpu, -g               GPU ID to run computations on (0|1)"
+    echo ""
+    echo "Training specific options:"
+    echo "  --epochs, -e            Number of training epochs"
+    echo "  --batch-size, -bs       Batch size"
+    echo "  --learning-rate, -lr    Learning rate"
+    echo "  --step-size, -ss        Step size"
+    echo ""
+    echo "Optional:"
+    echo "  --model-path, -mp       Path to model file to be used for TEST and TEST_AUTO"
+    echo "  --global-budget, -gb    Global bitflip budget (0.0-1.0]"
+    echo "  --local-budget, -lb     Local bitflip budget (0.0-1.0]"
+    echo "  --help, -h              Show this help message"
+}
+
+start_time=$(date +%s.%N)
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --operation|-o)
+            OPERATION="$2"
+            shift 2
+            ;;
+        --loops|-l)
+            LOOPS="$2"
+            shift 2
+            ;;
+        --model|-m)
+            NN_MODEL="$2"
+            shift 2
+            ;;
+        --perrors|-p)
+            PERRORS=()
+            shift
+            # Read all arguments until the next flag
+            while [[ $# -gt 0 && ! $1 =~ ^(-{1,2}) ]]; do
+                PERRORS+=("$1")
+                shift
+            done
+            ;;
+        --kernel-size|-ks)
+            KERNEL_SIZE="$2"
+            shift 2
+            ;;
+        --kernel-mapping|-km)
+            KERNEL_MAPPING="$2"
+            shift 2
+            ;;
+        --rt-size|-rs)
+            RT_SIZE="$2"
+            shift 2
+            ;;
+        --rt-mapping|-rm)
+            GLOBAL_RT_MAPPING="$2"
+            shift 2
+            ;;
+        --layer-config|-lc)
+            LAYER_CONFIG="$2"
+            shift 2
+            ;;
+        --layers|-ls)
+            LAYERS=()
+            shift
+            # Read all arguments until the next flag
+            while [[ $# -gt 0 && ! $1 =~ ^(-{1,2}) ]]; do
+                LAYERS+=("$1")
+                shift
+            done
+            ;;
+        --gpu|-g)
+            GPU_ID="$2"
+            shift 2
+            ;;
+        --model-path|-mp)
+            MODEL_PATH="$2"
+            shift 2
+            ;;
+        --epochs|-e)
+            EPOCHS="$2"
+            shift 2
+            ;;
+        --batch-size|-bs)
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
+        --learning-rate|-lr)
+            LR="$2"
+            shift 2
+            ;;
+        --step-size|-ss)
+            STEP_SIZE="$2"
+            shift 2
+            ;;
+        --global-budget|-gb)
+            GLOBAL_BITFLIP_BUDGET="$2"
+            shift 2
+            ;;
+        --local-budget|-lb)
+            LOCAL_BITFLIP_BUDGET="$2"
+            shift 2
+            ;;
+        --help|-h)
+            print_usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown parameter: $1"
+            print_usage
+            exit 1
+            ;;
+    esac
+done
+
+## Check if all required arguments are provided correctly
 if [[ "$OPERATION" == "TRAIN" || "$OPERATION" == "TEST" || "$OPERATION" == *"TEST_AUTO"* ]]; 
 then
     echo -e "\n${CYAN}Executing $OPERATION Operation${RESET}\n"
     if [ "$OPERATION" == "TRAIN" ]; then
         TRAIN_MODEL=1
+    elif [ "$OPERATION" == "TEST" ]; then
+        TEST_MODEL=1
     elif [ "$OPERATION" == *"TEST_AUTO"* ]; then
         TEST_AUTO=1
     fi
@@ -59,95 +185,6 @@ else
     exit 1
 fi
 
-shift
-LOOPS=$1
-shift
-NN_MODEL="$1"
-shift
-PERRORS_TOKEN=$1
-
-## Specify PERRORS array of misalignment faults to be tested. Values can be distinct or equal or both
-## ARRAY HAS TO END WITH "PERRORS" ENDING TOKEN! 
-if [[ ! $PERRORS_TOKEN = ^[0-9]+$ ]]; then 
-    ## TODO SOLVE INFINITE LOOP!!!
-    PERRORS=()
-    while [[ $1 != "PERRORS" ]]; do
-        PERRORS+=("$1")
-        shift
-    done
-    PERRORS_TOKEN=$1
-else
-    echo -e "\n${RED}Misalignment fault values not defined before PERRORS ending token OR missing PERRORS ending token before NN_MODEL argument!${RESET}\n"
-    exit 1
-fi
-
-## Required args
-shift
-KERNEL_SIZE=$1
-shift
-KERNEL_MAPPING=$1
-
-if [[ ! $KERNEL_MAPPING =~ ^(ROW|COL|CLW|ACW)$ ]]; then
-    echo -e "\n${RED}Kernel mapping ($KERNEL_MAPPING) must be ROW, COL, CLW, or ACW${RESET}\n"
-    exit 1
-fi
-
-shift
-RT_SIZE=$1
-shift
-GLOBAL_RT_MAPPING=$1 #      ROW     COL     MIX
-
-if [[ ! $GLOBAL_RT_MAPPING =~ ^(ROW|COL|MIX)$ ]]; then
-    echo -e "\n${RED}Global RT mapping ($GLOBAL_RT_MAPPING) must be ROW, COL, or MIX${RESET}\n"
-    exit 1
-fi
-
-shift
-LAYER_CONFIG=$1
-
-## LAYER_CONFIG can be specified as: ALL, INDIV, CUSTOM, {LAYERS} CUSTOM
-## if {LAYERS} is specified, the specified layers will be left unprotected (e.g. 1 3 CUSTOM protects all layers except the first and third layer)
-if [[ ! $LAYER_CONFIG =~ ^(ALL|CUSTOM|INDIV)$ ]]; then 
-    # Read the LAYERS array (assumes the array ends with "CUSTOM"!) 
-    # -> if no LAYERS are specified, use default CUSTOM configs
-    LAYERS=()
-    while [[ $1 != "CUSTOM" ]]; do
-        LAYERS+=("$1")
-        shift
-    done
-    LAYER_CONFIG=$1
-fi
-
-shift
-GPU_ID=$1
-shift
-if [ "$TRAIN_MODEL" = 1 ]; then
-    ## params for RTM training
-
-    EPOCHS=$1       # 10
-    shift
-    BATCH_SIZE=$1   # 256
-    shift
-    LR=$1           # 0.001
-    shift
-    STEP_SIZE=$1    # 25
-    shift
-
-elif [ "$TEST_AUTO" = 1 ]; then
-
-    GLOBAL_BITFLIP_BUDGET=0.0
-    LOCAL_BITFLIP_BUDGET=0.0
-
-    MODEL_PATH=$1
-    shift
-
-else
-    # optional args
-    GLOBAL_BITFLIP_BUDGET=${1:-0.0}
-    shift
-    LOCAL_BITFLIP_BUDGET=${1:-0.0}
-    shift
-fi 
 
 ## Specify the number of total layers in NN model
 if [ "$NN_MODEL" = "MNIST" ]
@@ -185,7 +222,7 @@ if [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
                 if [ $l -gt 0 ] && [ $l -le $layers_total ]; then
                     PROTECT_LAYERS[$l-1]=0
                 else
-                    echo -e "\n${RED}Specified layer $l is outside of the bounds for $NN_MODEL = (0, $layers_total]. Note that layer numberring starts at 1 instead of 0.${RESET}\n"
+                    echo -e "\n${RED}Specified layer $l is outside of the bounds for $NN_MODEL = (0, $layers_total]. Note that layer numbering starts at 1 instead of 0.${RESET}\n"
                     exit 1
                 fi
             done
@@ -238,28 +275,105 @@ if [[ $LAYER_CONFIG == *"ALL"* ]]; then
     PROTECT_LAYERS=($(for i in $(seq 1 $layers_total); do echo 0; done))
 
     if [ "$TRAIN_MODEL" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                       --perrors "${PERRORS[@]}" \
+                       --operation "$OPERATION" \
+                       --loops "$LOOPS" \
+                       --model "$NN_MODEL" \
+                       --kernel-size "$KERNEL_SIZE" \
+                       --kernel-mapping "$KERNEL_MAPPING" \
+                       --rt-size "$RT_SIZE" \
+                       --rt-mapping "$GLOBAL_RT_MAPPING" \
+                       --layer-config "$LAYER_CONFIG" \
+                       --gpu "$GPU_ID" \
+                       --epochs "$EPOCHS" \
+                       --batch-size "$BATCH_SIZE" \
+                       --learning-rate "$LR" \
+                       --step-size "$STEP_SIZE" \
+                       --global-budget "$GLOBAL_BITFLIP_BUDGET" \
+                       --local-budget "$LOCAL_BITFLIP_BUDGET"
         
-    elif  [ "$TEST_AUTO" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $MODEL_PATH
-
+    elif [ "$TEST_AUTO" = 1 ]; then
+        bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                       --perrors "${PERRORS[@]}" \
+                       --operation "$OPERATION" \
+                       --loops "$LOOPS" \
+                       --model "$NN_MODEL" \
+                       --kernel-size "$KERNEL_SIZE" \
+                       --kernel-mapping "$KERNEL_MAPPING" \
+                       --rt-size "$RT_SIZE" \
+                       --rt-mapping "$GLOBAL_RT_MAPPING" \
+                       --layer-config "$LAYER_CONFIG" \
+                       --gpu "$GPU_ID" \
+                       --model-path "$MODEL_PATH"
     else
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                       --perrors "${PERRORS[@]}" \
+                       --operation "$OPERATION" \
+                       --loops "$LOOPS" \
+                       --model "$NN_MODEL" \
+                       --kernel-size "$KERNEL_SIZE" \
+                       --kernel-mapping "$KERNEL_MAPPING" \
+                       --rt-size "$RT_SIZE" \
+                       --rt-mapping "$GLOBAL_RT_MAPPING" \
+                       --layer-config "$LAYER_CONFIG" \
+                       --gpu "$GPU_ID" \
+                       --global-budget "$GLOBAL_BITFLIP_BUDGET" \
+                       --local-budget "$LOCAL_BITFLIP_BUDGET"
         
         total=$((${#PERRORS[@]}*$LOOPS))
         echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"
-    fi 
+    fi
 
 elif [[ $LAYER_CONFIG == *"CUSTOM"* ]]; then
     # echo "Number of unprotected layers: CUSTOM"
 
     if [ "$TRAIN_MODEL" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                       --perrors "${PERRORS[@]}" \
+                       --operation "$OPERATION" \
+                       --loops "$LOOPS" \
+                       --model "$NN_MODEL" \
+                       --kernel-size "$KERNEL_SIZE" \
+                       --kernel-mapping "$KERNEL_MAPPING" \
+                       --rt-size "$RT_SIZE" \
+                       --rt-mapping "$GLOBAL_RT_MAPPING" \
+                       --layer-config "$LAYER_CONFIG" \
+                       --gpu "$GPU_ID" \
+                       --epochs "$EPOCHS" \
+                       --batch-size "$BATCH_SIZE" \
+                       --learning-rate "$LR" \
+                       --step-size "$STEP_SIZE" \
+                       --global-budget "$GLOBAL_BITFLIP_BUDGET" \
+                       --local-budget "$LOCAL_BITFLIP_BUDGET"
     
-    elif  [ "$TEST_AUTO" = 1 ]; then
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $MODEL_PATH
+    elif [ "$TEST_AUTO" = 1 ]; then
+        bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                       --perrors "${PERRORS[@]}" \
+                       --operation "$OPERATION" \
+                       --loops "$LOOPS" \
+                       --model "$NN_MODEL" \
+                       --kernel-size "$KERNEL_SIZE" \
+                       --kernel-mapping "$KERNEL_MAPPING" \
+                       --rt-size "$RT_SIZE" \
+                       --rt-mapping "$GLOBAL_RT_MAPPING" \
+                       --layer-config "$LAYER_CONFIG" \
+                       --gpu "$GPU_ID" \
+                       --model-path "$MODEL_PATH"
     else
-        bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $LAYER_CONFIG $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+        bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                       --perrors "${PERRORS[@]}" \
+                       --operation "$OPERATION" \
+                       --loops "$LOOPS" \
+                       --model "$NN_MODEL" \
+                       --kernel-size "$KERNEL_SIZE" \
+                       --kernel-mapping "$KERNEL_MAPPING" \
+                       --rt-size "$RT_SIZE" \
+                       --rt-mapping "$GLOBAL_RT_MAPPING" \
+                       --layer-config "$LAYER_CONFIG" \
+                       --gpu "$GPU_ID" \
+                       --global-budget "$GLOBAL_BITFLIP_BUDGET" \
+                       --local-budget "$LOCAL_BITFLIP_BUDGET"
         
         total=$((${#PERRORS[@]}*$LOOPS))
         echo -e "\n${PURPLE}Total individual experiments: ${#PERRORS[@]}x${LOOPS} = ${total}${RESET}"        
@@ -278,11 +392,50 @@ elif [[ $LAYER_CONFIG == *"INDIV"* ]]; then
 
         ## Run the bash file
         if [ "$TRAIN_MODEL" = 1 ]; then
-            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $EPOCHS $BATCH_SIZE $LR $STEP_SIZE $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+            bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                           --perrors "${PERRORS[@]}" \
+                           --operation "$OPERATION" \
+                           --loops "$LOOPS" \
+                           --model "$NN_MODEL" \
+                           --kernel-size "$KERNEL_SIZE" \
+                           --kernel-mapping "$KERNEL_MAPPING" \
+                           --rt-size "$RT_SIZE" \
+                           --rt-mapping "$GLOBAL_RT_MAPPING" \
+                           --layer-config "$layer_id" \
+                           --gpu "$GPU_ID" \
+                           --epochs "$EPOCHS" \
+                           --batch-size "$BATCH_SIZE" \
+                           --learning-rate "$LR" \
+                           --step-size "$STEP_SIZE" \
+                           --global-budget "$GLOBAL_BITFLIP_BUDGET" \
+                           --local-budget "$LOCAL_BITFLIP_BUDGET"
         elif [ "$TEST_AUTO" = 1 ]; then
-            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $MODEL_PATH
+            bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                           --perrors "${PERRORS[@]}" \
+                           --operation "$OPERATION" \
+                           --loops "$LOOPS" \
+                           --model "$NN_MODEL" \
+                           --kernel-size "$KERNEL_SIZE" \
+                           --kernel-mapping "$KERNEL_MAPPING" \
+                           --rt-size "$RT_SIZE" \
+                           --rt-mapping "$GLOBAL_RT_MAPPING" \
+                           --layer-config "$layer_id" \
+                           --gpu "$GPU_ID" \
+                           --model-path "$MODEL_PATH"
         else
-            bash run_all.sh "${PROTECT_LAYERS[@]}" $END1 "${PERRORS[@]}" $END2 $OPERATION $LOOPS $NN_MODEL $KERNEL_SIZE $KERNEL_MAPPING $RT_SIZE $GLOBAL_RT_MAPPING $layer_id $GPU_ID $GLOBAL_BITFLIP_BUDGET $LOCAL_BITFLIP_BUDGET
+            bash run_all.sh --protect-layers "${PROTECT_LAYERS[@]}" \
+                           --perrors "${PERRORS[@]}" \
+                           --operation "$OPERATION" \
+                           --loops "$LOOPS" \
+                           --model "$NN_MODEL" \
+                           --kernel-size "$KERNEL_SIZE" \
+                           --kernel-mapping "$KERNEL_MAPPING" \
+                           --rt-size "$RT_SIZE" \
+                           --rt-mapping "$GLOBAL_RT_MAPPING" \
+                           --layer-config "$layer_id" \
+                           --gpu "$GPU_ID" \
+                           --global-budget "$GLOBAL_BITFLIP_BUDGET" \
+                           --local-budget "$LOCAL_BITFLIP_BUDGET"
         fi 
 
         ## Reset for next iteration

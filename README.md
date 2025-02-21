@@ -101,69 +101,58 @@ Print Flags & Parameter:
 - `PRNT_IND_OFF_AFTER_NRUN=uint` (select after how many runs to print if PRNT_IND_OFF_AFTER flag is set to True)
 
 
-### Launch 
+### Launch arguments:
+- `--operation, -o`         TRAIN or TEST or TEST_AUTO
+- `--loops, -l`             Number of experiment loops (0, 100] (if --operation=TRAIN -> use --epochs instead)
+- `--model, -m`             Neural network model (MNIST|FMNIST|CIFAR|RESNET)
+- `--perrors, -p`           Array of misalignment fault rates (space-separated)
+- `--kernel-size, -ks`      Kernel size for conv layers (0 if none)
+- `--kernel-mapping, -km`   Mapping configuration of weights in kernels (ROW|COL|CLW|ACW)
+- `--rt-size, -rs`          Racetrack size (typically 64)
+- `--rt-mapping, -rm`       Mapping configuration of data onto racetracks (ROW|COL|MIX)
+- `--layer-config, -lc`     Layer configuration of unprotected layers (ALL|CUSTOM|INDIV)
+- `--layers, -ls`           Layer IDs array to be left unprotected (space-separated, used if `--layer-config CUSTOM`)
+- `--gpu-id, -g`            GPU ID to run computations on (0|1)
+   
+Training specific options:
+- `--epochs, -e`            Number of training epochs
+- `--batch-size, -bs`       Batch size
+- `--learning-rate, -lr`    Learning rate
+- `--step-size, -ss`        Step size
 
-For Training
-```
-bash ./run.sh TRAIN {loops} {nn_model} {arr_perrors} PERRORS {kernel_size} {kernel_mapping} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {epochs} {batch_size} {lr} {step_size} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
-```
+Optional:
+- `--model-path, -mp`        Path to model file to be used for TEST and TEST_AUTO
+- `--global-budget, -gb`     Default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work
+- `--local-budget, -lb`      Default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work
+- `--help, -h`               Show this help message
 
-For Testing
-```
-bash ./run.sh TEST {loops} {nn_model} {arr_perrors} PERRORS {kernel_size} {kernel_mapping} {rt_size} {global_rt_mapping} {OPT: arr_layer_ids} {layer_config} {gpu_id} {OPT: global_bitflip_budget} {OPT: local_bitflip_budget}
-```
-
-### Arguments:
-- `OPERATION`: TRAIN or TEST 
-- `loops`: amount of loops the experiment should run (0, 100] (not used if OPERATION=TRAIN -> use `epochs` instead)
-- `nn_model`: FMNIST, CIFAR, RESNET
-- `{arr_perrors}`: Array of misalignment fault rates to be tested/trained (floats)
-- **`PERRORS`: REQUIRED: array termination token**
-- `kernel_size`: size of kernel used for calculations in convolutional layers (if none then use 0)
-- `kernel_mapping`: mapping configuration of weights in kernels: ROW, COL, CLW, or ACW (i.e. clockwise or anti-clockwise)
-- `rt_size`: racetrack/nanowire size (typically 64)
-- `global_rt_mapping`: mapping configuration of data onto racetracks: ROW, COL or MIX
-- `{arr_layer_ids}`: [OPTIONAL] specify optional layer_ids in an array (starting at 1 upto total_layers) ONLY BEFORE `layer_config` WITH TERMINATION `CUSTOM`!
-- `layer_config`: unprotected layers configuration (ALL, CUSTOM, INDIV). Note that if no optional {arr_layer_ids} is specified, CUSTOM will execute DEFAULT CUSTOM defined manually in run.sh
-- `gpu_id`: ID of GPU to use for computations (0, 1) 
-
-### Additional required arguments if OPERATION = TRAIN
-- `epochs`: number of training epochs
-- `batch_size`: batch size
-- `lr`: learning rate
-- `step_size`: step size
-
-### Optional arguments:
-- `global_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (global) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in the whole weight tensor of each layer). Note that both budgets have to be set to values > 0.0 to work.
-- `local_bitflip_budget`: default 0.0 (off) -> set to any float value between (0.0, 1.0] to activate (local) bitflip budget (equivalent to allowing (0%, 100%] of total bits flipped in each racetrack). Note that both budgets have to be set to values > 0.0 to work.
-
-### Example with OPERATION=TEST
+### Example for TEST operation
 
 ```
-bash ./run.sh TEST 2 MNIST 0.01 PERRORS 0 ROW 64 ROW CUSTOM 0
+bash ./run.sh -o TEST -l 2 --model MNIST --perrors 0.01 -ks 0 -km ROW -rs 64 -rm ROW --layer-config CUSTOM --gpu 0
 ```
-Testing for 2 inference iteration(s) the MNIST dataset at misalignment fault rates of 1%, using kernel of size 0 ROW (not needed but required arguments), racetrack of size 64 (tensor mapped row-wise onto racetrack) and protecting layers are **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
+Testing for 2 inference iteration(s) the MNIST dataset at misalignment fault rates of 1%, using kernel of size 0 mapped ROW (not needed but required arguments), racetrack of size 64 (tensor mapped row-wise onto racetrack) and protecting layers are **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
 
 ```
-bash ./run.sh TEST 1 FMNIST 0.1 PERRORS 3 CLW 64 COL CUSTOM 0
+bash ./run.sh -o TEST -l 1 --model FMNIST --perrors 0.1 -ks 3 -km CLW -rs 64 -rm COL --layer-config CUSTOM --layers 1 3 --gpu 0
 ```
-Testing for 1 inference iteration(s) the FMNIST dataset at misalignment fault rates of 10%, using kernel of size 3x3 (data mapped clockwise in kernel), racetrack of size 64 (tensor mapped column-wise onto racetrack) and protecting layers are **`DEFAULT CUSTOM` layer configuration (defined in `run.sh`)** on GPU 0.
+Testing for 1 inference iteration(s) the FMNIST dataset at misalignment fault rates of 10%, using kernel of size 3x3 (data mapped clockwise in kernel), racetrack of size 64 (tensor mapped column-wise onto racetrack) and testing for layers 1 and 3 **un**protected on GPU 0.
 
 ```
-bash ./run.sh TEST 10 CIFAR 0.1 0.01 PERRORS 3 COL 64 MIX 1 5 CUSTOM 0 0.15 0.3
+bash ./run.sh -o TEST -l 10 --model CIFAR --perrors 0.1 0.01 -ks 3 -km COL -rs 64 -rm COL --layer-config ALL --gpu 0 -gb 0.15 -lb 0.3
 ```
-Testing for 10 inference iteration(s) the CIFAR dataset at misalignment fault rates of 10% and 1% (separate runs), using kernel of size 3x3 (data mapped column-wise in kernel), racetrack of size 64 (tensor ideally mix-mapped row-/column-wise onto racetrack) and the **first and fifth layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
+Testing for 10 inference iteration(s) the CIFAR dataset at misalignment fault rates of 10% and 1% (separate runs), using kernel of size 3x3 (data mapped column-wise in kernel), racetrack of size 64 (tensor mapped column-wise onto racetrack) and with **all layers unprotected** on GPU 0 with a global bitflip budget of 15% and a local bitflip budget of 30%.
 
 ```
-bash ./run.sh TEST 10 RESNET 0.05 PERRORS 3 ACW 64 MIX INDIV 0
+bash ./run.sh -o TEST -l 10 --model RESNET --perrors 0.05 -ks 3 -km ACW -rs 64 -rm COL --layer-config INDIV --gpu 0
 ```
-Testing for 10 inference iteration(s) the RESNET dataset at misalignment fault rates of 5%, using kernel of size 3x3 (data mapped anticlockwise in kernel), racetrack of size 64 (tensor ideally mix-mapped row-/column-wise onto racetrack) and **each layer at a time unprotected in individual runs** on GPU 0.
+Testing for 10 inference iteration(s) the RESNET dataset at misalignment fault rates of 5%, using kernel of size 3x3 (data mapped anticlockwise in kernel), racetrack of size 64 (tensor mapped column-wise onto racetrack) and **each layer at a time unprotected in individual runs** on GPU 0.
 
 ### Example with OPERATION=TRAIN
 ```
-bash ./run.sh TRAIN 1 FMNIST 0.0001 PERRORS 3 ROW 64 ROW 1 2 CUSTOM 0 10 256 0.001 25
+bash ./run.sh -o TRAIN --model FMNIST --perrors 0.0001 -ks 3 -km ROW -rs 64 -rm ROW --layer-config CUSTOM --layers 1 2 --gpu 0 --epochs 10 -bs 256 -lr 0.001 -ss 25
 ```
-Training for 1 loop (not used for training -> use epochs instead) the FMNIST dataset at misalignment fault rates of 10^(-4), using kernel of size 3x3 (data mapped clockwise in kernel), racetrack of size 64 (tensor mapped row-wise onto racetrack) and the **first and second layers are unprotected*** on GPU 0. Training parameters are: epochs=10, batch_size=256, learning_rate=0.001, step_size=25.
+Training the FMNIST dataset at misalignment fault rates of 10^(-4), using kernel of size 3x3 (data mapped clockwise in kernel), racetrack of size 64 (tensor mapped row-wise onto racetrack) and the **first and second layers are unprotected*** on GPU 0. Training parameters are: epochs=10, batch_size=256, learning_rate=0.001, step_size=25.
 
 
 ### Troubleshooting
