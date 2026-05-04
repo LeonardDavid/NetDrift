@@ -1,0 +1,153 @@
+"""YAML config loader: schema validation, includes, and CLI overrides.
+
+CPU-safe — no GPU work here.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from netdrift.config import (
+    ExperimentConfig,
+    load,
+    parse_overrides,
+)
+
+
+def _write(tmp_path: Path, name: str, body: str) -> Path:
+    path = tmp_path / name
+    path.write_text(body)
+    return path
+
+
+def test_minimal_config_loads_with_defaults(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "experiment:\n  name: hello\n")
+    cfg = load(cfg_path)
+    assert isinstance(cfg, ExperimentConfig)
+    assert cfg.experiment.name == "hello"
+    # defaults from the dataclass tree
+    assert cfg.quant.scheme == "binary"
+    assert cfg.fault.model == "rtm_misalignment"
+    assert cfg.training.mode == "test"
+
+
+def test_full_config_round_trip(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "full.yaml", """
+experiment:
+  name: rtm_sweep
+  seed: 7
+
+model:
+  name: resnet18_cifar10
+  checkpoint: /tmp/ckpt.pt
+  checkpoint_mode: fp32_warmstart
+
+data:
+  name: cifar10
+  batch_size: 128
+
+quant:
+  scheme: binary
+  scale_init: max_abs
+
+storage:
+  layout: row
+  rt_size: 64
+  kernel_mapping: clw
+
+fault:
+  model: rtm_misalignment
+  rt_error: [0.001, 0.01, 0.05]
+  mitigations:
+    - bin_revert_mid
+  protection:
+    policy: custom
+    layers: [1, 2]
+
+training:
+  mode: train
+  fault_aware: ste_inject
+  epochs: 5
+  lr: 0.001
+
+metrics:
+  online: [bitflips, misalign_faults]
+  sinks:
+    - type: jsonl
+    - type: stdout
+""")
+    cfg = load(cfg_path)
+    assert cfg.experiment.seed == 7
+    assert cfg.model.checkpoint_mode == "fp32_warmstart"
+    assert cfg.fault.rt_error == [0.001, 0.01, 0.05]
+    assert cfg.fault.mitigations == ["bin_revert_mid"]
+    assert cfg.fault.protection.policy == "custom"
+    assert cfg.fault.protection.layers == [1, 2]
+    assert cfg.training.fault_aware == "ste_inject"
+    assert cfg.metrics.online == ["bitflips", "misalign_faults"]
+    assert [s.type for s in cfg.metrics.sinks] == ["jsonl", "stdout"]
+
+
+def test_defaults_include_resolves_relative(tmp_path: Path) -> None:
+    defaults_dir = tmp_path / "_defaults"
+    defaults_dir.mkdir()
+    _write(
+        defaults_dir, "data_cifar10.yaml",
+        "data:\n  name: cifar10\n  batch_size: 64\n",
+    )
+    cfg_path = _write(tmp_path, "exp.yaml", """
+defaults:
+  - _defaults/data_cifar10.yaml
+
+experiment:
+  name: from_defaults
+""")
+    cfg = load(cfg_path)
+    assert cfg.experiment.name == "from_defaults"
+    assert cfg.data.name == "cifar10"
+    assert cfg.data.batch_size == 64
+
+
+def test_cli_override_applies_after_yaml(tmp_path: Path) -> None:
+    cfg_path = _write(
+        tmp_path, "exp.yaml",
+        "fault:\n  rt_error: 0.0\n  protection:\n    policy: all\n",
+    )
+    cfg = load(
+        cfg_path,
+        overrides=parse_overrides([
+            "fault.rt_error=0.05",
+            "fault.protection.policy=custom",
+            "fault.protection.layers=[1,2]",
+        ]),
+    )
+    assert cfg.fault.rt_error == 0.05
+    assert cfg.fault.protection.policy == "custom"
+    assert cfg.fault.protection.layers == [1, 2]
+
+
+def test_override_string_value_passes_through(tmp_path: Path) -> None:
+    """Strings that don't parse as JSON should reach the schema verbatim."""
+    cfg_path = _write(tmp_path, "exp.yaml", "experiment:\n  name: orig\n")
+    cfg = load(cfg_path, overrides=["experiment.name=experiment-foo"])
+    assert cfg.experiment.name == "experiment-foo"
+
+
+def test_malformed_override_rejected() -> None:
+    with pytest.raises(ValueError, match="key=value"):
+        parse_overrides(["fault.rt_error"])
+
+
+def test_unknown_dataclass_field_silently_ignored(tmp_path: Path) -> None:
+    """Extra YAML keys are dropped (forward-compatible) rather than raising."""
+    cfg_path = _write(
+        tmp_path, "exp.yaml",
+        "experiment:\n  name: ok\n  unknown_field: 42\n",
+    )
+    cfg = load(cfg_path)
+    assert cfg.experiment.name == "ok"
+    # No attribute leak.
+    assert not hasattr(cfg.experiment, "unknown_field")

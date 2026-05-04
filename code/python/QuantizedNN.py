@@ -8,7 +8,7 @@ from torch.autograd import Function
 
 import numpy as np
 
-from cuda.racetrack import racetrack_sim
+from legacy_cuda.racetrack import racetrack_sim
 
 class Quantize(Function):
     @staticmethod

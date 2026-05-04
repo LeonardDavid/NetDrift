@@ -1,0 +1,78 @@
+{
+  "experiment": {
+    "name": "vgg7_cifar10_rtm_baseline",
+    "output_dir": "runs/",
+    "seed": 1
+  },
+  "model": {
+    "name": "vgg7_cifar10",
+    "checkpoint": null,
+    "checkpoint_mode": "strict",
+    "kernel_size": 3,
+    "skip_first_quant": false,
+    "skip_last_quant": false
+  },
+  "data": {
+    "name": "cifar10",
+    "batch_size": 256,
+    "test_batch_size": 256,
+    "num_workers": 1,
+    "data_dir": "data"
+  },
+  "quant": {
+    "scheme": "binary",
+    "bits": 1,
+    "bits_per_channel": null,
+    "scale_init": "max_abs"
+  },
+  "storage": {
+    "layout": "row",
+    "rt_size": 64,
+    "kernel_mapping": "row"
+  },
+  "fault": {
+    "model": "rtm_misalignment",
+    "rt_error": [
+      0.001,
+      0.01,
+      0.05,
+      0.1
+    ],
+    "global_bitflip_budget": 0.0,
+    "local_bitflip_budget": 0.0,
+    "mitigations": [],
+    "protection": {
+      "policy": "all",
+      "layers": null,
+      "indiv_layer": null
+    }
+  },
+  "training": {
+    "mode": "test",
+    "fault_aware": "none",
+    "epochs": 10,
+    "loops": 1,
+    "lr": 1.0,
+    "gamma": 0.1,
+    "step_size": 5
+  },
+  "metrics": {
+    "online": [
+      "bitflips",
+      "misalign_faults",
+      "affected_units"
+    ],
+    "offline": [],
+    "sinks": [
+      {
+        "type": "stdout",
+        "project": null
+      },
+      {
+        "type": "jsonl",
+        "project": null
+      }
+    ]
+  },
+  "gpu_num": 0
+}

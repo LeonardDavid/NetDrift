@@ -1,0 +1,57 @@
+# VGG7 / CIFAR-10 baseline RTM-fault sweep.
+#
+# Replicates the most common legacy use case:
+# - Pre-trained binary VGG7 checkpoint (loaded strict from HuggingFace).
+# - RTM misalignment fault model with a sweep over rt_error.
+# - All layers unprotected; no mitigation.
+# - Test mode: run inference once per rt_error.
+
+experiment:
+  name: vgg7_cifar10_rtm_baseline
+  output_dir: runs/
+  seed: 1
+
+model:
+  name: vgg7_cifar10
+  checkpoint: null              # set to your local path or hf:// URL
+  checkpoint_mode: strict       # strict | fp32_warmstart | scheme_transfer
+  kernel_size: 3
+
+data:
+  name: cifar10
+  batch_size: 256
+  test_batch_size: 256
+  num_workers: 1
+  data_dir: data
+
+quant:
+  scheme: binary
+  scale_init: max_abs
+
+storage:
+  layout: row
+  rt_size: 64
+  kernel_mapping: row           # row | col | clw | acw
+
+fault:
+  model: rtm_misalignment
+  rt_error: [0.001, 0.01, 0.05, 0.1]
+  global_bitflip_budget: 0.0
+  local_bitflip_budget: 0.0
+  mitigations: []               # default: no mitigation
+  protection:
+    policy: all                 # all | custom | indiv
+
+training:
+  mode: test                    # test | train
+  fault_aware: none             # none | ste_inject | kd | regularization (Phase 2)
+  loops: 1
+
+metrics:
+  online: [bitflips, misalign_faults, affected_units]
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0
