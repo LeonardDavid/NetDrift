@@ -1,0 +1,61 @@
+# Stage 1: Full-precision VGG7 training on CIFAR-10.
+#
+# Trains a standard FP32 VGG7 from random init. The model is not quantized
+# (quant.scheme: none skips replace_with_quantized and fault model attachment).
+# Best and final checkpoints are copied to models/fp/ after training.
+#
+# Typical FP accuracy target: ~92-93% top-1.
+# Run: python netdrift_run.py --config configs/vgg7_cifar10_fp_train.yaml
+
+experiment:
+  name: vgg7_cifar10_fp
+  output_dir: runs/
+  seed: 707
+
+model:
+  name: vgg7_cifar10_fp
+  checkpoint: null
+  checkpoint_mode: strict
+  kernel_size: 3
+  skip_first_quant: false
+  skip_last_quant: false
+
+data:
+  name: cifar10
+  batch_size: 256
+  test_batch_size: 256
+  num_workers: 4
+  data_dir: data
+
+quant:
+  scheme: none          # skips replace_with_quantized; trains in full precision
+
+storage:
+  layout: row
+  rt_size: 64
+  kernel_mapping: row
+
+fault:
+  model: rtm_misalignment
+  rt_error: 0.0
+  mitigations: []
+  protection:
+    policy: all
+
+training:
+  mode: train
+  fault_aware: none
+  epochs: 50
+  lr: 0.05              # SGD lr; StepLR decays by gamma every step_size epochs
+  gamma: 0.1
+  step_size: 30
+  save_dir: models/fp/vgg7_cifar10   # model.pt + model_best.pt copied here after training
+
+metrics:
+  online: []
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0

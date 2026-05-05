@@ -272,6 +272,13 @@ bash ./run.sh -o TRAIN --model FMNIST --perrors 0.0001 -ks 3 -km ROW -rs 64 -rm 
 - **`libc10.so: cannot open shared object file`** when running `python -m netdrift.runner.run`. The package isn't on `PYTHONPATH` and Python falls back to a misleading import path. Use `python netdrift_run.py ...` (preferred) or set `PYTHONPATH=code/python`.
 - **Segfault on the first kernel launch.** Numba CUDA picked a different toolkit than PyTorch's bundled libs. Install `cuda-python>=12,<13` and confirm `NUMBA_CUDA_USE_NVIDIA_BINDING=1` is set (the new package sets this on import; if you bypass the package import, set it manually).
 - **`ImportError: cannot import name 'cuda' from 'cuda'`**. The legacy `code/python/cuda/` directory shadows the `cuda-python` package. The repo has been renamed to `legacy_cuda/`; if you re-add a `cuda/` directory anywhere on `PYTHONPATH`, expect this error.
+- **`RuntimeError: GET was unable to find an engine to execute this computation`** at `loss.backward()`, preceded by repeated `Could not load library libcudnn_cnn_train.so.8 ... undefined symbol` warnings. The dynamic loader is mixing two cuDNN installations: PyTorch's bundled `libcudnn_cnn_infer.so.8` from the conda env vs. the system `libcudnn_cnn_train.so.8` at `/usr/lib/x86_64-linux-gnu/`. They share internal symbols and must come from the same install. Fix by prepending the conda env's cuDNN dir to `LD_LIBRARY_PATH` — add this to `~/.bashrc` after the conda init block:
+  ```bash
+  if [[ "$CONDA_DEFAULT_ENV" == "netdrift" ]]; then
+      export LD_LIBRARY_PATH="$CONDA_PREFIX/lib/python3.10/site-packages/nvidia/cudnn/lib:$CONDA_PREFIX/lib/python3.10/site-packages/torch/lib:$LD_LIBRARY_PATH"
+  fi
+  ```
+  Forward-only inference doesn't trigger this (only `cnn_infer` is loaded); training does, because backward loads `cnn_train`.
 - **CUDA Memory errors.** Lower the test batch size in your config (`data.test_batch_size`).
 - **Windows `bash ./code/cuda/install_kernels.sh` fails.** Convert line endings from CRLF to LF.
 

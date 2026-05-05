@@ -20,7 +20,7 @@ class ExperimentMeta:
 
     name: str = "experiment"
     output_dir: str = "runs/"
-    seed: int = 1
+    seed: int = 707
 
 
 @dataclass
@@ -158,6 +158,7 @@ class TrainCfg:
     lr: float = 1.0
     gamma: float = 0.1
     step_size: int = 5
+    save_dir: Optional[str] = None
 
 
 @dataclass

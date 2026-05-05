@@ -53,6 +53,8 @@ from netdrift.training import (
 def _build_scheme(cfg: ExperimentConfig):
     if cfg.quant.scheme == "binary":
         return BinaryScheme()
+    if cfg.quant.scheme == "none":
+        return None
     raise NotImplementedError(
         f"quant scheme {cfg.quant.scheme!r} not yet implemented (Phase 3+)"
     )
@@ -138,14 +140,15 @@ def main(argv: list[str] | None = None) -> int:
         num_workers=cfg.data.num_workers, pin_memory=torch.cuda.is_available(),
     )
 
-    # 2) Model — built FP32, then quantized in place
+    # 2) Model — built FP32, then quantized in place (skipped when scheme is None)
     scheme = _build_scheme(cfg)
     model = build_model(cfg.model.name)
-    replace_with_quantized(
-        model, scheme,
-        skip_first=cfg.model.skip_first_quant,
-        skip_last=cfg.model.skip_last_quant,
-    )
+    if scheme is not None:
+        replace_with_quantized(
+            model, scheme,
+            skip_first=cfg.model.skip_first_quant,
+            skip_last=cfg.model.skip_last_quant,
+        )
 
     # 3) Checkpoint
     if cfg.model.checkpoint:
@@ -161,51 +164,78 @@ def main(argv: list[str] | None = None) -> int:
 
     model.to(device)
 
-    # 4) Fault model
-    fault_model = _build_fault_model(cfg, cfg.metrics.online)
-    apply_protection_policy(
-        model, cfg.fault.protection.policy,  # type: ignore[arg-type]
-        layers=cfg.fault.protection.layers,
-        indiv_layer=cfg.fault.protection.indiv_layer,
-    )
-    attach_fault_model(
-        model, fault_model,
-        kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
-    )
+    # 4) Fault model (skipped for full-precision runs)
+    fault_model = None
+    if scheme is not None:
+        fault_model = _build_fault_model(cfg, cfg.metrics.online)
+        apply_protection_policy(
+            model, cfg.fault.protection.policy,  # type: ignore[arg-type]
+            layers=cfg.fault.protection.layers,
+            indiv_layer=cfg.fault.protection.indiv_layer,
+        )
+        attach_fault_model(
+            model, fault_model,
+            kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
+        )
 
     # 5) Train or test
     if cfg.training.mode == "train":
-        loss_fn = BinaryHingeLoss(b=128.0)
-        optimizer = Clippy(model.parameters(), lr=cfg.training.lr)
+        if scheme is None:
+            loss_fn = torch.nn.CrossEntropyLoss()
+            optimizer = torch.optim.SGD(
+                model.parameters(), lr=cfg.training.lr,
+                momentum=0.9, weight_decay=1e-4,
+            )
+        else:
+            loss_fn = BinaryHingeLoss(b=128.0)
+            optimizer = Clippy(model.parameters(), lr=cfg.training.lr)
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=cfg.training.step_size, gamma=cfg.training.gamma,
         )
+        best_acc = 0.0
         for epoch in range(1, cfg.training.epochs + 1):
             train_one_epoch(model, train_loader, optimizer, loss_fn, device, epoch)
-            evaluate_clean(model, test_loader, device)
+            acc = evaluate_clean(model, test_loader, device)
+            if acc > best_acc:
+                best_acc = acc
+                torch.save(model.state_dict(), run_dir / "model_best.pt")
             scheduler.step()
         torch.save(model.state_dict(), run_dir / "model.pt")
+        with open(run_dir / "train_summary.json", "w") as f:
+            json.dump({"best_accuracy": best_acc, "epochs": cfg.training.epochs}, f, indent=2)
+        if cfg.training.save_dir:
+            import shutil
+            sd = Path(cfg.training.save_dir)
+            sd.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(run_dir / "model.pt", sd / "model.pt")
+            if (run_dir / "model_best.pt").exists():
+                shutil.copy2(run_dir / "model_best.pt", sd / "model_best.pt")
     elif cfg.training.mode == "test":
-        rt_errors = (
-            cfg.fault.rt_error if isinstance(cfg.fault.rt_error, list) else [cfg.fault.rt_error]
-        )
-        all_results = []
-        for rt_error in rt_errors:
-            fault_model.cfg.rt_error = float(rt_error)
-            print(f"--- rt_error={rt_error}")
-            t0 = time.perf_counter()
-            accs = evaluate_with_faults(model, test_loader, device, loops=cfg.training.loops)
-            elapsed = time.perf_counter() - t0
-            all_results.append({
-                "rt_error": float(rt_error),
-                "accuracies": accs,
-                "elapsed_s": round(elapsed, 2),
-            })
-        with open(run_dir / "summary.json", "w") as f:
-            json.dump({
-                "rt_error_sweep": all_results,
-                "layer_metrics": _summarize_layer_metrics(model),
-            }, f, indent=2)
+        if fault_model is None:
+            acc = evaluate_clean(model, test_loader, device)
+            with open(run_dir / "summary.json", "w") as f:
+                json.dump({"accuracy": acc}, f, indent=2)
+        else:
+            rt_errors = (
+                cfg.fault.rt_error if isinstance(cfg.fault.rt_error, list) else [cfg.fault.rt_error]
+            )
+            all_results = []
+            for rt_error in rt_errors:
+                fault_model.cfg.rt_error = float(rt_error)
+                print(f"--- rt_error={rt_error}")
+                t0 = time.perf_counter()
+                accs = evaluate_with_faults(model, test_loader, device, loops=cfg.training.loops)
+                elapsed = time.perf_counter() - t0
+                all_results.append({
+                    "rt_error": float(rt_error),
+                    "accuracies": accs,
+                    "elapsed_s": round(elapsed, 2),
+                })
+            with open(run_dir / "summary.json", "w") as f:
+                json.dump({
+                    "rt_error_sweep": all_results,
+                    "layer_metrics": _summarize_layer_metrics(model),
+                }, f, indent=2)
     else:
         raise ValueError(f"unknown training mode: {cfg.training.mode}")
 

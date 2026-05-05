@@ -38,7 +38,7 @@ def test_full_config_round_trip(tmp_path: Path) -> None:
     cfg_path = _write(tmp_path, "full.yaml", """
 experiment:
   name: rtm_sweep
-  seed: 7
+  seed: 707
 
 model:
   name: resnet18_cifar10
@@ -80,7 +80,7 @@ metrics:
     - type: stdout
 """)
     cfg = load(cfg_path)
-    assert cfg.experiment.seed == 7
+    assert cfg.experiment.seed == 707
     assert cfg.model.checkpoint_mode == "fp32_warmstart"
     assert cfg.fault.rt_error == [0.001, 0.01, 0.05]
     assert cfg.fault.mitigations == ["bin_revert_mid"]

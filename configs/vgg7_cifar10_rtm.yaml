@@ -9,7 +9,7 @@
 experiment:
   name: vgg7_cifar10_rtm_baseline
   output_dir: runs/
-  seed: 1
+  seed: 707
 
 model:
   name: vgg7_cifar10
