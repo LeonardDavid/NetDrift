@@ -1,0 +1,61 @@
+# Stage 3 (variant): plain BNN VGG7 / CIFAR-10 inference under RTM faults.
+#
+# 1-bit weights on nanowires (misalignment faults), unquantized activations
+# on conventional RAM (no faults). Baseline for the W1Ax inference family.
+#
+# Distinct from vgg7_cifar10_rtm.yaml: that one uses protection.policy=custom
+# (fc1 protected). This one uses policy=all so every Conv/Linear is exposed
+# to faults — directly comparable to the W1A{2,4,8} configs below.
+
+experiment:
+  name: vgg7_cifar10_bnn_rtm
+  output_dir: runs/
+  seed: 707
+
+model:
+  name: vgg7_cifar10
+  checkpoint: models/w1a1/vgg7_cifar10/model_best.pt
+  checkpoint_mode: strict
+  kernel_size: 3
+  skip_first_quant: false
+  skip_last_quant: false
+
+data:
+  name: cifar10
+  batch_size: 256
+  test_batch_size: 256
+  num_workers: 1
+  data_dir: data
+
+quant:
+  scheme: binary
+  scale_init: max_abs
+  # No activation_scheme — activations stay at full precision.
+
+storage:
+  layout: row
+  rt_size: 64
+  kernel_mapping: row
+
+fault:
+  model: rtm_misalignment
+  rt_error: [0.001, 0.0001, 0.00001]
+  global_bitflip_budget: 0.0
+  local_bitflip_budget: 0.0
+  mitigations: []
+  protection:
+    policy: all                 # every Conv/Linear weight on nanowires
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 3
+
+metrics:
+  online: [bitflips, misalign_faults, affected_units]
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0

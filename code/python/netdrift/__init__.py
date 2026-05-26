@@ -38,6 +38,19 @@ try:
 except ImportError:
     pass
 
+# Suppress NumbaPerformanceWarning ("low occupancy", "host array used in CUDA
+# kernel", etc). These fire on every launch of the RTM fault kernels because
+# small layers (e.g. fc2 with 10 outputs) inherently produce small grids.
+# They're informational, not actionable for our use-case, and they clobber the
+# tqdm progress bars during inference.
+import warnings as _warnings
+
+try:
+    from numba.core.errors import NumbaPerformanceWarning as _NumbaPerfWarning
+    _warnings.filterwarnings("ignore", category=_NumbaPerfWarning)
+except ImportError:
+    pass
+
 __all__ = [
     "quant",
     "faults",

@@ -64,17 +64,25 @@ class QuantCfg:
     """Quantization scheme and (Phase 3+) per-channel parameters.
 
     Attributes:
-        scheme:           ``"binary"`` (Phase 1) or one of ``"ternary"``,
-                          ``"int_uniform"``, ``"mixed_precision"`` (Phase 3+).
-        bits:             Used by ``int_uniform``. Ignored otherwise.
-        bits_per_channel: Used by ``mixed_precision``. Ignored otherwise.
-        scale_init:       Per-channel scale initialization policy (FP32 warm-start).
+        scheme:             ``"binary"`` (Phase 1), ``"none"`` (FP), or one of
+                            ``"ternary"`` / ``"int_uniform"`` / ``"mixed_precision"`` (Phase 3+).
+                            Selects the **weight** quantization scheme.
+        bits:               Used by ``int_uniform`` (weights). Ignored otherwise.
+        bits_per_channel:   Used by ``mixed_precision`` (weights). Ignored otherwise.
+        scale_init:         Per-channel scale initialization policy (FP32 warm-start).
+        activation_scheme:  ``"none"`` (default, identity) or ``"int_uniform"``
+                            (symmetric uniform on ``[-1, 1]``). Drives the
+                            ``QuantizedActivation`` modules in the topology.
+        activation_bits:    Bits per activation level when
+                            ``activation_scheme="int_uniform"``. Common: 1, 2, 4, 8.
     """
 
     scheme: str = "binary"
     bits: int = 1
     bits_per_channel: Optional[list[int]] = None
     scale_init: str = "max_abs"
+    activation_scheme: str = "none"
+    activation_bits: int = 1
 
 
 @dataclass

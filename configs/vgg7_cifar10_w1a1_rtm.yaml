@@ -13,7 +13,7 @@ experiment:
 
 model:
   name: vgg7_cifar10
-  checkpoint: null              # set to your local path or hf:// URL
+  checkpoint: models/w1a1/vgg7_cifar10/model_best.pt 
   checkpoint_mode: strict       # strict | fp32_warmstart | scheme_transfer
   kernel_size: 3
 
@@ -35,20 +35,25 @@ storage:
 
 fault:
   model: rtm_misalignment
-  rt_error: [0.001, 0.01, 0.05, 0.1]
+  rt_error: [0.0, 0.00001, 0.0001]
   global_bitflip_budget: 0.0
   local_bitflip_budget: 0.0
   mitigations: []               # default: no mitigation
   protection:
-    policy: all                 # all | custom | indiv
+    policy: all
+    # `layers` lists the 1-based layer_ids that stay UNPROTECTED (exposed to faults).
+    # Everything not listed is protected. VGG7 has 8 quantized layers
+    # (conv1..conv6 → id 1..6, fc1 → 7, fc2 → 8). Listing 2..7 leaves the first
+    # conv (conv1) and last linear (fc2) protected — a common BNN/QNN recipe.
+    layers: [2, 3, 4, 5, 6, 7]
 
 training:
   mode: test                    # test | train
   fault_aware: none             # none | ste_inject | kd | regularization (Phase 2)
-  loops: 1
+  loops: 2
 
 metrics:
-  online: [bitflips, misalign_faults, affected_units]
+  online: []
   offline: []
   sinks:
     - type: stdout

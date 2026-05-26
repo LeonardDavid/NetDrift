@@ -1,0 +1,71 @@
+# Stage 2 (variant): W1A8 VGG7 training on CIFAR-10, warm-started from FP checkpoint.
+#
+# 1-bit weights (BinaryScheme, ±1) + 8-bit symmetric uniform activations on
+# [-1, 1] (IntUniformActScheme). Quantized activations live on conventional
+# RAM in the downstream RTM simulation — only weights are exposed to
+# misalignment faults.
+#
+# Warm-starts from models/fp/vgg7_cifar10/model_best.pt (Stage 1 artifact).
+# Same loss/optimizer/schedule as the plain BNN recipe — only the activation
+# quantization differs.
+#
+# Run Stage 1 first:
+#   python netdrift_run.py --config configs/vgg7_cifar10_fp_train.yaml
+# Then:
+#   python netdrift_run.py --config configs/vgg7_cifar10_w1a8_train.yaml
+
+experiment:
+  name: vgg7_cifar10_w1a8
+  output_dir: runs/
+  seed: 707
+
+model:
+  name: vgg7_cifar10
+  checkpoint: models/fp/vgg7_cifar10/model_best.pt
+  checkpoint_mode: fp32_warmstart
+  kernel_size: 3
+  skip_first_quant: false
+  skip_last_quant: false
+
+data:
+  name: cifar10
+  batch_size: 256
+  test_batch_size: 256
+  num_workers: 4
+  data_dir: data
+
+quant:
+  scheme: binary                # weights: ±1
+  scale_init: max_abs
+  activation_scheme: int_uniform
+  activation_bits: 8            # 256 levels uniformly spaced on [-1, 1]
+
+storage:
+  layout: row
+  rt_size: 64
+  kernel_mapping: row
+
+fault:
+  model: rtm_misalignment
+  rt_error: 0.0                 # no faults during training (RTM stage is downstream)
+  mitigations: []
+  protection:
+    policy: all
+
+training:
+  mode: train
+  fault_aware: none
+  epochs: 150
+  lr: 0.001
+  gamma: 0.1
+  step_size: 50                 # decays at ep 50 (1e-4) and ep 100 (1e-5)
+  save_dir: models/w1a8/vgg7_cifar10/
+
+metrics:
+  online: []
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0

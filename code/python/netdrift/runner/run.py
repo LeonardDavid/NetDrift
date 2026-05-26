@@ -20,8 +20,10 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import time
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -35,12 +37,14 @@ from netdrift.faults.mitigations import get_mitigation
 from netdrift.faults.rtm_misalignment import RTMConfig, RTMMisalignmentFault
 from netdrift.models import (
     apply_protection_policy,
+    attach_activation_scheme,
     attach_fault_model,
     build_model,
     replace_with_quantized,
 )
 from netdrift.models.checkpoint import load_checkpoint
 from netdrift.quant.binary import BinaryScheme
+from netdrift.quant.uniform import IntUniformActScheme
 from netdrift.training import (
     BinaryHingeLoss,
     Clippy,
@@ -58,6 +62,69 @@ def _build_scheme(cfg: ExperimentConfig):
     raise NotImplementedError(
         f"quant scheme {cfg.quant.scheme!r} not yet implemented (Phase 3+)"
     )
+
+
+def _build_activation_scheme(cfg: ExperimentConfig):
+    name = cfg.quant.activation_scheme
+    if name in ("none", None):
+        return None
+    if name == "int_uniform":
+        return IntUniformActScheme(bits=cfg.quant.activation_bits)
+    raise NotImplementedError(f"activation scheme {name!r} not yet implemented")
+
+
+def _reset_fault_state(model: torch.nn.Module) -> int:
+    """Clear cached RTM fault state on every quantized layer.
+
+    Called between rt_error sweep iterations so each rt_error starts from a
+    fresh nanowire baseline. Within a single rt_error, the ``loops`` iterations
+    still accumulate state (stuck nanowires stay stuck — legacy semantics).
+    """
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+    n = 0
+    for _, module in model.named_modules():
+        if isinstance(module, (QuantizedConv2d, QuantizedLinear)):
+            module.fault_state = None
+            module.nr_run = 0
+            n += 1
+    return n
+
+
+def _warn_checkpoint_mismatch(cfg: ExperimentConfig) -> None:
+    """Warn (don't error) when the checkpoint path conflicts with activation config.
+
+    Heuristic only — parses ``w1a<N>`` or ``bnn`` from the path string. The YAML
+    config remains the source of truth for ``activation_bits``; this is purely
+    defensive against pointing a w1a4 cfg at a w1a8 checkpoint and vice versa.
+    """
+    path = (cfg.model.checkpoint or "").lower()
+    if not path:
+        return
+    cfg_scheme = getattr(cfg.quant, "activation_scheme", "none")
+    cfg_abits = int(getattr(cfg.quant, "activation_bits", 0) or 0)
+    m = re.search(r"w1a(\d+)", path)
+    if m:
+        ckpt_abits = int(m.group(1))
+        if ckpt_abits == 1:
+            if cfg_scheme not in ("none", None):
+                warnings.warn(
+                    f"checkpoint {path!r} looks like W1A1/BNN but "
+                    f"quant.activation_scheme={cfg_scheme!r}",
+                    stacklevel=2,
+                )
+        elif cfg_scheme in ("none", None) or cfg_abits != ckpt_abits:
+            warnings.warn(
+                f"checkpoint {path!r} encodes activation_bits={ckpt_abits} "
+                f"but cfg has scheme={cfg_scheme!r}, bits={cfg_abits}",
+                stacklevel=2,
+            )
+        return
+    if "bnn" in path and cfg_scheme not in ("none", None):
+        warnings.warn(
+            f"checkpoint {path!r} looks like BNN but "
+            f"quant.activation_scheme={cfg_scheme!r}",
+            stacklevel=2,
+        )
 
 
 def _build_fault_model(cfg: ExperimentConfig, metrics_online: list[str]):
@@ -94,6 +161,78 @@ def _seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def _print_config_summary(cfg: ExperimentConfig, run_dir: Path) -> None:
+    """Print a scannable summary of the resolved config to stdout.
+
+    Mirrors the YAML structure but skips reserved / unused fields. Goes out
+    before any heavy lifting so the user can sanity-check what's about to run.
+    """
+    def fmt(v):
+        if isinstance(v, list):
+            return "[" + ", ".join(str(x) for x in v) + "]"
+        return str(v)
+
+    lines = []
+    lines.append("=" * 64)
+    lines.append(f"NetDrift run: {cfg.experiment.name}")
+    lines.append("=" * 64)
+    lines.append(f"experiment : name={cfg.experiment.name}  seed={cfg.experiment.seed}  output={run_dir}")
+    lines.append(
+        f"model      : {cfg.model.name}  kernel_size={cfg.model.kernel_size}  "
+        f"skip_first={cfg.model.skip_first_quant}  skip_last={cfg.model.skip_last_quant}"
+    )
+    lines.append(
+        f"             checkpoint={cfg.model.checkpoint}  mode={cfg.model.checkpoint_mode}"
+    )
+    lines.append(
+        f"data       : {cfg.data.name}  batch={cfg.data.batch_size}/{cfg.data.test_batch_size}  "
+        f"workers={cfg.data.num_workers}  dir={cfg.data.data_dir}"
+    )
+    quant_line = (
+        f"quant      : weights={cfg.quant.scheme}  scale_init={cfg.quant.scale_init}  "
+        f"activation={cfg.quant.activation_scheme}"
+    )
+    if cfg.quant.activation_scheme not in ("none", None):
+        quant_line += f"({cfg.quant.activation_bits} bits)"
+    lines.append(quant_line)
+    lines.append(
+        f"storage    : layout={cfg.storage.layout}  rt_size={cfg.storage.rt_size}  "
+        f"kernel_mapping={cfg.storage.kernel_mapping}"
+    )
+    fault_line = (
+        f"fault      : model={cfg.fault.model}  rt_error={fmt(cfg.fault.rt_error)}  "
+        f"mitigations={fmt(cfg.fault.mitigations)}"
+    )
+    lines.append(fault_line)
+    prot = cfg.fault.protection
+    prot_line = f"             protection.policy={prot.policy}"
+    if prot.policy == "custom" and prot.layers is not None:
+        prot_line += f"  layers(unprotected)={fmt(prot.layers)}"
+    elif prot.policy == "indiv" and prot.indiv_layer is not None:
+        prot_line += f"  indiv_layer={prot.indiv_layer}"
+    lines.append(prot_line)
+    train_line = (
+        f"training   : mode={cfg.training.mode}  fault_aware={cfg.training.fault_aware}"
+    )
+    if cfg.training.mode == "train":
+        train_line += (
+            f"  epochs={cfg.training.epochs}  lr={cfg.training.lr}  "
+            f"step_size={cfg.training.step_size}  gamma={cfg.training.gamma}"
+        )
+        if cfg.training.save_dir:
+            train_line += f"  save_dir={cfg.training.save_dir}"
+    else:
+        train_line += f"  loops={cfg.training.loops}"
+    lines.append(train_line)
+    sink_types = [s.type for s in cfg.metrics.sinks]
+    lines.append(
+        f"metrics    : online={fmt(cfg.metrics.online)}  sinks={fmt(sink_types)}"
+    )
+    lines.append(f"gpu_num    : {cfg.gpu_num}")
+    lines.append("=" * 64)
+    print("\n".join(lines))
+
+
 def _summarize_layer_metrics(model: torch.nn.Module) -> dict:
     """Walk ``model.named_modules()`` and extract per-layer metric lists."""
     out: dict[str, dict] = {}
@@ -125,6 +264,8 @@ def main(argv: list[str] | None = None) -> int:
     with open(run_dir / "config.json", "w") as f:
         json.dump(_dataclass_to_dict(cfg), f, indent=2, default=str)
 
+    _print_config_summary(cfg, run_dir)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if torch.cuda.is_available():
         torch.cuda.set_device(cfg.gpu_num)
@@ -142,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 2) Model — built FP32, then quantized in place (skipped when scheme is None)
     scheme = _build_scheme(cfg)
+    activation_scheme = _build_activation_scheme(cfg)
     model = build_model(cfg.model.name)
     if scheme is not None:
         replace_with_quantized(
@@ -149,9 +291,13 @@ def main(argv: list[str] | None = None) -> int:
             skip_first=cfg.model.skip_first_quant,
             skip_last=cfg.model.skip_last_quant,
         )
+    # Bind activation scheme to every QuantizedActivation in the topology.
+    # With activation_scheme=None this is a no-op (qact modules remain identity).
+    attach_activation_scheme(model, activation_scheme)
 
     # 3) Checkpoint
     if cfg.model.checkpoint:
+        _warn_checkpoint_mismatch(cfg)
         report = load_checkpoint(
             model,
             cfg.model.checkpoint,
@@ -163,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
         print(report.summary())
 
     model.to(device)
+    print(model)
 
     # 4) Fault model (skipped for full-precision runs)
     fault_model = None
@@ -221,16 +368,36 @@ def main(argv: list[str] | None = None) -> int:
             )
             all_results = []
             for rt_error in rt_errors:
+                n_reset = _reset_fault_state(model)
+                # Re-seed RNGs so each rt_error realization is independent of
+                # which sweep values preceded it. The fault kernel re-seeds via
+                # random.randint(1, 1000) per inject; consuming the same number
+                # of draws from a fresh RNG state makes the sweep reproducible.
+                _seed_everything(cfg.experiment.seed)
                 fault_model.cfg.rt_error = float(rt_error)
-                print(f"--- rt_error={rt_error}")
+                bar = "─" * 64
+                print()
+                print(bar)
+                print(f"  rt_error = {rt_error}    (reset fault state on {n_reset} layers)")
+                print(bar)
                 t0 = time.perf_counter()
-                accs = evaluate_with_faults(model, test_loader, device, loops=cfg.training.loops)
+                accs = evaluate_with_faults(
+                    model, test_loader, device,
+                    loops=cfg.training.loops,
+                    desc_prefix=f"rt_error={rt_error}",
+                )
                 elapsed = time.perf_counter() - t0
+                mean_acc = sum(accs) / len(accs) if accs else 0.0
+                print(
+                    f"  ⇒ rt_error={rt_error}  mean_acc={mean_acc:.2f}%  "
+                    f"min={min(accs):.2f}%  max={max(accs):.2f}%  total_elapsed={elapsed:.2f}s"
+                )
                 all_results.append({
                     "rt_error": float(rt_error),
                     "accuracies": accs,
                     "elapsed_s": round(elapsed, 2),
                 })
+            print()
             with open(run_dir / "summary.json", "w") as f:
                 json.dump({
                     "rt_error_sweep": all_results,

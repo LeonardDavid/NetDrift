@@ -18,12 +18,14 @@ Available schemes:
 from netdrift.quant.base import QuantScheme, QuantizedTensor, ScaleInit
 from netdrift.quant.binary import BinaryScheme
 from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear, QuantizedActivation
+from netdrift.quant.uniform import IntUniformActScheme
 
 __all__ = [
     "QuantScheme",
     "QuantizedTensor",
     "ScaleInit",
     "BinaryScheme",
+    "IntUniformActScheme",
     "QuantizedConv2d",
     "QuantizedLinear",
     "QuantizedActivation",

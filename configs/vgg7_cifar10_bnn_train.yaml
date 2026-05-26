@@ -53,12 +53,12 @@ fault:
 
 training:
   mode: train
-  fault_aware: none     # plain BNN; fault-aware training is Phase 2
-  epochs: 100
-  lr: 1.0               # Clippy (Adam) default for BNN training
+  fault_aware: none
+  epochs: 150         # BNNs benefit from more epochs
+  lr: 0.001            # conservative; bump to 3e-3 if loss stagnates early
   gamma: 0.1
-  step_size: 30
-  save_dir: models/bnns/vgg7_cifar10/ # model.pt + model_best.pt copied here after training
+  step_size: 50       # decays at ep 50 (1e-4) and ep 100 (1e-5)
+  save_dir: models/w1a1/vgg7_cifar10/
 
 metrics:
   online: []
