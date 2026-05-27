@@ -1,24 +1,23 @@
-# VGG7 / CIFAR-10 baseline RTM-fault sweep.
+# Stage 3: VGG3 / FashionMNIST baseline RTM-fault sweep.
 #
-# Replicates the most common legacy use case:
-# - Pre-trained binary VGG7 checkpoint (loaded strict from HuggingFace).
+# - Pre-trained binary VGG3 checkpoint (W1A1: binary weights, FP activations).
 # - RTM misalignment fault model with a sweep over rt_error.
-# - All layers unprotected; no mitigation.
+# - All layers unprotected; no mitigation by default.
 # - Test mode: run inference once per rt_error.
 
 experiment:
-  name: vgg7_cifar10_rtm_baseline
+  name: vgg3_fmnist_w1a1_rtm
   output_dir: runs/
   seed: 707
 
 model:
-  name: vgg7_cifar10
-  checkpoint: models/w1a1/vgg7_cifar10/model_best.pt 
-  checkpoint_mode: strict       # strict | fp32_warmstart | scheme_transfer
+  name: vgg3_fmnist
+  checkpoint: models/w1a1/vgg3_fmnist/model_best.pt
+  checkpoint_mode: strict
   kernel_size: 3
 
 data:
-  name: cifar10
+  name: fmnist
   batch_size: 256
   test_batch_size: 256
   num_workers: 1
@@ -40,17 +39,16 @@ fault:
   local_bitflip_budget: 0.0
   mitigations: []               # default: no mitigation
   protection:
-    policy: all
-    # layers: [2, 3, 4, 5, 6, 7]
-    
+    policy: custom
+    # indiv_layer: 4
+    layers: [1, 4]
     # `layers` lists the 1-based layer_ids that stay UNPROTECTED (exposed to faults).
-    # Everything not listed is protected. VGG7 has 8 quantized layers
-    # (conv1..conv6 → id 1..6, fc1 → 7, fc2 → 8). Listing 2..7 leaves the first
-    # conv (conv1) and last linear (fc2) protected — a common BNN/QNN recipe.
+    # Everything not listed is protected. VGG3 has 4 quantized layers
+    # (conv1=1, conv2=2, fc1=3, fc2=4). Listing 2..3 leaves the first conv
+    # (conv1) and last linear (fc2) protected — a common BNN/QNN recipe.
   weight_encoder: endlen          # "endlen" or null
   weight_encoder_mode: once       # "once" | "per_forward"
   encoded_checkpoint_save: null   # override save path; null → next to model.checkpoint
-
 
 training:
   mode: test                    # test | train

@@ -141,6 +141,30 @@ def test_malformed_override_rejected() -> None:
         parse_overrides(["fault.rt_error"])
 
 
+def test_weight_encoder_fields_round_trip(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", """
+experiment:
+  name: enc_test
+
+fault:
+  weight_encoder: endlen
+  weight_encoder_mode: per_forward
+  encoded_checkpoint_save: /tmp/foo_endlen.pt
+""")
+    cfg = load(cfg_path)
+    assert cfg.fault.weight_encoder == "endlen"
+    assert cfg.fault.weight_encoder_mode == "per_forward"
+    assert cfg.fault.encoded_checkpoint_save == "/tmp/foo_endlen.pt"
+
+
+def test_weight_encoder_defaults(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "experiment:\n  name: defaults\n")
+    cfg = load(cfg_path)
+    assert cfg.fault.weight_encoder is None
+    assert cfg.fault.weight_encoder_mode == "once"
+    assert cfg.fault.encoded_checkpoint_save is None
+
+
 def test_unknown_dataclass_field_silently_ignored(tmp_path: Path) -> None:
     """Extra YAML keys are dropped (forward-compatible) rather than raising."""
     cfg_path = _write(

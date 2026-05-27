@@ -1,0 +1,63 @@
+# Stage 2 (variant): W1A4 VGG3 training on FashionMNIST, warm-started from FP checkpoint.
+#
+# 1-bit weights (BinaryScheme, ±1) + 4-bit symmetric uniform activations on
+# [-1, 1] (IntUniformActScheme, 16 levels). Quantized activations live on
+# conventional RAM in the downstream RTM simulation.
+#
+# Warm-starts from models/fp/vgg3_fmnist/model_best.pt (Stage 1 artifact).
+
+experiment:
+  name: vgg3_fmnist_w1a4
+  output_dir: runs/
+  seed: 707
+
+model:
+  name: vgg3_fmnist
+  checkpoint: models/fp/vgg3_fmnist/model_best.pt
+  checkpoint_mode: fp32_warmstart
+  kernel_size: 3
+  skip_first_quant: false
+  skip_last_quant: false
+
+data:
+  name: fmnist
+  batch_size: 256
+  test_batch_size: 256
+  num_workers: 4
+  data_dir: data
+
+quant:
+  scheme: binary                # weights: ±1
+  scale_init: max_abs
+  activation_scheme: int_uniform
+  activation_bits: 4            # 16 levels uniformly spaced on [-1, 1]
+
+storage:
+  layout: row
+  rt_size: 64
+  kernel_mapping: row
+
+fault:
+  model: rtm_misalignment
+  rt_error: 0.0
+  mitigations: []
+  protection:
+    policy: all
+
+training:
+  mode: train
+  fault_aware: none
+  epochs: 100
+  lr: 0.001
+  gamma: 0.1
+  step_size: 35
+  save_dir: models/w1a4/vgg3_fmnist/
+
+metrics:
+  online: []
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0

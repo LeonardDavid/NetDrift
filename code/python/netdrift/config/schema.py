@@ -142,6 +142,15 @@ class FaultCfg:
     local_bitflip_budget: float = 0.0
     mitigations: list[str] = field(default_factory=list)
     protection: ProtectionCfg = field(default_factory=ProtectionCfg)
+    weight_encoder: Optional[str] = None
+    """Registry name of a write-time weight encoder (``"endlen"``) or ``None``."""
+    weight_encoder_mode: str = "once"
+    """``"once"`` (apply before sweep, save encoded model) or ``"per_forward"``
+    (re-apply inside every fault injection). Ignored when ``weight_encoder``
+    is ``None``."""
+    encoded_checkpoint_save: Optional[str] = None
+    """Override path for the post-encoder checkpoint (mode=once). Default:
+    ``<run_dir>/model_endlen.pt``."""
 
 
 @dataclass

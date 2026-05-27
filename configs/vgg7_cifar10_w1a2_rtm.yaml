@@ -38,17 +38,22 @@ storage:
 
 fault:
   model: rtm_misalignment
-  rt_error: [0.0, 0.00001, 0.0001]
+  rt_error: [0.00001, 0.0001]
   global_bitflip_budget: 0.0
   local_bitflip_budget: 0.0
   mitigations: []
   protection:
     policy: all
+    # layers: [2, 3, 4, 5, 6, 7]
+    
     # `layers` lists the 1-based layer_ids that stay UNPROTECTED (exposed to faults).
     # Everything not listed is protected. VGG7 has 8 quantized layers
     # (conv1..conv6 → id 1..6, fc1 → 7, fc2 → 8). Listing 2..7 leaves the first
     # conv (conv1) and last linear (fc2) protected — a common BNN/QNN recipe.
-    layers: [2, 3, 4, 5, 6, 7]
+  weight_encoder: endlen          # "endlen" or null
+  weight_encoder_mode: once       # "once" | "per_forward"
+  encoded_checkpoint_save: null   # override save path; null → next to model.checkpoint
+
 
 training:
   mode: test

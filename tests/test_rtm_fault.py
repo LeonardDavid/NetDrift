@@ -28,6 +28,10 @@ from netdrift.faults import (
     RTMState,
 )
 from netdrift.faults.mitigations import get_mitigation
+from netdrift.faults.weight_encoders import (
+    EndlenEncoder,
+    _endlen_cpu_reference,
+)
 
 
 def _make_ctx(rt_mapping: str = "ROW", kernel_mapping: str | None = None,
@@ -196,6 +200,68 @@ def test_kernel_mapping_round_trip() -> None:
         assert new_w.shape == weight.shape
         # Zero error → identity in the original space.
         assert torch.equal(new_w, weight), f"kernel mapping {kmap} broke zero-error identity"
+
+
+@pytest.mark.cuda
+def test_endlen_gpu_matches_cpu_reference() -> None:
+    """The Numba CUDA endlen kernel produces the same output as the CPU port.
+
+    On several random ±1 racetracks (multiple rows, multiple racetracks per
+    row), the GPU encoder and the CPU reference must agree bit-for-bit.
+    """
+    from numba import cuda
+    rt_size = 16
+    rng = np.random.default_rng(0)
+    # Shape: 4 rows, 4 racetracks per row → 64 cols.
+    weight_cpu = np.where(rng.random((4, 64)) > 0.5, 1, -1).astype(np.int32)
+    weight_gpu_host = weight_cpu.copy()
+
+    _endlen_cpu_reference(weight_cpu, rt_size)
+
+    gpu_arr = cuda.to_device(weight_gpu_host)
+    EndlenEncoder().apply(gpu_arr, rt_size)
+    weight_gpu_host = gpu_arr.copy_to_host()
+
+    assert np.array_equal(weight_cpu, weight_gpu_host), (
+        "GPU kernel and CPU reference disagree on endlen output"
+    )
+
+
+@pytest.mark.cuda
+def test_endlen_per_forward_mode_encodes_at_inject() -> None:
+    """In ``per_forward`` mode, inject's output reflects the encoded weights
+    (not the raw input) even at rt_error=0, while module.weight stays untouched.
+    """
+    cfg = RTMConfig(
+        rt_size=16, rt_error=0.0,
+        weight_encoder=EndlenEncoder(),
+        weight_encoder_mode="per_forward",
+        track_bitflips=True,
+    )
+    fault = RTMMisalignmentFault(cfg)
+
+    weight = torch.where(
+        torch.randn(8, 64, device="cuda") > 0,
+        torch.ones(8, 64, device="cuda"),
+        -torch.ones(8, 64, device="cuda"),
+    )
+    pre = weight.detach().clone()
+    ctx = _make_ctx(rt_mapping="ROW")
+    state = fault.init_state(tuple(weight.shape), ctx)
+
+    new_w, _, stats = fault.inject(weight, state, ctx)
+
+    # The encoder ran inside inject, so at rt_error=0 the read-out equals
+    # the encoded weights, which generally differ from the input.
+    assert stats.bitflips is not None
+    # On random ±1 of size 8x64=512, endlen should flip at least *some* bits.
+    # Exact count depends on the random pattern, so we just check >0.
+    assert stats.bitflips > 0, (
+        "per_forward mode at rt_error=0 should still produce bit-flips "
+        "(the encoder fires regardless)"
+    )
+    # The function does not mutate the caller's input tensor.
+    assert torch.equal(pre, weight)
 
 
 @pytest.mark.cuda

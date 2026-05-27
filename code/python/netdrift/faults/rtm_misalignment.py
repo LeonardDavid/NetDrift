@@ -39,6 +39,11 @@ from netdrift.faults.kernels import (
 )
 from netdrift.faults.mitigations.base import MitigationStep
 
+# Forward type used in RTMConfig; imported lazily inside methods that need it
+# to avoid a circular import (weight_encoders.apply imports from this module).
+if False:  # TYPE_CHECKING-style guard without the import
+    from netdrift.faults.weight_encoders.base import WeightEncoder
+
 
 @dataclass
 class RTMConfig:
@@ -69,6 +74,27 @@ class RTMConfig:
     track_misalign_faults: bool = False
     track_bitflips: bool = False
     track_affected_units: bool = False
+    weight_encoder: Optional["WeightEncoder"] = None
+    """Optional write-time weight encoder (e.g. endlen). ``None`` disables it."""
+    weight_encoder_mode: str = "once"
+    """``"once"`` (encoder fires once in the runner) or ``"per_forward"``
+    (encoder fires inside :meth:`RTMMisalignmentFault.inject` on every call).
+    Ignored when ``weight_encoder is None``."""
+
+    def __post_init__(self) -> None:
+        if self.weight_encoder_mode not in ("once", "per_forward"):
+            raise ValueError(
+                f"weight_encoder_mode must be 'once' or 'per_forward', "
+                f"got {self.weight_encoder_mode!r}"
+            )
+        if self.weight_encoder is not None and self.rt_size > 64:
+            # The endlen kernel uses a hardcoded 64-element local buffer.
+            # If we ever add an encoder without this limit, gate this check
+            # on the encoder type.
+            raise ValueError(
+                f"weight_encoder requires rt_size <= 64 (legacy kernel "
+                f"uses a fixed-size local buffer); got rt_size={self.rt_size}"
+            )
 
 
 @dataclass
@@ -173,6 +199,50 @@ def _restore_kernel(
     return weight.reshape(out_c, in_c, -1)[..., rev].reshape(original_shape)
 
 
+def _layout_weight_for_racetrack(
+    weight: torch.Tensor,
+    rt_mapping: str,
+    kernel_mapping: Optional[str],
+) -> tuple[torch.Tensor, "callable"]:
+    """Reshape ``weight`` into a 2D racetrack-aligned view, plus an undo fn.
+
+    Handles the same chain :meth:`RTMMisalignmentFault.inject` does:
+
+    1. For 4D conv weights, permute kernel entries by ``kernel_mapping``
+       and flatten to ``(out_channels, in_channels * kh * kw)``.
+    2. For 2D linear weights, reshape to ``(out, in)``.
+    3. If ``rt_mapping == "COL"``, transpose so the racetrack-aligned axis
+       is always row-wise from the kernels' point of view.
+
+    Returns:
+        ``(weight_2d, undo)`` where ``undo(weight_2d_new)`` reverses steps
+        1–3 and returns a tensor of ``weight``'s original shape.
+    """
+    original_shape = tuple(weight.shape)
+    is_conv = weight.dim() == 4
+    km = kernel_mapping or "ROW"
+
+    if is_conv:
+        w = _rearrange_kernel(weight, km)
+        w_2d = w.reshape(w.size(0), -1)
+    else:
+        w_2d = weight.reshape(weight.size(0), -1)
+
+    if rt_mapping == "COL":
+        w_2d = w_2d.t().contiguous()
+    elif rt_mapping != "ROW":
+        raise ValueError(f"invalid rt_mapping: {rt_mapping}")
+
+    def undo(new_w_2d: torch.Tensor) -> torch.Tensor:
+        if rt_mapping == "COL":
+            new_w_2d = new_w_2d.t().contiguous()
+        if is_conv:
+            return _restore_kernel(new_w_2d, km, original_shape)
+        return new_w_2d.reshape(original_shape)
+
+    return w_2d, undo
+
+
 def _ap_reads_for_mapping(rt_size: int, rt_mapping: str) -> int:
     """Number of access-port reads simulated for one full word read-out."""
     if rt_mapping == "ROW":
@@ -227,21 +297,10 @@ class RTMMisalignmentFault(FaultModel):
         if self.cfg.track_bitflips:
             pre_fault = weight.detach().clone()
 
-        # 1) Reshape conv weights to 2D and apply kernel mapping
-        original_shape = tuple(weight.shape)
-        is_conv = weight.dim() == 4
-        if is_conv:
-            kernel_mapping = state.kernel_mapping or "ROW"
-            w = _rearrange_kernel(weight, kernel_mapping)
-            w_2d = w.reshape(w.size(0), -1)
-        else:
-            w_2d = weight.reshape(weight.size(0), -1)
-
-        # 2) Apply rt_mapping (transpose for COL so kernels see a row-mapped view)
-        if state.rt_mapping == "COL":
-            w_2d = w_2d.t().contiguous()
-        elif state.rt_mapping != "ROW":
-            raise ValueError(f"invalid rt_mapping: {state.rt_mapping}")
+        # 1+2) Reshape into the racetrack-aligned 2D view.
+        w_2d, undo_layout = _layout_weight_for_racetrack(
+            weight, rt_mapping=state.rt_mapping, kernel_mapping=state.kernel_mapping
+        )
 
         # 3) Run the racetrack simulation kernels
         ap_reads = _ap_reads_for_mapping(self.cfg.rt_size, state.rt_mapping)
@@ -250,15 +309,8 @@ class RTMMisalignmentFault(FaultModel):
         )
         new_w_2d = torch.from_numpy(new_w_2d_np).to(weight.device, dtype=weight.dtype)
 
-        # 4) Undo COL transpose
-        if state.rt_mapping == "COL":
-            new_w_2d = new_w_2d.t().contiguous()
-
-        # 5) Reshape conv weights back; undo kernel mapping
-        if is_conv:
-            new_w = _restore_kernel(new_w_2d, state.kernel_mapping or "ROW", original_shape)
-        else:
-            new_w = new_w_2d.reshape(original_shape)
+        # 4+5) Undo COL transpose and kernel mapping.
+        new_w = undo_layout(new_w_2d)
 
         # 6) Compute stats
         stats = FaultStats()
@@ -328,6 +380,16 @@ class RTMMisalignmentFault(FaultModel):
         offset_gpu = cuda.to_device(index_offset)
         weight_out_np = np.zeros(weight_np.shape, dtype=weight_np.dtype)
         weight_out_gpu = cuda.to_device(weight_out_np)
+
+        # Per-forward encoder: rewrite the (transposed/kernel-mapped) weight
+        # view in place, *before* the racetrack read kernel sees it. Matches
+        # legacy ``EXEC_ENDLEN`` ordering in ``racetrack_sim``.
+        if (
+            self.cfg.weight_encoder is not None
+            and self.cfg.weight_encoder_mode == "per_forward"
+        ):
+            self.cfg.weight_encoder.apply(weight_in_gpu, self.cfg.rt_size)
+            cuda.synchronize()
 
         simulate_racetrack_kernel[blocks, threads](
             rng, weight_in_gpu, weight_out_gpu, offset_gpu, self.cfg.rt_size,

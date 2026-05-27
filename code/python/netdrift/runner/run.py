@@ -35,6 +35,12 @@ from netdrift.config import ExperimentConfig, load as load_config, parse_overrid
 from netdrift.data import build_datasets
 from netdrift.faults.mitigations import get_mitigation
 from netdrift.faults.rtm_misalignment import RTMConfig, RTMMisalignmentFault
+from netdrift.faults.weight_encoders import (
+    apply_weight_encoder_to_model,
+    get_encoder,
+    is_encoded_checkpoint_path,
+    with_endlen_marker,
+)
 from netdrift.models import (
     apply_protection_policy,
     attach_activation_scheme,
@@ -127,7 +133,13 @@ def _warn_checkpoint_mismatch(cfg: ExperimentConfig) -> None:
         )
 
 
-def _build_fault_model(cfg: ExperimentConfig, metrics_online: list[str]):
+def _build_fault_model(
+    cfg: ExperimentConfig,
+    metrics_online: list[str],
+    *,
+    weight_encoder=None,
+    weight_encoder_mode: str = "once",
+):
     if cfg.fault.model == "rtm_misalignment":
         # rt_error may be a single float or a list; the runner handles the
         # sweep below by iterating over a normalized list at test time.
@@ -141,6 +153,8 @@ def _build_fault_model(cfg: ExperimentConfig, metrics_online: list[str]):
             track_misalign_faults="misalign_faults" in metrics_online,
             track_bitflips="bitflips" in metrics_online,
             track_affected_units="affected_units" in metrics_online,
+            weight_encoder=weight_encoder,
+            weight_encoder_mode=weight_encoder_mode,
         )
         return RTMMisalignmentFault(rtm_cfg)
     raise NotImplementedError(f"fault model {cfg.fault.model!r} not yet implemented")
@@ -311,10 +325,44 @@ def main(argv: list[str] | None = None) -> int:
     model.to(device)
     print(model)
 
-    # 4) Fault model (skipped for full-precision runs)
+    # 4) Resolve optional weight encoder; auto-disable if the loaded
+    # checkpoint already looks pre-encoded (filename convention).
+    encoder = None
+    encoder_mode = cfg.fault.weight_encoder_mode
+    encoder_auto_disabled = False
+    if cfg.fault.weight_encoder is not None:
+        if is_encoded_checkpoint_path(cfg.model.checkpoint):
+            encoder_auto_disabled = True
+            banner = "─" * 64
+            print()
+            print(banner)
+            print("  pre-encoded checkpoint detected — auto-disabling encoder")
+            print(f"  checkpoint            : {cfg.model.checkpoint}")
+            print(f"  configured encoder    : {cfg.fault.weight_encoder} "
+                  f"(mode={cfg.fault.weight_encoder_mode})")
+            print("  To force re-encoding, point model.checkpoint at a path")
+            print("  whose basename does not contain the 'endlen' marker.")
+            print(banner)
+        else:
+            encoder = get_encoder(cfg.fault.weight_encoder)
+    elif is_encoded_checkpoint_path(cfg.model.checkpoint):
+        # Encoder not requested, but the user appears to be loading an
+        # already-encoded model — a one-line reminder, no banner.
+        print(
+            f"note: checkpoint {cfg.model.checkpoint!r} looks pre-encoded "
+            f"and no weight_encoder is configured; proceeding as a normal load."
+        )
+
+    # 5) Fault model (skipped for full-precision runs)
+    # Encoder is forwarded into RTMConfig so per_forward mode fires inside
+    # inject; for mode=once it's a no-op at the fault-model level.
     fault_model = None
     if scheme is not None:
-        fault_model = _build_fault_model(cfg, cfg.metrics.online)
+        fault_model = _build_fault_model(
+            cfg, cfg.metrics.online,
+            weight_encoder=encoder,
+            weight_encoder_mode=encoder_mode,
+        )
         apply_protection_policy(
             model, cfg.fault.protection.policy,  # type: ignore[arg-type]
             layers=cfg.fault.protection.layers,
@@ -325,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
             kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
         )
 
-    # 5) Train or test
+    # 6) Train or test
     if cfg.training.mode == "train":
         if scheme is None:
             loss_fn = torch.nn.CrossEntropyLoss()
@@ -363,6 +411,134 @@ def main(argv: list[str] | None = None) -> int:
             with open(run_dir / "summary.json", "w") as f:
                 json.dump({"accuracy": acc}, f, indent=2)
         else:
+            # Baseline 0: clean accuracy, no fault injection, no encoder.
+            # We temporarily detach the fault model so layers run as pure
+            # quantized matmuls — this is the pre-encode reference.
+            print()
+            print("Baseline 0: clean accuracy, no faults, no encoder")
+            kernel_mapping_str = (
+                cfg.storage.kernel_mapping.upper()
+                if cfg.storage.kernel_mapping else "ROW"
+            )
+            attach_fault_model(model, None)
+            baseline_clean_acc = evaluate_clean(model, test_loader, device)
+            attach_fault_model(model, fault_model, kernel_mapping=kernel_mapping_str)
+            print(f"  ⇒ baseline_clean_accuracy = {baseline_clean_acc:.2f}%")
+
+            # Optional encoder application.
+            baseline_endlen_acc: float | None = None
+            encoded_checkpoint_path: str | None = None
+            if encoder is not None and encoder_mode == "once":
+                print()
+                print(
+                    f"Applying weight encoder {cfg.fault.weight_encoder!r} "
+                    f"(mode=once) to model weights..."
+                )
+                report = apply_weight_encoder_to_model(
+                    model, encoder,
+                    rt_size=cfg.storage.rt_size,
+                    rt_mapping=cfg.storage.layout.upper(),
+                    kernel_mapping_default=(
+                        cfg.storage.kernel_mapping.upper()
+                        if cfg.storage.kernel_mapping else "ROW"
+                    ),
+                )
+                from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+                layer_totals = {
+                    n: m.weight.numel()
+                    for n, m in model.named_modules()
+                    if isinstance(m, (QuantizedConv2d, QuantizedLinear))
+                }
+                protected_layers = [
+                    n for n, m in model.named_modules()
+                    if isinstance(m, (QuantizedConv2d, QuantizedLinear))
+                    and getattr(m, "protected", False)
+                ]
+                total_changed = sum(report.values())
+                total_weights = sum(layer_totals[n] for n in report)
+                overall_pct = (
+                    100.0 * total_changed / total_weights if total_weights else 0.0
+                )
+                print(
+                    f"  encoded {len(report)} unprotected layers; "
+                    f"{total_changed}/{total_weights} weight entries changed "
+                    f"({overall_pct:.2f}%)"
+                )
+                for layer_name, changed in report.items():
+                    layer_total = layer_totals[layer_name]
+                    pct = 100.0 * changed / layer_total if layer_total else 0.0
+                    print(
+                        f"    {layer_name:32s} "
+                        f"{changed:8d} / {layer_total:8d} bits flipped "
+                        f"({pct:6.2f}%)"
+                    )
+                if protected_layers:
+                    print(
+                        f"  skipped {len(protected_layers)} protected layer(s): "
+                        f"{', '.join(protected_layers)}"
+                    )
+
+                # Save the encoded model. Default: alongside the source
+                # checkpoint with ``_endlen`` injected into the basename
+                # (e.g. ``models/.../model_best.pt`` →
+                # ``models/.../model_best_endlen.pt``). Falls back to
+                # ``<run_dir>/model_endlen.pt`` when no source checkpoint
+                # was configured. ``encoded_checkpoint_save`` overrides both.
+                if cfg.fault.encoded_checkpoint_save:
+                    save_path_raw = cfg.fault.encoded_checkpoint_save
+                elif cfg.model.checkpoint:
+                    save_path_raw = cfg.model.checkpoint
+                else:
+                    save_path_raw = str(run_dir / "model_endlen.pt")
+                save_path = with_endlen_marker(save_path_raw)
+                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+                torch.save(model.state_dict(), save_path)
+                encoded_checkpoint_path = save_path
+                print(f"  encoded checkpoint saved to: {save_path}")
+
+                # Baseline 1: clean accuracy on the encoded weights, no faults.
+                print()
+                print("Baseline 1: clean accuracy, after encoder (mode=once)")
+                attach_fault_model(model, None)
+                baseline_endlen_acc = evaluate_clean(model, test_loader, device)
+                attach_fault_model(
+                    model, fault_model, kernel_mapping=kernel_mapping_str
+                )
+                print(f"  ⇒ baseline_endlen_accuracy = {baseline_endlen_acc:.2f}%")
+                print(
+                    f"  Δ vs clean baseline       = "
+                    f"{baseline_endlen_acc - baseline_clean_acc:+.2f}%"
+                )
+
+            elif encoder is not None and encoder_mode == "per_forward":
+                # Baseline 1 for per_forward: temporarily set rt_error=0 so
+                # the offset kernel produces no shifts; the encoder still
+                # fires inside inject, so the read-out reflects encoded
+                # weights without any fault.
+                print()
+                print(
+                    "Baseline 1: clean accuracy with encoder, "
+                    "mode=per_forward, rt_error=0"
+                )
+                _reset_fault_state(model)
+                _seed_everything(cfg.experiment.seed)
+                saved_rt_error = fault_model.cfg.rt_error
+                fault_model.cfg.rt_error = 0.0
+                accs = evaluate_with_faults(
+                    model, test_loader, device, loops=1,
+                    desc_prefix="baseline_endlen (per_forward)",
+                )
+                fault_model.cfg.rt_error = saved_rt_error
+                baseline_endlen_acc = accs[0] if accs else 0.0
+                print(
+                    f"  ⇒ baseline_endlen_accuracy = "
+                    f"{baseline_endlen_acc:.2f}%"
+                )
+                print(
+                    f"  Δ vs clean baseline       = "
+                    f"{baseline_endlen_acc - baseline_clean_acc:+.2f}%"
+                )
+
             rt_errors = (
                 cfg.fault.rt_error if isinstance(cfg.fault.rt_error, list) else [cfg.fault.rt_error]
             )
@@ -400,6 +576,16 @@ def main(argv: list[str] | None = None) -> int:
             print()
             with open(run_dir / "summary.json", "w") as f:
                 json.dump({
+                    "baseline_clean_accuracy": baseline_clean_acc,
+                    "baseline_endlen_accuracy": baseline_endlen_acc,
+                    "weight_encoder": (
+                        cfg.fault.weight_encoder if encoder is not None else None
+                    ),
+                    "weight_encoder_mode": (
+                        encoder_mode if encoder is not None else None
+                    ),
+                    "encoded_checkpoint": encoded_checkpoint_path,
+                    "encoder_auto_disabled": encoder_auto_disabled,
                     "rt_error_sweep": all_results,
                     "layer_metrics": _summarize_layer_metrics(model),
                 }, f, indent=2)
