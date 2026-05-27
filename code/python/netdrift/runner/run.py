@@ -50,6 +50,7 @@ from netdrift.models import (
 )
 from netdrift.models.checkpoint import load_checkpoint
 from netdrift.quant.binary import BinaryScheme
+from netdrift.runner.wandb_logger import init_wandb_run
 from netdrift.quant.uniform import IntUniformActScheme
 from netdrift.training import (
     BinaryHingeLoss,
@@ -160,11 +161,11 @@ def _build_fault_model(
     raise NotImplementedError(f"fault model {cfg.fault.model!r} not yet implemented")
 
 
-def _setup_run_dir(cfg: ExperimentConfig) -> Path:
+def _setup_run_dir(cfg: ExperimentConfig) -> tuple[Path, str]:
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = Path(cfg.experiment.output_dir) / cfg.experiment.name / ts
     run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
+    return run_dir, ts
 
 
 def _seed_everything(seed: int) -> None:
@@ -260,6 +261,99 @@ def _summarize_layer_metrics(model: torch.nn.Module) -> dict:
     return out
 
 
+def _resolved_protection(model: torch.nn.Module) -> tuple[list[str], list[str]]:
+    """Return (protected, unprotected) quantized-layer *names* after policy.
+
+    Walks ``named_modules()`` and reads the ``protected`` flag set by
+    :func:`apply_protection_policy`. Returns resolved name strings rather than
+    the 1-based YAML indices so wandb config reflects the actual topology.
+    """
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+    protected: list[str] = []
+    unprotected: list[str] = []
+    for name, mod in model.named_modules():
+        if isinstance(mod, (QuantizedConv2d, QuantizedLinear)):
+            (protected if getattr(mod, "protected", False) else unprotected).append(name)
+    return protected, unprotected
+
+
+def _layer_metric_lengths(model: torch.nn.Module) -> dict[str, dict[str, int]]:
+    """Snapshot the current length of each layer's metric lists.
+
+    Used to slice out the entries produced by a single inference loop: take a
+    snapshot before the loop, sum ``data[k][snapshot:]`` after.
+    """
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+    out: dict[str, dict[str, int]] = {}
+    for name, mod in model.named_modules():
+        if isinstance(mod, (QuantizedConv2d, QuantizedLinear)):
+            lm = getattr(mod, "metrics", None)
+            if lm is not None and getattr(lm, "data", None) is not None:
+                out[name] = {k: len(v) for k, v in lm.data.items()}
+    return out
+
+
+def _loop_metric_delta(
+    model: torch.nn.Module,
+    before: dict[str, dict[str, int]],
+    online: list[str],
+) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+    """Aggregate per-loop fault metrics from the slice produced since ``before``.
+
+    Returns ``(totals, per_layer)`` where ``totals`` sums each online metric over
+    all layers/batches in the loop and ``per_layer`` keeps the per-layer sums.
+    Only keys in ``online`` are considered (the fault model only populates those).
+    """
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+    totals: dict[str, int] = {}
+    per_layer: dict[str, dict[str, int]] = {}
+    for name, mod in model.named_modules():
+        if not isinstance(mod, (QuantizedConv2d, QuantizedLinear)):
+            continue
+        lm = getattr(mod, "metrics", None)
+        if lm is None or getattr(lm, "data", None) is None:
+            continue
+        start = before.get(name, {})
+        for key in online:
+            values = lm.data.get(key)
+            if not values:
+                continue
+            loop_sum = int(sum(values[start.get(key, 0):]))
+            totals[key] = totals.get(key, 0) + loop_sum
+            per_layer.setdefault(name, {})[key] = loop_sum
+    return totals, per_layer
+
+
+def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
+    """Assemble the wandb ``config`` dict: full resolved cfg + flat conveniences.
+
+    The flattened keys (``model``, ``dataset``, ``rt_size`` ...) make the W&B
+    runs table directly filterable/sortable without digging into the nested
+    ``config`` blob. ``rt_error`` is intentionally omitted here — the caller
+    overrides it per run since each rt_error is its own run.
+    """
+    protected, unprotected = _resolved_protection(model)
+    return {
+        "config": _dataclass_to_dict(cfg),
+        "model": cfg.model.name,
+        "dataset": cfg.data.name,
+        "quant_scheme": cfg.quant.scheme,
+        "activation_scheme": cfg.quant.activation_scheme,
+        "activation_bits": cfg.quant.activation_bits,
+        "rt_size": cfg.storage.rt_size,
+        "layout": cfg.storage.layout,
+        "kernel_mapping": cfg.storage.kernel_mapping,
+        "seed": cfg.experiment.seed,
+        "loops": cfg.training.loops,
+        "mitigations": list(cfg.fault.mitigations),
+        "weight_encoder": cfg.fault.weight_encoder,
+        "weight_encoder_mode": cfg.fault.weight_encoder_mode,
+        "protection_policy": cfg.fault.protection.policy,
+        "protected_layers": protected,
+        "unprotected_layers": unprotected,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="NetDrift experiment runner")
     parser.add_argument("--config", required=True, help="Path to YAML config")
@@ -267,13 +361,23 @@ def main(argv: list[str] | None = None) -> int:
         "--override", action="append", default=[], metavar="KEY=VALUE",
         help="Override a config field, e.g. --override fault.rt_error=0.05 (repeatable)",
     )
+    parser.add_argument(
+        "--wandb-project", default=None, metavar="NAME",
+        help="Enable Weights & Biases tracking and log to this project. "
+             "Off when omitted.",
+    )
+    parser.add_argument(
+        "--wandb-entity", default=None, metavar="ORG",
+        help="Optional W&B entity (team/org). Only used with --wandb-project.",
+    )
     args = parser.parse_args(argv)
 
     overrides = parse_overrides(args.override)
     cfg = load_config(args.config, overrides=overrides)
 
     _seed_everything(cfg.experiment.seed)
-    run_dir = _setup_run_dir(cfg)
+    run_dir, run_ts = _setup_run_dir(cfg)
+    wandb_group = f"{cfg.experiment.name}-{run_ts}"
     # Snapshot the resolved config for traceability.
     with open(run_dir / "config.json", "w") as f:
         json.dump(_dataclass_to_dict(cfg), f, indent=2, default=str)
@@ -387,14 +491,34 @@ def main(argv: list[str] | None = None) -> int:
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=cfg.training.step_size, gamma=cfg.training.gamma,
         )
+        run = init_wandb_run(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            group=wandb_group,
+            name=f"{cfg.experiment.name}-train",
+            config=_wandb_config(cfg, model),
+        )
         best_acc = 0.0
         for epoch in range(1, cfg.training.epochs + 1):
-            train_one_epoch(model, train_loader, optimizer, loss_fn, device, epoch)
+            train_loss = train_one_epoch(
+                model, train_loader, optimizer, loss_fn, device, epoch
+            )
             acc = evaluate_clean(model, test_loader, device)
             if acc > best_acc:
                 best_acc = acc
                 torch.save(model.state_dict(), run_dir / "model_best.pt")
+            run.log(
+                {
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    "test_accuracy": acc,
+                    "lr": scheduler.get_last_lr()[0],
+                },
+                step=epoch,
+            )
             scheduler.step()
+        run.set_summary({"best_accuracy": best_acc, "epochs": cfg.training.epochs})
+        run.finish()
         torch.save(model.state_dict(), run_dir / "model.pt")
         with open(run_dir / "train_summary.json", "w") as f:
             json.dump({"best_accuracy": best_acc, "epochs": cfg.training.epochs}, f, indent=2)
@@ -428,6 +552,9 @@ def main(argv: list[str] | None = None) -> int:
             # Optional encoder application.
             baseline_endlen_acc: float | None = None
             encoded_checkpoint_path: str | None = None
+            # wandb summary scalars for the encoder (mode=once). Empty when no
+            # encoder ran; populated below from the per-layer flip report.
+            encoder_summary: dict[str, float] = {}
             if encoder is not None and encoder_mode == "once":
                 print()
                 print(
@@ -464,9 +591,14 @@ def main(argv: list[str] | None = None) -> int:
                     f"{total_changed}/{total_weights} weight entries changed "
                     f"({overall_pct:.2f}%)"
                 )
+                encoder_summary["encoder/total_weights_flipped"] = float(total_changed)
+                encoder_summary["encoder/total_weights"] = float(total_weights)
+                encoder_summary["encoder/overall_pct"] = float(overall_pct)
                 for layer_name, changed in report.items():
                     layer_total = layer_totals[layer_name]
                     pct = 100.0 * changed / layer_total if layer_total else 0.0
+                    encoder_summary[f"encoder/flipped/{layer_name}"] = float(changed)
+                    encoder_summary[f"encoder/flipped_pct/{layer_name}"] = float(pct)
                     print(
                         f"    {layer_name:32s} "
                         f"{changed:8d} / {layer_total:8d} bits flipped "
@@ -542,6 +674,8 @@ def main(argv: list[str] | None = None) -> int:
             rt_errors = (
                 cfg.fault.rt_error if isinstance(cfg.fault.rt_error, list) else [cfg.fault.rt_error]
             )
+            base_wandb_config = _wandb_config(cfg, model)
+            online = list(cfg.metrics.online)
             all_results = []
             for rt_error in rt_errors:
                 n_reset = _reset_fault_state(model)
@@ -556,18 +690,71 @@ def main(argv: list[str] | None = None) -> int:
                 print(bar)
                 print(f"  rt_error = {rt_error}    (reset fault state on {n_reset} layers)")
                 print(bar)
-                t0 = time.perf_counter()
-                accs = evaluate_with_faults(
-                    model, test_loader, device,
-                    loops=cfg.training.loops,
-                    desc_prefix=f"rt_error={rt_error}",
+
+                # One wandb run per rt_error; the whole sweep shares a group.
+                run = init_wandb_run(
+                    project=args.wandb_project,
+                    entity=args.wandb_entity,
+                    group=wandb_group,
+                    name=f"{cfg.experiment.name}-rt{rt_error}",
+                    config={**base_wandb_config, "rt_error": float(rt_error)},
                 )
+                # Baselines + encoder report as one-shot summary scalars so they
+                # are available alongside the per-iteration curves.
+                run.set_summary({
+                    "baseline_clean_accuracy": baseline_clean_acc,
+                    **(
+                        {"baseline_endlen_accuracy": baseline_endlen_acc}
+                        if baseline_endlen_acc is not None else {}
+                    ),
+                    **encoder_summary,
+                })
+
+                t0 = time.perf_counter()
+                accs: list[float] = []
+                # Drive the loops here (loops=1 per call) so each inference
+                # iteration can be logged with its own fault-metric slice. State
+                # still accumulates across iterations — we do NOT reset between
+                # them, matching the legacy loops semantics.
+                for loop_idx in range(1, cfg.training.loops + 1):
+                    before = _layer_metric_lengths(model)
+                    acc = evaluate_with_faults(
+                        model, test_loader, device,
+                        loops=1,
+                        desc_prefix=f"rt_error={rt_error} iter {loop_idx}/{cfg.training.loops}",
+                    )[0]
+                    accs.append(acc)
+                    totals, per_layer = _loop_metric_delta(model, before, online)
+                    log_data: dict[str, float] = {
+                        "loop_idx": loop_idx,
+                        "accuracy": acc,
+                        # Logged every iteration → flat reference lines on charts.
+                        "baseline_clean_accuracy": baseline_clean_acc,
+                        "accuracy_drop_vs_clean": baseline_clean_acc - acc,
+                    }
+                    if baseline_endlen_acc is not None:
+                        log_data["baseline_endlen_accuracy"] = baseline_endlen_acc
+                        log_data["accuracy_drop_vs_endlen"] = baseline_endlen_acc - acc
+                    for k, v in totals.items():
+                        log_data[k] = v
+                    for lname, lmetrics in per_layer.items():
+                        for k, v in lmetrics.items():
+                            log_data[f"layer/{lname}/{k}"] = v
+                    run.log(log_data, step=loop_idx)
+
                 elapsed = time.perf_counter() - t0
                 mean_acc = sum(accs) / len(accs) if accs else 0.0
                 print(
                     f"  ⇒ rt_error={rt_error}  mean_acc={mean_acc:.2f}%  "
                     f"min={min(accs):.2f}%  max={max(accs):.2f}%  total_elapsed={elapsed:.2f}s"
                 )
+                run.set_summary({
+                    "mean_accuracy": mean_acc,
+                    "min_accuracy": min(accs) if accs else 0.0,
+                    "max_accuracy": max(accs) if accs else 0.0,
+                    "elapsed_s": round(elapsed, 2),
+                })
+                run.finish()
                 all_results.append({
                     "rt_error": float(rt_error),
                     "accuracies": accs,

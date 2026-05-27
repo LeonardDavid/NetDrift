@@ -16,6 +16,8 @@ data/
 models/
 results_comb/
 runs/
+wandb/
+docs/
 
 nohup.out
 

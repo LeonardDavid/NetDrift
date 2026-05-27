@@ -42,8 +42,11 @@ def train_one_epoch(
     *,
     log_interval: int = 10,
     log_fn: Callable[[str], None] = print,
-) -> None:
-    """One training epoch with a tqdm progress bar (loss in the postfix)."""
+) -> float:
+    """One training epoch with a tqdm progress bar (loss in the postfix).
+
+    Returns the mean per-batch loss over the epoch (0.0 if the loader was empty).
+    """
     model.train()
     pbar = tqdm(
         loader,
@@ -70,6 +73,7 @@ def train_one_epoch(
     if not _HAS_TQDM and n_batches > 0:
         # Fallback when tqdm isn't installed: one summary line per epoch.
         log_fn(f"Train Epoch {epoch}  avg_loss={running_loss / n_batches:.6f}")
+    return running_loss / n_batches if n_batches > 0 else 0.0
 
 
 @torch.no_grad()

@@ -39,24 +39,24 @@ fault:
   local_bitflip_budget: 0.0
   mitigations: []               # default: no mitigation
   protection:
-    policy: custom
+    policy: all
     # indiv_layer: 4
-    layers: [1, 4]
+    # layers: [1, 4]
     # `layers` lists the 1-based layer_ids that stay UNPROTECTED (exposed to faults).
     # Everything not listed is protected. VGG3 has 4 quantized layers
     # (conv1=1, conv2=2, fc1=3, fc2=4). Listing 2..3 leaves the first conv
     # (conv1) and last linear (fc2) protected — a common BNN/QNN recipe.
-  weight_encoder: endlen          # "endlen" or null
+  weight_encoder: null          # "endlen" or null
   weight_encoder_mode: once       # "once" | "per_forward"
   encoded_checkpoint_save: null   # override save path; null → next to model.checkpoint
 
 training:
   mode: test                    # test | train
   fault_aware: none             # none | ste_inject | kd | regularization (Phase 2)
-  loops: 2
+  loops: 10
 
 metrics:
-  online: []
+  online: [bitflips, misalign_faults, affected_units]
   offline: []
   sinks:
     - type: stdout
