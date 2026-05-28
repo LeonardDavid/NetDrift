@@ -261,6 +261,24 @@ def _summarize_layer_metrics(model: torch.nn.Module) -> dict:
     return out
 
 
+def _maybe_warn_per_forward_budget(
+    *, mode: str, global_budget: float, local_budget: float
+) -> None:
+    """Warn that bitflip budgets are ignored in ``per_forward`` mode.
+
+    Budgets require the latent FP weight (magnitude-aware ranking) and a single
+    cross-layer selection pass, both of which only exist for ``mode=once``. In
+    ``per_forward`` the encoder fires inside every inject with no budget.
+    """
+    if mode == "per_forward" and (global_budget < 1.0 or local_budget < 1.0):
+        warnings.warn(
+            "weight_encoder_mode='per_forward' ignores bitflip budgets "
+            f"(global={global_budget}, local={local_budget}); budgets apply to "
+            "mode='once' only. Set both budgets to 1.0 to silence this.",
+            stacklevel=2,
+        )
+
+
 def _resolved_protection(model: torch.nn.Module) -> tuple[list[str], list[str]]:
     """Return (protected, unprotected) quantized-layer *names* after policy.
 
@@ -348,6 +366,10 @@ def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
         "mitigations": list(cfg.fault.mitigations),
         "weight_encoder": cfg.fault.weight_encoder,
         "weight_encoder_mode": cfg.fault.weight_encoder_mode,
+        "global_bitflip_budget": cfg.fault.global_bitflip_budget,
+        "local_bitflip_budget": cfg.fault.local_bitflip_budget,
+        "local_budget_scope": cfg.fault.local_budget_scope,
+        "budget_selection": cfg.fault.budget_selection,
         "protection_policy": cfg.fault.protection.policy,
         "protected_layers": protected,
         "unprotected_layers": unprotected,
@@ -561,6 +583,12 @@ def main(argv: list[str] | None = None) -> int:
                     f"Applying weight encoder {cfg.fault.weight_encoder!r} "
                     f"(mode=once) to model weights..."
                 )
+                from netdrift.faults.weight_encoders.budget import BudgetConfig
+                _maybe_warn_per_forward_budget(
+                    mode=encoder_mode,
+                    global_budget=cfg.fault.global_bitflip_budget,
+                    local_budget=cfg.fault.local_bitflip_budget,
+                )
                 report = apply_weight_encoder_to_model(
                     model, encoder,
                     rt_size=cfg.storage.rt_size,
@@ -568,6 +596,12 @@ def main(argv: list[str] | None = None) -> int:
                     kernel_mapping_default=(
                         cfg.storage.kernel_mapping.upper()
                         if cfg.storage.kernel_mapping else "ROW"
+                    ),
+                    budget=BudgetConfig(
+                        global_budget=cfg.fault.global_bitflip_budget,
+                        local_budget=cfg.fault.local_bitflip_budget,
+                        scope=cfg.fault.local_budget_scope,  # type: ignore[arg-type]
+                        selection=cfg.fault.budget_selection,  # type: ignore[arg-type]
                     ),
                 )
                 from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
@@ -581,7 +615,9 @@ def main(argv: list[str] | None = None) -> int:
                     if isinstance(m, (QuantizedConv2d, QuantizedLinear))
                     and getattr(m, "protected", False)
                 ]
-                total_changed = sum(report.values())
+                # report: {name: {"flipped", "rejected", "fraction"}}
+                total_changed = sum(r["flipped"] for r in report.values())
+                total_rejected = sum(r["rejected"] for r in report.values())
                 total_weights = sum(layer_totals[n] for n in report)
                 overall_pct = (
                     100.0 * total_changed / total_weights if total_weights else 0.0
@@ -589,20 +625,24 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"  encoded {len(report)} unprotected layers; "
                     f"{total_changed}/{total_weights} weight entries changed "
-                    f"({overall_pct:.2f}%)"
+                    f"({overall_pct:.2f}%); {total_rejected} rejected by budget"
                 )
                 encoder_summary["encoder/total_weights_flipped"] = float(total_changed)
+                encoder_summary["encoder/total_weights_rejected"] = float(total_rejected)
                 encoder_summary["encoder/total_weights"] = float(total_weights)
                 encoder_summary["encoder/overall_pct"] = float(overall_pct)
-                for layer_name, changed in report.items():
+                for layer_name, r in report.items():
+                    changed = r["flipped"]
+                    rejected = r["rejected"]
                     layer_total = layer_totals[layer_name]
                     pct = 100.0 * changed / layer_total if layer_total else 0.0
                     encoder_summary[f"encoder/flipped/{layer_name}"] = float(changed)
                     encoder_summary[f"encoder/flipped_pct/{layer_name}"] = float(pct)
+                    encoder_summary[f"encoder/rejected/{layer_name}"] = float(rejected)
                     print(
                         f"    {layer_name:32s} "
                         f"{changed:8d} / {layer_total:8d} bits flipped "
-                        f"({pct:6.2f}%)"
+                        f"({pct:6.2f}%)  rejected={rejected}"
                     )
                 if protected_layers:
                     print(

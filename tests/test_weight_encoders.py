@@ -12,6 +12,7 @@ import pytest
 from netdrift.faults.weight_encoders import (
     EndlenEncoder,
     _endlen_cpu_reference,
+    _endlen_emit_cpu_reference,
     get_encoder,
     is_encoded_checkpoint_path,
     with_endlen_marker,
@@ -134,3 +135,71 @@ def test_with_endlen_marker_adds_when_absent() -> None:
 def test_with_endlen_marker_idempotent_when_present() -> None:
     assert with_endlen_marker("model_endlen.pt") == "model_endlen.pt"
     assert with_endlen_marker("/runs/foo_endlen.pt") == "/runs/foo_endlen.pt"
+
+
+# ---------------------------------------------------------------------------
+# Emit reference parity: applying every emitted candidate (unbudgeted) must
+# reproduce the in-place endlen result exactly. This is the guard that the
+# emit+select refactor preserves the original algorithm's flips.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 4])
+def test_emit_reference_matches_apply_reference(seed: int) -> None:
+    rng = np.random.default_rng(seed)
+    rows = int(rng.integers(1, 6))
+    cols = int(rng.integers(20, 130))
+    w = rng.choice([-1.0, 1.0], size=(rows, cols)).astype(np.float32)
+    # Latent FP weight whose sign matches w (magnitudes only used for ranking).
+    latent = (w * rng.uniform(0.1, 1.0, size=w.shape)).astype(np.float32)
+
+    expected = w.copy()
+    _endlen_cpu_reference(expected, rt_size=64)
+
+    got = w.copy()
+    candidates = _endlen_emit_cpu_reference(
+        got_view=got, latent_view=latent, rt_size=64, layer_idx=0
+    )
+    # Candidates are non-overlapping, so applying all (in any order) is safe.
+    flat = got.reshape(-1)
+    for c in candidates:
+        flat[c.start_idx:c.start_idx + c.n_flips] *= -1
+    assert np.array_equal(got, expected), (
+        "emit+apply-all must equal in-place endlen"
+    )
+
+
+def test_emit_reference_parity_on_gpu_coverage_shape() -> None:
+    """CPU emit parity on the exact (4, 64)/rt_size=16 shape the GPU test uses.
+
+    Pins that the reference behaves identically on the GPU's coverage (exact
+    multiple of rt_size), so a future GPU parity failure can be isolated to a
+    GPU bug rather than an algorithm bug.
+    """
+    rng = np.random.default_rng(0)
+    w = np.where(rng.random((4, 64)) > 0.5, 1.0, -1.0).astype(np.float32)
+    latent = (w * rng.uniform(0.1, 1.0, size=w.shape)).astype(np.float32)
+
+    expected = w.copy()
+    _endlen_cpu_reference(expected, rt_size=16)
+
+    got = w.copy()
+    cands = _endlen_emit_cpu_reference(
+        got_view=got, latent_view=latent, rt_size=16, layer_idx=0
+    )
+    flat = got.reshape(-1)
+    for c in cands:
+        flat[c.start_idx:c.start_idx + c.n_flips] *= -1
+    assert np.array_equal(got, expected)
+
+
+def test_emit_reference_candidate_fields_sane() -> None:
+    # A racetrack with an isolated short run produces ≥1 candidate with a
+    # positive flip count and the layer_idx stamped through.
+    w = np.array([[1, 1, 1, -1, 1, 1, 1, 1]], dtype=np.float32)
+    latent = w * 0.5
+    cands = _endlen_emit_cpu_reference(got_view=w, latent_view=latent, rt_size=8, layer_idx=7)
+    assert cands, "expected at least one merge candidate"
+    for c in cands:
+        assert c.n_flips > 0
+        assert c.layer_idx == 7
+        assert c.min_latent_magnitude == pytest.approx(0.5)

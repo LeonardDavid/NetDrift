@@ -175,3 +175,46 @@ def test_unknown_dataclass_field_silently_ignored(tmp_path: Path) -> None:
     assert cfg.experiment.name == "ok"
     # No attribute leak.
     assert not hasattr(cfg.experiment, "unknown_field")
+
+
+def test_budget_params_parse(tmp_path: Path) -> None:
+    cfg_path = _write(
+        tmp_path, "exp.yaml",
+        "fault:\n"
+        "  global_bitflip_budget: 0.3\n"
+        "  local_bitflip_budget: 0.5\n"
+        "  local_budget_scope: racetrack\n"
+        "  budget_selection: magnitude_aware\n",
+    )
+    cfg = load(cfg_path)
+    assert cfg.fault.global_bitflip_budget == 0.3
+    assert cfg.fault.local_bitflip_budget == 0.5
+    assert cfg.fault.local_budget_scope == "racetrack"
+    assert cfg.fault.budget_selection == "magnitude_aware"
+
+
+def test_budget_defaults_are_unbounded(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "experiment:\n  name: ok\n")
+    cfg = load(cfg_path)
+    assert cfg.fault.global_bitflip_budget == 1.0
+    assert cfg.fault.local_bitflip_budget == 1.0
+    assert cfg.fault.local_budget_scope == "layer"
+    assert cfg.fault.budget_selection == "greedy"
+
+
+def test_budget_out_of_range_rejected(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "fault:\n  global_bitflip_budget: 1.5\n")
+    with pytest.raises(ValueError, match="budget"):
+        load(cfg_path)
+
+
+def test_bad_scope_rejected(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "fault:\n  local_budget_scope: nonsense\n")
+    with pytest.raises(ValueError, match="local_budget_scope"):
+        load(cfg_path)
+
+
+def test_bad_selection_rejected(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "fault:\n  budget_selection: nonsense\n")
+    with pytest.raises(ValueError, match="budget_selection"):
+        load(cfg_path)

@@ -35,13 +35,15 @@ storage:
 
 fault:
   model: rtm_misalignment
-  rt_error: [0.00001, 0.0001]
-  global_bitflip_budget: 0.0
-  local_bitflip_budget: 0.0
+  rt_error: [0.00001]
+  global_bitflip_budget: 1.0    # fraction of all model weights endlen may flip (1.0=unbounded, 0.0=none)
+  local_bitflip_budget: 1.0     # fraction within each local unit; for global-only leave this at 1.0
+  local_budget_scope: layer     # layer | racetrack | channel
+  budget_selection: greedy      # greedy | value_per_flip | magnitude_aware
   mitigations: []               # default: no mitigation
   protection:
-    policy: all
-    # layers: [2, 3, 4, 5, 6, 7]
+    policy: custom
+    layers: [2, 3, 4, 5, 6, 7]
     
     # `layers` lists the 1-based layer_ids that stay UNPROTECTED (exposed to faults).
     # Everything not listed is protected. VGG7 has 8 quantized layers
@@ -55,7 +57,7 @@ fault:
 training:
   mode: test                    # test | train
   fault_aware: none             # none | ste_inject | kd | regularization (Phase 2)
-  loops: 2
+  loops: 10
 
 metrics:
   online: []

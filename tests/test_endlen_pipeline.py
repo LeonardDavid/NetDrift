@@ -123,7 +123,7 @@ def test_apply_mutates_layer_weights() -> None:
     )
 
     assert report, "apply_weight_encoder_to_model returned an empty report"
-    total = sum(report.values())
+    total = sum(r["flipped"] for r in report.values())
     assert total > 0, (
         f"encoder did not flip any bits across {len(report)} layers — "
         f"report={report}"
@@ -132,10 +132,10 @@ def test_apply_mutates_layer_weights() -> None:
     # Per-layer sanity: every layer with weight numel >= 8 should have at
     # least one flip (high-entropy random ±1 with rt_size=8 reliably has
     # at least one merge candidate).
-    for name, changed in report.items():
+    for name, r in report.items():
         if pre[name].numel() < 8:
             continue
-        assert changed > 0, f"layer {name} had zero bit flips ({changed=})"
+        assert r["flipped"] > 0, f"layer {name} had zero bit flips ({r=})"
 
 
 @pytest.mark.cuda
@@ -185,7 +185,7 @@ def test_apply_respects_protection_policy() -> None:
 
     # Unprotected layers should have nonzero flips on high-entropy ±1 input.
     for name in report:
-        assert report[name] > 0, (
+        assert report[name]["flipped"] > 0, (
             f"unprotected layer {name} had zero flips ({report[name]})"
         )
 
@@ -324,7 +324,7 @@ def test_once_mode_on_real_checkpoint(tmp_path) -> None:
         rt_mapping=rt_mapping,
         kernel_mapping_default=kernel_mapping,
     )
-    flipped = sum(report.values())
+    flipped = sum(r["flipped"] for r in report.values())
 
     # Diagnostic floor: real BNN weights are structured, but on a model with
     # millions of quantized weights endlen almost always finds *something* —
@@ -397,3 +397,162 @@ def test_once_mode_save_reload_round_trip(tmp_path) -> None:
         "reloaded encoded model produces a different output than the "
         "in-memory encoded model — save/load is not preserving weights"
     )
+
+
+# ---------------------------------------------------------------------------
+# 5. Budgeted apply (Task 8) — GPU, since apply uses the CUDA encoder.
+# ---------------------------------------------------------------------------
+
+from netdrift.faults.weight_encoders.budget import BudgetConfig  # noqa: E402
+
+
+def _build_quantized_vgg3(device):
+    m = build_model("vgg3_mnist").to(device)
+    replace_with_quantized(m, BinaryScheme())
+    return m.to(device)
+
+
+@pytest.mark.cuda
+def test_apply_budget_one_equals_unbudgeted() -> None:
+    """budget=1.0 (both) reproduces the unbudgeted flip counts exactly."""
+    if not torch.cuda.is_available():
+        pytest.skip("apply path uses the CUDA encoder")
+    device = torch.device("cuda")
+
+    # Both models must start from IDENTICAL weights — build once, share the
+    # state_dict — otherwise we'd compare encodings of two different random
+    # initializations (the encoder is deterministic, the init is not).
+    base = _build_quantized_vgg3(device)
+    pre = {n: p.detach().clone() for n, p in base.state_dict().items()}
+
+    m1 = _build_quantized_vgg3(device)
+    m1.load_state_dict(pre)
+    rep_unbudgeted = apply_weight_encoder_to_model(
+        m1, EndlenEncoder(), rt_size=64, rt_mapping="ROW",
+    )
+    m2 = _build_quantized_vgg3(device)
+    m2.load_state_dict(pre)
+    rep_budget1 = apply_weight_encoder_to_model(
+        m2, EndlenEncoder(), rt_size=64, rt_mapping="ROW",
+        budget=BudgetConfig(global_budget=1.0, local_budget=1.0, scope="layer", selection="greedy"),
+    )
+    # Both report shapes are {name: {"flipped", ...}}; compare flipped counts.
+    flips1 = {k: v["flipped"] for k, v in rep_unbudgeted.items()}
+    flips2 = {k: v["flipped"] for k, v in rep_budget1.items()}
+    assert flips1 == flips2, (flips1, flips2)
+    # budget=1.0 also routes through the fast path → rejected is 0.
+    assert all(v["rejected"] == 0 for v in rep_budget1.values())
+
+
+@pytest.mark.cuda
+def test_apply_budget_zero_flips_nothing() -> None:
+    """budget=0 leaves every weight untouched and reports rejected>0."""
+    if not torch.cuda.is_available():
+        pytest.skip("apply path uses the CUDA encoder")
+    device = torch.device("cuda")
+    m = _build_quantized_vgg3(device)
+    pre = {n: p.detach().clone() for n, p in m.named_parameters()}
+    report = apply_weight_encoder_to_model(
+        m, EndlenEncoder(), rt_size=64, rt_mapping="ROW",
+        budget=BudgetConfig(global_budget=0.0, local_budget=1.0, scope="layer", selection="greedy"),
+    )
+    for n, p in m.named_parameters():
+        assert torch.equal(p, pre[n]), f"{n} changed under budget=0"
+    assert all(v["flipped"] == 0 for v in report.values())
+    assert any(v["rejected"] > 0 for v in report.values()), "expected some rejected candidates"
+
+
+@pytest.mark.cuda
+def test_apply_budget_caps_flips() -> None:
+    """A mid budget flips strictly fewer bits than unbudgeted, within the cap."""
+    if not torch.cuda.is_available():
+        pytest.skip("apply path uses the CUDA encoder")
+    device = torch.device("cuda")
+
+    base = _build_quantized_vgg3(device)
+    pre = {n: p.detach().clone() for n, p in base.state_dict().items()}
+
+    m_full = _build_quantized_vgg3(device)
+    m_full.load_state_dict(pre)
+    rep_full = apply_weight_encoder_to_model(
+        m_full, EndlenEncoder(), rt_size=64, rt_mapping="ROW",
+    )
+    full_flips = sum(v["flipped"] for v in rep_full.values())
+
+    m_cap = _build_quantized_vgg3(device)
+    m_cap.load_state_dict(pre)
+    rep_cap = apply_weight_encoder_to_model(
+        m_cap, EndlenEncoder(), rt_size=64, rt_mapping="ROW",
+        budget=BudgetConfig(global_budget=0.05, local_budget=1.0, scope="layer", selection="greedy"),
+    )
+    cap_flips = sum(v["flipped"] for v in rep_cap.values())
+
+    total_weights = sum(p.numel() for p in m_cap.parameters() if p.dim() >= 2)
+    # cap_flips must respect the global budget and be less than the full run.
+    assert cap_flips <= int(0.05 * total_weights) + 1
+    assert cap_flips < full_flips, (cap_flips, full_flips)
+
+    # Mask-routing guard: every position the budgeted run flipped MUST also be
+    # a position the full (unbudgeted) run flipped. Catches a wrong
+    # scatter-mask → undo mapping that flips positions endlen never chose.
+    full_sd, cap_sd = m_full.state_dict(), m_cap.state_dict()
+    for n in pre:
+        if pre[n].numel() == 0:
+            continue
+        diff_full = pre[n] != full_sd[n]
+        diff_cap = pre[n] != cap_sd[n]
+        assert torch.all(diff_full | ~diff_cap), (
+            f"{n}: budgeted run flipped a position the full run did not"
+        )
+
+
+@pytest.mark.cuda
+def test_budget_sweep_monotone_baseline(tmp_path) -> None:
+    """Lower budget → less flipping → baseline (no-fault) accuracy non-decreasing.
+
+    The core hypothesis of the budgeted-endlen work: capping flips recovers the
+    baseline accuracy endlen otherwise destroys. Opt-in — needs a real vgg3
+    checkpoint via NETDRIFT_REAL_MODEL + NETDRIFT_REAL_CKPT (+ optional
+    NETDRIFT_REAL_DATASET, default fmnist).
+    """
+    import os
+
+    model_name = os.environ.get("NETDRIFT_REAL_MODEL")
+    ckpt = os.environ.get("NETDRIFT_REAL_CKPT")
+    dataset = os.environ.get("NETDRIFT_REAL_DATASET", "fmnist")
+    if not (model_name and ckpt and os.path.exists(ckpt)):
+        pytest.skip("set NETDRIFT_REAL_MODEL + NETDRIFT_REAL_CKPT")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+
+    from torch.utils.data import DataLoader
+
+    from netdrift.data import build_datasets
+    from netdrift.models.checkpoint import load_checkpoint
+    from netdrift.training import evaluate_clean
+
+    device = torch.device("cuda")
+    _, test_ds, _ = build_datasets(dataset, "data")
+    loader = DataLoader(test_ds, batch_size=256)
+
+    def acc_for(budget: float) -> float:
+        m = build_model(model_name).to(device)
+        replace_with_quantized(m, BinaryScheme())
+        load_checkpoint(
+            m, ckpt, mode="strict", scheme=BinaryScheme(),
+            scale_init="max_abs", map_location="cuda",
+        )
+        m.to(device)
+        apply_weight_encoder_to_model(
+            m, EndlenEncoder(), rt_size=64, rt_mapping="ROW",
+            budget=BudgetConfig(
+                global_budget=budget, local_budget=1.0,
+                scope="layer", selection="greedy",
+            ),
+        )
+        return evaluate_clean(m, loader, device, log_fn=None)
+
+    a_low, a_mid, a_full = acc_for(0.05), acc_for(0.25), acc_for(1.0)
+    # Less flipping must not hurt baseline accuracy (allow 1% slack for noise).
+    assert a_low >= a_mid - 1.0, (a_low, a_mid)
+    assert a_mid >= a_full - 1.0, (a_mid, a_full)

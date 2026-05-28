@@ -34,19 +34,21 @@ storage:
 
 fault:
   model: rtm_misalignment
-  rt_error: [0.00001, 0.0001]
-  global_bitflip_budget: 0.0
-  local_bitflip_budget: 0.0
+  rt_error: [0.00001]
+  global_bitflip_budget: 1.0    # fraction of all model weights endlen may flip (1.0=unbounded, 0.0=none)
+  local_bitflip_budget: 0.1     # fraction within each local unit; for global-only leave this at 1.0
+  local_budget_scope: channel     # layer | racetrack | channel
+  budget_selection: greedy      # greedy | value_per_flip | magnitude_aware
   mitigations: []               # default: no mitigation
   protection:
-    policy: all
+    policy: custom
     # indiv_layer: 4
-    # layers: [1, 4]
+    layers: [1, 4]
     # `layers` lists the 1-based layer_ids that stay UNPROTECTED (exposed to faults).
     # Everything not listed is protected. VGG3 has 4 quantized layers
     # (conv1=1, conv2=2, fc1=3, fc2=4). Listing 2..3 leaves the first conv
     # (conv1) and last linear (fc2) protected — a common BNN/QNN recipe.
-  weight_encoder: null          # "endlen" or null
+  weight_encoder: endlen          # "endlen" or null
   weight_encoder_mode: once       # "once" | "per_forward"
   encoded_checkpoint_save: null   # override save path; null → next to model.checkpoint
 
@@ -56,7 +58,7 @@ training:
   loops: 10
 
 metrics:
-  online: [bitflips, misalign_faults, affected_units]
+  online: []
   offline: []
   sinks:
     - type: stdout

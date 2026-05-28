@@ -40,8 +40,10 @@ storage:
 fault:
   model: rtm_misalignment
   rt_error: [0.001, 0.0001, 0.00001]
-  global_bitflip_budget: 0.0
-  local_bitflip_budget: 0.0
+  global_bitflip_budget: 1.0    # fraction of all model weights endlen may flip (1.0=unbounded, 0.0=none)
+  local_bitflip_budget: 1.0     # fraction within each local unit; for global-only leave this at 1.0
+  local_budget_scope: layer     # layer | racetrack | channel
+  budget_selection: greedy      # greedy | value_per_flip | magnitude_aware
   mitigations: []
   protection:
     policy: all                 # every Conv/Linear weight on nanowires

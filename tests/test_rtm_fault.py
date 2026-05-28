@@ -228,6 +228,37 @@ def test_endlen_gpu_matches_cpu_reference() -> None:
 
 
 @pytest.mark.cuda
+def test_emit_kernel_matches_cpu_reference() -> None:
+    """The GPU emit kernel records the same merge set as the CPU emit reference.
+
+    Order may differ (GPU walks the sorted array; CPU pops + re-takes), so we
+    compare the SET of (start_idx, n_flips, endlen_gain) tuples. Uses a width
+    that is an exact multiple of rt_size so both cover the same racetracks
+    (the kernel skips trailing partial tracks; the reference does not).
+    """
+    from netdrift.faults.weight_encoders import (
+        _endlen_emit_cpu_reference,
+        emit_candidates_gpu,
+    )
+    rt_size = 16
+    rng = np.random.default_rng(1)
+    w = np.where(rng.random((6, 128)) > 0.5, 1.0, -1.0).astype(np.float32)
+    latent = (w * rng.uniform(0.1, 1.0, size=w.shape)).astype(np.float32)
+
+    cpu = _endlen_emit_cpu_reference(
+        got_view=w.copy(), latent_view=latent, rt_size=rt_size, layer_idx=0
+    )
+    gpu = emit_candidates_gpu(w.copy(), latent, rt_size=rt_size, layer_idx=0)
+
+    def keyset(cands):
+        return sorted((c.start_idx, c.n_flips, c.endlen_gain) for c in cands)
+
+    assert keyset(gpu) == keyset(cpu), (
+        "GPU emit kernel and CPU emit reference disagree on candidate set"
+    )
+
+
+@pytest.mark.cuda
 def test_endlen_per_forward_mode_encodes_at_inject() -> None:
     """In ``per_forward`` mode, inject's output reflects the encoded weights
     (not the raw input) even at rt_error=0, while module.weight stays untouched.
@@ -300,3 +331,27 @@ def test_kernel_is_deterministic_at_fixed_seed() -> None:
     assert np.array_equal(off1, off2), "index_offset arrays should match across runs"
     assert mis1 == mis2, f"misalign_fault counts should match: {mis1} vs {mis2}"
     assert flip1 == flip2, f"bitflip counts should match: {flip1} vs {flip2}"
+
+
+# ---------------------------------------------------------------------------
+# per_forward + budget warning (Task 10) — pure logic, no GPU.
+# ---------------------------------------------------------------------------
+
+def test_per_forward_with_budget_warns() -> None:
+    import warnings as _w
+    from netdrift.runner.run import _maybe_warn_per_forward_budget
+    with pytest.warns(UserWarning, match="per_forward.*budget"):
+        _maybe_warn_per_forward_budget(
+            mode="per_forward", global_budget=0.5, local_budget=1.0
+        )
+
+
+def test_once_with_budget_no_warn() -> None:
+    import warnings as _w
+    from netdrift.runner.run import _maybe_warn_per_forward_budget
+    with _w.catch_warnings():
+        _w.simplefilter("error")  # any warning becomes an error
+        # once mode with a budget: no warning.
+        _maybe_warn_per_forward_budget(mode="once", global_budget=0.5, local_budget=1.0)
+        # per_forward with unbounded budgets: no warning.
+        _maybe_warn_per_forward_budget(mode="per_forward", global_budget=1.0, local_budget=1.0)

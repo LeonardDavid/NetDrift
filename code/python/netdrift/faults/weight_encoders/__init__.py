@@ -27,9 +27,13 @@ from netdrift.faults.weight_encoders.base import (
     get_encoder,
     register_encoder,
 )
+from netdrift.faults.weight_encoders.budget import BudgetConfig, select_merges
+from netdrift.faults.weight_encoders.candidates import MergeCandidate
 from netdrift.faults.weight_encoders.endlen import (
     EndlenEncoder,
     _endlen_cpu_reference,
+    _endlen_emit_cpu_reference,
+    emit_candidates_gpu,
 )
 
 __all__ = [
@@ -41,4 +45,9 @@ __all__ = [
     "is_encoded_checkpoint_path",
     "with_endlen_marker",
     "_endlen_cpu_reference",
+    "BudgetConfig",
+    "select_merges",
+    "MergeCandidate",
+    "_endlen_emit_cpu_reference",
+    "emit_candidates_gpu",
 ]

@@ -128,8 +128,17 @@ class FaultCfg:
                                Phase 1 only ships ``rtm_misalignment``.
         rt_error:              Per-read fault probability or list of probabilities.
                                A list triggers a sweep at test time.
-        global_bitflip_budget: Reserved (used by Phase 2+ budget enforcement).
-        local_bitflip_budget:  Reserved.
+        global_bitflip_budget: Max fraction (0..1) of ALL model weights the
+                               endlen encoder may flip. ``1.0`` = unbounded,
+                               ``0.0`` = flip nothing. mode=once only.
+        local_bitflip_budget:  Max fraction (0..1) within each local unit (see
+                               ``local_budget_scope``). To run global-only leave
+                               this at ``1.0``; for local-only set
+                               ``global_bitflip_budget`` to ``1.0``.
+        local_budget_scope:    ``layer`` | ``racetrack`` | ``channel`` — the unit
+                               ``local_bitflip_budget`` is measured against.
+        budget_selection:      ``greedy`` | ``value_per_flip`` |
+                               ``magnitude_aware`` — which merges survive the cap.
         mitigations:           Ordered list of mitigation step names. Default
                                is ``[]`` — a single step max is the
                                recommended convention.
@@ -138,8 +147,10 @@ class FaultCfg:
 
     model: str = "rtm_misalignment"
     rt_error: Any = 0.0  # float | list[float]
-    global_bitflip_budget: float = 0.0
-    local_bitflip_budget: float = 0.0
+    global_bitflip_budget: float = 1.0
+    local_bitflip_budget: float = 1.0
+    local_budget_scope: str = "layer"      # layer | racetrack | channel
+    budget_selection: str = "greedy"       # greedy | value_per_flip | magnitude_aware
     mitigations: list[str] = field(default_factory=list)
     protection: ProtectionCfg = field(default_factory=ProtectionCfg)
     weight_encoder: Optional[str] = None
@@ -151,6 +162,24 @@ class FaultCfg:
     encoded_checkpoint_save: Optional[str] = None
     """Override path for the post-encoder checkpoint (mode=once). Default:
     ``<run_dir>/model_endlen.pt``."""
+
+    def __post_init__(self) -> None:
+        for n in ("global_bitflip_budget", "local_bitflip_budget"):
+            v = float(getattr(self, n))
+            if not (0.0 <= v <= 1.0):
+                raise ValueError(f"{n} must be a fraction in [0, 1]; got {v}")
+        if self.local_budget_scope not in ("layer", "racetrack", "channel"):
+            raise ValueError(
+                "local_budget_scope must be layer|racetrack|channel; "
+                f"got {self.local_budget_scope!r}"
+            )
+        if self.budget_selection not in (
+            "greedy", "value_per_flip", "magnitude_aware"
+        ):
+            raise ValueError(
+                "budget_selection must be greedy|value_per_flip|magnitude_aware; "
+                f"got {self.budget_selection!r}"
+            )
 
 
 @dataclass
