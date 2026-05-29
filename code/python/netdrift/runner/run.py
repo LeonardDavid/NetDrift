@@ -97,6 +97,26 @@ def _reset_fault_state(model: torch.nn.Module) -> int:
     return n
 
 
+def _rt_mapping_fn_for_layout(layout: str):
+    """Return a ``(layer)->str`` rt_mapping callable for ``storage.layout``.
+
+    ``row``/``col`` are wired into the fault model. ``mix``/``interleaved`` are
+    declared in the schema but not implemented for faults yet — raise rather
+    than silently fall back to ROW (which is the latent bug this fixes:
+    previously the runner attached the fault model with no rt_mapping_fn, so
+    every layer defaulted to ROW regardless of ``storage.layout``).
+    """
+    norm = (layout or "row").lower()
+    if norm == "row":
+        return lambda _layer: "ROW"
+    if norm == "col":
+        return lambda _layer: "COL"
+    raise NotImplementedError(
+        f"storage.layout={layout!r} is not wired into the fault model yet; "
+        f"supported: row, col. (mix/interleaved are schema placeholders.)"
+    )
+
+
 def _warn_checkpoint_mismatch(cfg: ExperimentConfig) -> None:
     """Warn (don't error) when the checkpoint path conflicts with activation config.
 
@@ -496,6 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         attach_fault_model(
             model, fault_model,
+            rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
             kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
         )
 
@@ -520,11 +541,28 @@ def main(argv: list[str] | None = None) -> int:
             name=f"{cfg.experiment.name}-train",
             config=_wandb_config(cfg, model),
         )
+        # Fault-aware dispatch. With fault_aware != none on a quantized model,
+        # route through the fault-aware loop, which handles the gradient path
+        # (the attached fault model detaches gradients otherwise) and the
+        # run-length regularizer / fault-state mode. fault_aware == none keeps
+        # the legacy plain loop (unchanged behaviour).
+        from netdrift.training import train_one_epoch_fault_aware
+        fault_aware = cfg.training.fault_aware
         best_acc = 0.0
         for epoch in range(1, cfg.training.epochs + 1):
-            train_loss = train_one_epoch(
-                model, train_loader, optimizer, loss_fn, device, epoch
-            )
+            if scheme is not None and fault_aware != "none":
+                train_loss = train_one_epoch_fault_aware(
+                    model, train_loader, optimizer, device,
+                    rt_size=cfg.storage.rt_size,
+                    layout=cfg.storage.layout,
+                    kernel_mapping=cfg.storage.kernel_mapping or "row",
+                    cfg=cfg.training,
+                    epoch=epoch,
+                )
+            else:
+                train_loss = train_one_epoch(
+                    model, train_loader, optimizer, loss_fn, device, epoch
+                )
             acc = evaluate_clean(model, test_loader, device)
             if acc > best_acc:
                 best_acc = acc
@@ -568,7 +606,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             attach_fault_model(model, None)
             baseline_clean_acc = evaluate_clean(model, test_loader, device)
-            attach_fault_model(model, fault_model, kernel_mapping=kernel_mapping_str)
+            attach_fault_model(
+                model, fault_model,
+                rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
+                kernel_mapping=kernel_mapping_str,
+            )
             print(f"  ⇒ baseline_clean_accuracy = {baseline_clean_acc:.2f}%")
 
             # Optional encoder application.
@@ -674,7 +716,9 @@ def main(argv: list[str] | None = None) -> int:
                 attach_fault_model(model, None)
                 baseline_endlen_acc = evaluate_clean(model, test_loader, device)
                 attach_fault_model(
-                    model, fault_model, kernel_mapping=kernel_mapping_str
+                    model, fault_model,
+                    rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
+                    kernel_mapping=kernel_mapping_str,
                 )
                 print(f"  ⇒ baseline_endlen_accuracy = {baseline_endlen_acc:.2f}%")
                 print(
@@ -711,6 +755,49 @@ def main(argv: list[str] | None = None) -> int:
                     f"{baseline_endlen_acc - baseline_clean_acc:+.2f}%"
                 )
 
+            # Capability #1: pattern-preserving recalibration (BN+Scale), no faults.
+            # Runs after the encoder produced the endlen'd weights and before the
+            # rt_error sweep. The fault model is detached for the recalibration
+            # forward passes (no faults), then restored; binary weight signs stay
+            # frozen so the endlen pattern is preserved.
+            baseline_endlen_recal_acc: float | None = None
+            recal_cfg = cfg.training.recalibrate
+            do_recal = recal_cfg.enabled and (
+                recal_cfg.on == "always" or (recal_cfg.on == "endlen" and encoder is not None)
+            )
+            if do_recal:
+                from netdrift.training import recalibrate
+                print()
+                print("Recalibration: BN running stats + output Scale (no faults)")
+                # Detach faults for the recalibration forward passes; restore in
+                # a finally so a failure mid-recal doesn't leave the model with
+                # no fault model attached for the sweep.
+                attach_fault_model(model, None)
+                try:
+                    recalibrate(model, train_loader, device, recal_cfg)
+                    baseline_endlen_recal_acc = evaluate_clean(model, test_loader, device)
+                finally:
+                    attach_fault_model(
+                        model, fault_model,
+                        rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
+                        kernel_mapping=kernel_mapping_str,
+                    )
+                print(
+                    f"  ⇒ baseline_endlen_recal_accuracy = "
+                    f"{baseline_endlen_recal_acc:.2f}%"
+                )
+                # Save the recalibrated model with a _recal marker. Next to the
+                # encoded checkpoint when one exists (parallel to the _endlen
+                # convention); otherwise (e.g. on=always with no encoder) fall
+                # back to the run dir so the recalibrated weights are never lost.
+                if encoded_checkpoint_path:
+                    rp = Path(encoded_checkpoint_path)
+                    recal_path = str(rp.with_name(f"{rp.stem}_recal{rp.suffix}"))
+                else:
+                    recal_path = str(run_dir / "model_recal.pt")
+                torch.save(model.state_dict(), recal_path)
+                print(f"  recalibrated checkpoint saved to: {recal_path}")
+
             rt_errors = (
                 cfg.fault.rt_error if isinstance(cfg.fault.rt_error, list) else [cfg.fault.rt_error]
             )
@@ -746,6 +833,10 @@ def main(argv: list[str] | None = None) -> int:
                     **(
                         {"baseline_endlen_accuracy": baseline_endlen_acc}
                         if baseline_endlen_acc is not None else {}
+                    ),
+                    **(
+                        {"baseline_endlen_recal_accuracy": baseline_endlen_recal_acc}
+                        if baseline_endlen_recal_acc is not None else {}
                     ),
                     **encoder_summary,
                 })
@@ -805,6 +896,7 @@ def main(argv: list[str] | None = None) -> int:
                 json.dump({
                     "baseline_clean_accuracy": baseline_clean_acc,
                     "baseline_endlen_accuracy": baseline_endlen_acc,
+                    "baseline_endlen_recal_accuracy": baseline_endlen_recal_acc,
                     "weight_encoder": (
                         cfg.fault.weight_encoder if encoder is not None else None
                     ),

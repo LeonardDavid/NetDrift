@@ -8,6 +8,9 @@ regularization losses.
 from __future__ import annotations
 
 import torch
+import torch.nn as nn
+
+from netdrift.faults.layout import _layout_weight_for_racetrack
 
 
 def binary_hingeloss(yhat: torch.Tensor, y: torch.Tensor, b: float = 128.0) -> torch.Tensor:
@@ -28,3 +31,63 @@ class BinaryHingeLoss:
 
     def __call__(self, yhat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return binary_hingeloss(yhat, y, self.b)
+
+
+def run_length_penalty(
+    model: nn.Module,
+    *,
+    beta: float,
+    rt_size: int,
+    layout: str,
+    kernel_mapping: str,
+) -> torch.Tensor:
+    """Adjacent sign-agreement penalty over racetrack-aligned weights.
+
+    For every unprotected quantized layer, lay the *latent* weight into its
+    racetrack-aligned 2D view (the exact order the nanowire stores bits, via
+    the shared layout helper), then for each adjacent pair ``(w_i, w_{i+1})``
+    that lies INSIDE the same ``rt_size`` block, accumulate
+
+        agree = tanh(beta*w_i) * tanh(beta*w_{i+1})    # +1 same sign, -1 opposite
+
+    and return ``-mean(agree)`` over all such pairs across all contributing
+    layers. Minimizing this loss lengthens same-sign runs along racetracks,
+    which is what the RTM fault model and endlen care about. Pairs straddling a
+    racetrack boundary are excluded (a sign change there costs nothing in the
+    fault model). Returns a 0-dim tensor; ``0.0`` when no layer contributes.
+    """
+    # Imported here to avoid a hard dependency at module import time.
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+
+    layout = layout.upper()
+    kernel_mapping = kernel_mapping.upper()
+    agree_terms: list[torch.Tensor] = []
+    for _, module in model.named_modules():
+        if not isinstance(module, (QuantizedConv2d, QuantizedLinear)):
+            continue
+        if getattr(module, "protected", False):
+            continue
+        if getattr(module, "scheme", None) is None:
+            continue
+        weight = module.weight  # latent FP weight (a Parameter; keeps grad)
+        if weight.numel() == 0:
+            continue
+        km = kernel_mapping if weight.dim() == 4 else None
+        w_2d, _undo = _layout_weight_for_racetrack(
+            weight, rt_mapping=layout, kernel_mapping=km
+        )
+        rows, cols = w_2d.shape
+        n_full = cols // rt_size  # floor: ignore trailing partial track (endlen convention)
+        if n_full == 0:
+            continue
+        # Reshape full tracks to (rows, n_full, rt_size); pairs are adjacent
+        # within the last axis, so no pair crosses a block boundary.
+        block = w_2d[:, : n_full * rt_size].reshape(rows, n_full, rt_size)
+        s = torch.tanh(beta * block)
+        agree = s[..., :-1] * s[..., 1:]  # (rows, n_full, rt_size-1)
+        agree_terms.append(agree.reshape(-1))
+
+    if not agree_terms:
+        return torch.zeros((), dtype=torch.float32)
+    all_agree = torch.cat(agree_terms)
+    return -all_agree.mean()

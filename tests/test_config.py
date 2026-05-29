@@ -218,3 +218,55 @@ def test_bad_selection_rejected(tmp_path: Path) -> None:
     cfg_path = _write(tmp_path, "exp.yaml", "fault:\n  budget_selection: nonsense\n")
     with pytest.raises(ValueError, match="budget_selection"):
         load(cfg_path)
+
+
+def test_recalibrate_and_reg_defaults():
+    from netdrift.config.schema import ExperimentConfig
+
+    cfg = ExperimentConfig()
+    assert cfg.training.recalibrate.enabled is False
+    assert cfg.training.recalibrate.bn_stats is True
+    assert cfg.training.recalibrate.tune_affine is True
+    assert cfg.training.recalibrate.on == "endlen"
+    assert cfg.training.reg.lambda_ == 0.0
+    assert cfg.training.reg.beta == 4.0
+    assert cfg.training.reg.inject_faults is False
+    assert cfg.training.fault_state_mode == "fresh"
+
+
+def test_recalibrate_parses_from_yaml_dict():
+    from netdrift.config.loader import _from_dict
+    from netdrift.config.schema import ExperimentConfig
+
+    raw = {
+        "training": {
+            "mode": "test",
+            "fault_aware": "regularization",
+            "fault_state_mode": "accumulate",
+            "recalibrate": {"enabled": True, "epochs": 3, "on": "always"},
+            "reg": {"lambda": 0.02, "beta": 8.0, "inject_faults": True},
+        }
+    }
+    cfg = _from_dict(ExperimentConfig, raw)
+    assert cfg.training.recalibrate.enabled is True
+    assert cfg.training.recalibrate.epochs == 3
+    assert cfg.training.recalibrate.on == "always"
+    assert cfg.training.reg.lambda_ == 0.02  # YAML key 'lambda' maps to lambda_
+    assert cfg.training.reg.inject_faults is True
+    assert cfg.training.fault_state_mode == "accumulate"
+
+
+def test_invalid_fault_state_mode_raises():
+    import pytest
+    from netdrift.config.schema import TrainCfg
+
+    with pytest.raises(ValueError):
+        TrainCfg(fault_state_mode="sometimes")
+
+
+def test_invalid_recalibrate_on_raises():
+    import pytest
+    from netdrift.config.schema import RecalibrateCfg
+
+    with pytest.raises(ValueError):
+        RecalibrateCfg(on="whenever")

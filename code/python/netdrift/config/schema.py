@@ -183,6 +183,73 @@ class FaultCfg:
 
 
 @dataclass
+class RecalibrateCfg:
+    """Pattern-preserving recalibration (BN running stats + output Scale).
+
+    Runs in ``mode="test"`` after the endlen encoder and before the rt_error
+    sweep. Binary weight signs are NEVER changed (endlen pattern preserved);
+    only BatchNorm stats/affine params and the output Scale are updated. No
+    fault injection during recalibration — this recovers the clean-accuracy
+    gap endlen's bit-flips introduce.
+
+    Attributes:
+        enabled:     Master switch. Default off.
+        bn_stats:    Sub-step A — re-estimate BN running mean/var via forward
+                     passes in train() mode (no backward).
+        tune_affine: Sub-step B — short backprop fine-tune of BN gamma/beta +
+                     the output Scale only (latent weights frozen).
+        epochs:      Sub-step B epochs. 0 ⇒ run sub-step A only.
+        lr:          Adam learning rate for sub-step B.
+        num_batches: Cap on batches for sub-step A (null ⇒ full epoch).
+        on:          ``endlen`` (only recalibrate when an encoder ran) or
+                     ``always`` (also recalibrate a plain model).
+    """
+
+    enabled: bool = False
+    bn_stats: bool = True
+    tune_affine: bool = True
+    epochs: int = 2
+    lr: float = 0.001
+    num_batches: Optional[int] = None
+    on: str = "endlen"
+
+    def __post_init__(self) -> None:
+        if self.on not in ("endlen", "always"):
+            raise ValueError(f"recalibrate.on must be endlen|always; got {self.on!r}")
+        if self.epochs < 0:
+            raise ValueError(f"recalibrate.epochs must be >= 0; got {self.epochs}")
+
+
+@dataclass
+class RegCfg:
+    """Run-length regularizer (fault-aware training toward long same-sign runs).
+
+    Active when ``training.fault_aware == "regularization"``. Adds
+    ``lambda_ * run_length_penalty`` to the task loss. The penalty is the
+    adjacent sign-agreement surrogate over the racetrack-aligned weight view of
+    unprotected layers.
+
+    Attributes:
+        lambda_:       Regularizer weight (YAML key ``lambda``). 0 ⇒ plain
+                       training (no run-length term).
+        beta:          tanh sharpness for the sign surrogate. Larger ⇒ sharper.
+        inject_faults: If True, also inject RTM faults in the forward pass via
+                       the STE residual (task loss on faulted weights). Fault
+                       persistence chosen by ``training.fault_state_mode``.
+    """
+
+    lambda_: float = 0.0
+    beta: float = 4.0
+    inject_faults: bool = False
+
+    def __post_init__(self) -> None:
+        if self.lambda_ < 0:
+            raise ValueError(f"reg.lambda must be >= 0; got {self.lambda_}")
+        if self.beta <= 0:
+            raise ValueError(f"reg.beta must be > 0; got {self.beta}")
+
+
+@dataclass
 class TrainCfg:
     """Training/test loop configuration.
 
@@ -195,6 +262,16 @@ class TrainCfg:
         lr:          Initial learning rate.
         gamma:       StepLR gamma.
         step_size:   StepLR step size in epochs.
+        fault_state_mode: Used when faults are injected during training.
+                     ``fresh`` re-samples a NEW fault realization every batch
+                     (resets per-layer fault_state) — augments over the fault
+                     distribution; generalizes across realizations; RECOMMENDED.
+                     ``accumulate`` keeps faults across batches (stuck-stays-
+                     stuck), matching the eval-sweep semantics — faithful to one
+                     deployment scenario but risks overfitting to a single
+                     realization.
+        recalibrate: Pattern-preserving BN+Scale recalibration config.
+        reg:         Run-length regularizer config.
     """
 
     mode: str = "test"
@@ -205,6 +282,21 @@ class TrainCfg:
     gamma: float = 0.1
     step_size: int = 5
     save_dir: Optional[str] = None
+    fault_state_mode: str = "fresh"  # fresh | accumulate (when faults injected in training)
+    recalibrate: RecalibrateCfg = field(default_factory=RecalibrateCfg)
+    reg: RegCfg = field(default_factory=RegCfg)
+
+    def __post_init__(self) -> None:
+        if self.fault_aware not in ("none", "ste_inject", "kd", "regularization"):
+            raise ValueError(
+                "training.fault_aware must be none|ste_inject|kd|regularization; "
+                f"got {self.fault_aware!r}"
+            )
+        if self.fault_state_mode not in ("fresh", "accumulate"):
+            raise ValueError(
+                "training.fault_state_mode must be fresh|accumulate; "
+                f"got {self.fault_state_mode!r}"
+            )
 
 
 @dataclass

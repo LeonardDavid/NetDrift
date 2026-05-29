@@ -176,6 +176,52 @@ gpu_num: 0
 
 ---
 
+### Fault-aware fine-tuning & recalibration
+
+Three optional, independently-selectable capabilities improve a BNN's
+robustness to racetrack-memory (RTM) misalignment faults, complementing the
+endlen weight-encoder. All are driven by `training.*` config fields and default
+to off, so existing runs are unchanged.
+
+**1. Recalibration (`training.recalibrate`)** — pattern-preserving. After the
+endlen encoder flips bits (which costs some clean accuracy), recalibration
+recovers that gap by re-fitting only the BatchNorm running stats and the output
+`Scale` — the binary weight signs stay frozen, so the endlen bit-pattern is
+preserved. Runs in `mode: test`, after the encoder and before the rt_error
+sweep, with no fault injection. Logs `baseline_endlen_recal_accuracy` and saves
+a `*_recal.pt` checkpoint. Enable with `recalibrate.enabled: true`.
+
+**2. Run-length regularizer (`training.fault_aware: regularization`)** — trains
+the BNN toward long same-sign runs along each racetrack, so misalignment faults
+flip far fewer bits and endlen post-processing becomes unnecessary. The loss
+adds `reg.lambda * run_length_penalty`, an adjacent sign-agreement surrogate
+(`-mean(tanh(beta·w_i)·tanh(beta·w_{i+1}))`) over the racetrack-aligned weight
+view of unprotected layers, penalizing within-racetrack sign changes only.
+Optionally inject faults in the forward pass (`reg.inject_faults: true`) via a
+straight-through-estimator residual.
+
+**3. STE / KD fault-aware training (`training.fault_aware: ste_inject | kd`)** —
+`ste_inject` trains the task loss on faulted weights; `kd` (not yet implemented)
+will additionally distill from a clean teacher.
+
+**`training.fault_state_mode`** (used only when faults are injected during
+training):
+
+- `fresh` (recommended) — re-samples a new RTM fault realization every batch
+  (resets per-layer fault state). Augments over the fault distribution so the
+  trained weights and BN stats generalize across realizations rather than
+  memorizing one.
+- `accumulate` — faults persist across batches (stuck-stays-stuck), matching
+  the eval-sweep semantics. Faithful to one deployment scenario but risks
+  overfitting to a single fault realization.
+
+> **Layout note:** `storage.layout` (`row`/`col`) now correctly drives the
+> fault model's racetrack mapping. Previously fault injection always used `row`
+> regardless of config; `col`-layout runs will therefore differ from older
+> results (they were silently `row` before). `row`-layout runs are unaffected.
+
+---
+
 ## Run the test suite
 
 ```bash

@@ -61,6 +61,34 @@ training:
   gamma: 0.1
   step_size: 50
   save_dir: models/w1a2/vgg7_cifar10/
+  # fault_state_mode is only used when faults are injected DURING training
+  # (fault_aware training with reg.inject_faults: true, or ste_inject):
+  #   fresh      — re-sample a NEW fault realization every batch (reset per-layer
+  #                fault_state). Augments over the fault distribution; weights/BN
+  #                generalize across realizations. RECOMMENDED.
+  #   accumulate — faults persist across batches (stuck-stays-stuck), matching the
+  #                eval-sweep semantics. Faithful to one deployment scenario but
+  #                risks overfitting to a single fault realization.
+  fault_state_mode: fresh       # fresh | accumulate
+  # Capability #1 — pattern-preserving recalibration (runs in mode=test, AFTER
+  # endlen, BEFORE the rt_error sweep). Recovers the clean-accuracy gap endlen
+  # introduces by re-fitting BN running stats + output Scale. Binary weight
+  # signs are NEVER changed (endlen pattern preserved). No faults during recal.
+  recalibrate:
+    enabled: false              # master switch
+    bn_stats: true              # re-estimate BN running mean/var (forward only)
+    tune_affine: true           # backprop-tune BN gamma/beta + Scale
+    epochs: 2                   # tune_affine epochs; 0 ⇒ bn_stats only
+    lr: 0.001
+    num_batches: null           # cap forward passes for bn_stats (null ⇒ full epoch)
+    on: endlen                  # endlen | always
+  # Capability #2 — run-length regularizer (mode=train, fault_aware=regularization).
+  # Pushes weights toward long same-sign racetrack runs so endlen becomes
+  # unnecessary. lambda=0 ⇒ plain training (no run-length term).
+  reg:
+    lambda: 0.0                 # regularizer weight (>0 enables it)
+    beta: 4.0                   # tanh sharpness (sign surrogate)
+    inject_faults: false        # also inject RTM faults in forward (STE residual)
 
 metrics:
   online: []

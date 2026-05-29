@@ -53,6 +53,11 @@ def _from_dict(cls, data: dict[str, Any]):  # type: ignore[no-untyped-def]
     """Instantiate a (potentially nested) dataclass from a plain dict."""
     if not is_dataclass(cls):
         return data
+    # 'lambda' is a Python keyword and can't be a dataclass field name; YAML
+    # authors write 'lambda', we store it as 'lambda_'.
+    if "lambda" in data and "lambda_" not in data:
+        data = {**data, "lambda_": data["lambda"]}
+        data.pop("lambda", None)
     kwargs: dict[str, Any] = {}
     for f in fields(cls):
         if f.name not in data:

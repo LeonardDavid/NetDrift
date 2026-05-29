@@ -78,6 +78,7 @@ class _QuantizedMixin:
     fault_state: Optional[FaultState] = None
     metrics: LayerMetrics
     protected: bool = False
+    fault_grad_passthrough: bool = False
     nr_run: int = 0
     rt_mapping: Optional[str] = None
     kernel_mapping: Optional[str] = None
@@ -88,6 +89,7 @@ class _QuantizedMixin:
         self.fault_state = None
         self.metrics = LayerMetrics()
         self.protected = False
+        self.fault_grad_passthrough = False
         self.nr_run = 0
         self.layer_id = 0
         self.layer_name = ""
@@ -167,6 +169,11 @@ class _QuantizedMixin:
         new_w, new_state, stats = self.fault_model.inject(qw, self.fault_state, ctx)  # type: ignore[arg-type]
         self.fault_state = new_state
         self.metrics.record_stats(stats)
+        if self.fault_grad_passthrough:
+            # STE residual: faulted VALUES in forward, gradient flows via qw to
+            # the latent weight. inject() returns a detached tensor (Numba path),
+            # so without this the task-loss gradient to the weights is zero.
+            return qw + (new_w - qw).detach()
         return new_w
 
 

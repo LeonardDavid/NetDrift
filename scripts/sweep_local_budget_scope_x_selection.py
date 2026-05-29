@@ -38,6 +38,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC = REPO_ROOT / "code" / "python"
 
+# Shared harvest helper (sibling module) so curve parsing matches the other
+# comparison-DB drivers + the aggregator.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from comparison_common import harvest_summary  # noqa: E402
+
 SCOPES = ["layer", "racetrack", "channel"]
 SELECTIONS = ["greedy", "value_per_flip", "magnitude_aware"]
 
@@ -94,7 +99,17 @@ def main(argv: list[str] | None = None) -> int:
                    help="Optional W&B project. Omit for a local-only sweep.")
     p.add_argument("--wandb-entity", default=None)
     p.add_argument("--rt-error", default=None,
-                   help="Pin a single rt_error per cell (overrides config sweep).")
+                   help="Pin a single rt_error per cell (overrides config sweep). "
+                        "Mutually exclusive with --rt-curve.")
+    p.add_argument("--rt-curve", nargs="+", type=float, default=None,
+                   help="Evaluate each cell over this rt_error CURVE (list of "
+                        "floats), e.g. --rt-curve 1e-7 3e-7 1e-6 3e-6 1e-5. "
+                        "Records per-rt_error mean/min/max/last from the fault "
+                        "sweep, not just the clean baseline_endlen_accuracy. "
+                        "Use this for the comparison-DB robustness tables.")
+    p.add_argument("--loops", type=int, default=None,
+                   help="Override training.loops (inference iterations per "
+                        "rt_error). Recommended 10 for the robustness curve.")
     p.add_argument("--out-dir", default=None,
                    help="Where to write tables. Default: runs/sweeps/<ts>_scope_x_sel/")
     p.add_argument("--dry-run", action="store_true",
@@ -166,8 +181,13 @@ def main(argv: list[str] | None = None) -> int:
             "--override", f"fault.budget_selection={cell['selection']}",
             "--override", f"experiment.name={cell['experiment_name']}",
         ]
-        if args.rt_error is not None:
+        if args.rt_curve is not None:
+            curve_str = "[" + ",".join(repr(float(x)) for x in args.rt_curve) + "]"
+            argv_cell += ["--override", f"fault.rt_error={curve_str}"]
+        elif args.rt_error is not None:
             argv_cell += ["--override", f"fault.rt_error={args.rt_error}"]
+        if args.loops is not None:
+            argv_cell += ["--override", f"training.loops={args.loops}"]
         if args.wandb_project:
             argv_cell += ["--wandb-project", args.wandb_project]
             if args.wandb_entity:
@@ -189,21 +209,23 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  !! cell failed: {err}")
         elapsed = time.perf_counter() - t0
 
-        # Pull baseline_endlen_accuracy from the runner's summary.json.
-        baseline_endlen = None
-        baseline_clean = None
+        # Pull baselines + (when sweeping a curve) the per-rt_error fault metrics
+        # from the runner's summary.json, via the shared harvest helper.
         summary_path = _latest_summary(runner_out_dir, cell["experiment_name"])
-        if summary_path is not None and summary_path.exists():
-            try:
-                with open(summary_path) as f:
-                    summary = json.load(f)
-                baseline_endlen = summary.get("baseline_endlen_accuracy")
-                baseline_clean = summary.get("baseline_clean_accuracy")
-            except Exception as exc:
-                print(f"  !! could not read summary at {summary_path}: {exc}")
+        harvested = harvest_summary(summary_path)
+        baseline_endlen = harvested["baseline_endlen_accuracy"]
+        baseline_clean = harvested["baseline_clean_accuracy"]
+        rt_curve = harvested["rt_curve"]
 
-        print(f"  ⇒ {status}  baseline_endlen_accuracy={baseline_endlen}  "
-              f"({elapsed:.1f}s)")
+        if rt_curve:
+            curve_str = "  ".join(
+                f"{rt:g}:{m['mean']:.1f}" for rt, m in sorted(rt_curve.items())
+            )
+            print(f"  ⇒ {status}  endlen_clean={baseline_endlen}  "
+                  f"curve(mean) [{curve_str}]  ({elapsed:.1f}s)")
+        else:
+            print(f"  ⇒ {status}  baseline_endlen_accuracy={baseline_endlen}  "
+                  f"({elapsed:.1f}s)")
         results.append({
             **cell,
             "status": status,
@@ -212,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
             "summary_path": str(summary_path) if summary_path else None,
             "baseline_endlen_accuracy": baseline_endlen,
             "baseline_clean_accuracy": baseline_clean,
+            "rt_curve": rt_curve,
         })
 
         # Persist a manifest after every cell so a mid-sweep crash leaves a record.
