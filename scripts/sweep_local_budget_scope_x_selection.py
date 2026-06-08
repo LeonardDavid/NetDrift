@@ -192,6 +192,16 @@ def main(argv: list[str] | None = None) -> int:
             argv_cell += ["--wandb-project", args.wandb_project]
             if args.wandb_entity:
                 argv_cell += ["--wandb-entity", args.wandb_entity]
+            # All cells here are local-budgeted endlen = category 3.
+            argv_cell += ["--wandb-category", "cat3_budgeted_endlen"]
+            # Subcategory = exact combo. Include the implicit gl1p0 so a given
+            # (scope, sel, local) cell gets the SAME subcategory string here as
+            # in the full global×local endlen grid (sweep_endlen_budgets).
+            _sub = (
+                f"cat3_budgeted_endlen_gl1p0_lo{_fmt_budget(cell['local_budget'])}"
+                f"_sc-{cell['scope']}_sel-{cell['selection']}"
+            )
+            argv_cell += ["--wandb-subcategory", _sub]
 
         bar = "=" * 72
         print(bar)

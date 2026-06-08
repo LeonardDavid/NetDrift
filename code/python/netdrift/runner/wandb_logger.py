@@ -82,13 +82,15 @@ def init_wandb_run(
     group: Optional[str] = None,
     name: Optional[str] = None,
     config: Optional[Mapping[str, Any]] = None,
+    tags: Optional[list[str]] = None,
 ) -> WandbRunLike:
     """Create a :class:`WandbRun`, or a :class:`_NullRun` when ``project`` is unset.
 
     ``wandb`` is imported lazily here so the dependency is only needed when the
     user actually opted into tracking. Each call starts a fresh run with
     ``reinit=True`` so one process can open several runs in sequence (one per
-    ``rt_error`` in a sweep).
+    ``rt_error`` in a sweep). ``tags`` (e.g. the comparison-DB category) are
+    attached so runs are filterable/groupable in the UI.
     """
     if not project:
         return _NullRun()
@@ -101,6 +103,7 @@ def init_wandb_run(
         group=group,
         name=name,
         config=dict(config) if config is not None else None,
+        tags=tags or None,
         reinit=True,
     )
     return WandbRun(run)

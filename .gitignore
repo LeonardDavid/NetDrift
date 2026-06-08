@@ -18,6 +18,7 @@ results_comb/
 runs/
 wandb/
 docs/
+weekend_*.log
 
 nohup.out
 

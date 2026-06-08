@@ -1,0 +1,43 @@
+# MODE: run-length regularizer training (Capability #2), lambda=0.05.
+# Fault-aware FINE-TUNING that pushes weights toward long same-sign racetrack
+# runs, so endlen becomes unnecessary. Produces a checkpoint; deploy/evaluate it
+# WITH NO ENCODER (see the test command below). = comparison-DB category 5c.
+#
+# CRITICAL: training.lr is set to 0.001 here. The base rtm config is a test
+# config whose training.lr defaults to 1.0 (meaningless in test mode); at 1.0
+# this fine-tune DIVERGES. Do not remove this override.
+#
+# Train:  python netdrift_run.py --config configs/modes/vgg3_fmnist_w1a1_reg_train.yaml
+# Then evaluate the trained model ENCODER-FREE over the fault curve:
+#   python netdrift_run.py --config configs/modes/vgg3_fmnist_w1a1_baseline.yaml \
+#     --override model.checkpoint=models/w1a1/vgg3_fmnist/model_reg_lam0p05.pt \
+#     --override 'fault.rt_error=[1e-7,3e-7,1e-6,3e-6,1e-5]'
+# (or use scripts/sweep_regularizer.py to train+test across seeds — recommended,
+#  since single-seed regularizer results were shown to be misleading.)
+defaults:
+  - ../vgg3_fmnist/vgg3_fmnist_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg3_w1a1_reg_train
+
+model:
+  # Fine-tune FROM the original pretrained BNN, not an endlen'd checkpoint.
+  checkpoint: models/w1a1/vgg3_fmnist/model_best.pt
+  checkpoint_mode: strict
+
+fault:
+  weight_encoder: null            # training is encoder-free; endlen is what we replace
+
+training:
+  mode: train
+  fault_aware: regularization
+  epochs: 10
+  lr: 0.001                       # divergence guard — DO NOT remove
+  step_size: 5
+  gamma: 0.1
+  save_dir: models/w1a1/vgg3_fmnist/reg_lam0p05/   # trained model.pt lands here
+  fault_state_mode: fresh
+  reg:
+    lambda: 0.05                  # >0 enables the run-length penalty
+    beta: 4.0
+    inject_faults: false          # pure regularization (no faults in the loop)

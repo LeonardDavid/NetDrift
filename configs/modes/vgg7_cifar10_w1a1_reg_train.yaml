@@ -1,0 +1,40 @@
+# MODE: run-length regularizer training (Capability #2), lambda=0.05.
+# Fault-aware FINE-TUNING toward long same-sign racetrack runs; produces a
+# checkpoint to deploy/evaluate WITH NO ENCODER. = comparison-DB category 5c.
+#
+# CRITICAL: training.lr=0.001 here. The base rtm config's training.lr defaults
+# to 1.0 (meaningless in test mode); at 1.0 this fine-tune DIVERGES. Keep it.
+#
+# Train:  python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_reg_train.yaml
+# Then evaluate the trained model ENCODER-FREE over the fault curve:
+#   python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_baseline.yaml \
+#     --override model.checkpoint=models/w1a1/vgg7_cifar10/reg_lam0p05/model.pt \
+#     --override 'fault.rt_error=[1e-7,3e-7,1e-6,3e-6,1e-5]'
+# (or use scripts/sweep_regularizer.py to train+test across seeds — recommended.)
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_reg_train
+
+model:
+  # Fine-tune FROM the original pretrained BNN, not an endlen'd checkpoint.
+  checkpoint: models/w1a1/vgg7_cifar10/model_best.pt
+  checkpoint_mode: strict
+
+fault:
+  weight_encoder: null            # training is encoder-free; endlen is what we replace
+
+training:
+  mode: train
+  fault_aware: regularization
+  epochs: 10
+  lr: 0.001                       # divergence guard — DO NOT remove
+  step_size: 5
+  gamma: 0.1
+  save_dir: models/w1a1/vgg7_cifar10/reg_lam0p05/   # trained model.pt lands here
+  fault_state_mode: fresh
+  reg:
+    lambda: 0.05                  # >0 enables the run-length penalty
+    beta: 4.0
+    inject_faults: false          # pure regularization (no faults in the loop)

@@ -1,0 +1,20 @@
+# MODE: baseline — vanilla BNN, no encoder, no recalibration, no fault-aware training.
+# The reference floor for the comparison database. Thin overlay over the base
+# RTM config; only disables the endlen encoder.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg3_fmnist_w1a1_baseline.yaml
+defaults:
+  - ../vgg3_fmnist/vgg3_fmnist_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg3_w1a1_baseline
+
+fault:
+  weight_encoder: null            # NO endlen — pure quantized model under faults
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: false

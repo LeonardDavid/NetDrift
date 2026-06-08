@@ -139,12 +139,34 @@ def json_list(xs: list[int]) -> str:
     return "[" + ",".join(str(int(x)) for x in xs) + "]"
 
 
-def wandb_args(project: Optional[str], entity: Optional[str]) -> list[str]:
+def wandb_args(
+    project: Optional[str],
+    entity: Optional[str],
+    category: Optional[str] = None,
+    subcategory: Optional[str] = None,
+) -> list[str]:
+    """Runner W&B flags for one cell.
+
+    ``category`` (coarse, by mode) and ``subcategory`` (fine, by exact setting
+    combination) are each logged as a config field + a run tag so runs group
+    natively in the UI.
+
+    Category labels MUST match scripts/wandb_tag_categories.py so live-tagged and
+    backfilled runs share the same label set: cat1_baseline, cat2_vanilla_endlen,
+    cat3_budgeted_endlen, cat4_endlen_recal, cat5_regularizer, cat6_reg_recal,
+    cat7_reg_endlen, cat8_ste_inject. Subcategory convention: ``<category>_<combo>``
+    e.g. cat3_sc-channel_sel-greedy_gl1p0_lo0p1, cat4_recal-bn-affine,
+    cat5_lam0p05_inj-fresh.
+    """
     if not project:
         return []
     args = ["--wandb-project", project]
     if entity:
         args += ["--wandb-entity", entity]
+    if category:
+        args += ["--wandb-category", category]
+    if subcategory:
+        args += ["--wandb-subcategory", subcategory]
     return args
 
 

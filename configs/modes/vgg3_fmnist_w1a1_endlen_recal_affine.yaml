@@ -1,0 +1,33 @@
+# MODE: endlen + recalibration (BN stats + affine/Scale backprop) — Capability #1, full.
+# Vanilla endlen, then re-estimate BN running stats AND backprop-tune BN
+# gamma/beta + the output Scale (latent/binary weights stay frozen). The
+# strongest pattern-preserving accuracy recovery. = comparison-DB category 4b.
+#
+# NOTE: this does backprop → seed-dependent. For the comparison database run it
+# at multiple seeds via scripts/sweep_recalibration.py rather than this single
+# YAML, which uses the base seed (707).
+#
+# Run: python netdrift_run.py --config configs/modes/vgg3_fmnist_w1a1_endlen_recal_affine.yaml
+defaults:
+  - ../vgg3_fmnist/vgg3_fmnist_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg3_w1a1_endlen_recal_affine
+
+fault:
+  weight_encoder: endlen
+  weight_encoder_mode: once
+  global_bitflip_budget: 1.0
+  local_bitflip_budget: 1.0
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: true
+    bn_stats: true
+    tune_affine: true             # backprop-tune BN gamma/beta + Scale
+    epochs: 2
+    lr: 0.001
+    on: endlen

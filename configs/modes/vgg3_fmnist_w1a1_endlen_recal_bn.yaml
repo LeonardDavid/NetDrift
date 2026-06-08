@@ -1,0 +1,28 @@
+# MODE: endlen + recalibration (BN-stats only) — Capability #1, no backprop.
+# Vanilla endlen, then re-estimate BatchNorm running mean/var via forward passes
+# (no gradient, binary signs frozen). Recovers some of endlen's clean-accuracy
+# loss for free. = comparison-DB category 4a.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg3_fmnist_w1a1_endlen_recal_bn.yaml
+defaults:
+  - ../vgg3_fmnist/vgg3_fmnist_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg3_w1a1_endlen_recal_bn
+
+fault:
+  weight_encoder: endlen
+  weight_encoder_mode: once
+  global_bitflip_budget: 1.0
+  local_bitflip_budget: 1.0
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: true
+    bn_stats: true                # re-estimate BN running stats (forward only)
+    tune_affine: false            # NO backprop
+    epochs: 0                     # bn_stats only
+    on: endlen

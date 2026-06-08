@@ -1,0 +1,21 @@
+# MODE: baseline — vanilla BNN, no encoder, no recalibration, no fault-aware training.
+# The reference floor for the comparison database. Thin overlay over the base
+# RTM config; only disables the endlen encoder. Protection (first+last protected,
+# layers [2,3,4,5,6,7]) is inherited from the base config.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_baseline.yaml
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_baseline
+
+fault:
+  weight_encoder: null            # NO endlen — pure quantized model under faults
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: false

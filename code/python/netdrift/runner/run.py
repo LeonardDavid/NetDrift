@@ -396,6 +396,45 @@ def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
     }
 
 
+def _wandb_config_with_category(
+    cfg: ExperimentConfig,
+    model: torch.nn.Module,
+    category: str | None,
+    subcategory: str | None = None,
+) -> dict:
+    """``_wandb_config`` plus ``category``/``subcategory`` keys when set.
+
+    Lets the W&B UI group/filter runs by comparison-DB category (coarse, by
+    mode) or subcategory (fine, by exact setting combination) natively without a
+    post-hoc backfill. Keys are omitted entirely when unset so ad-hoc runs stay
+    clean.
+    """
+    base = _wandb_config(cfg, model)
+    if category:
+        base["category"] = category
+    if subcategory:
+        base["subcategory"] = subcategory
+    return base
+
+
+_WANDB_MAX_TAG_LEN = 64  # W&B rejects tags longer than this (HTTP 400).
+
+
+def _wandb_tags(category: str | None, subcategory: str | None = None) -> list[str]:
+    """Run tags from the category + subcategory labels (empty when unset).
+
+    Both are always logged as config fields by :func:`_wandb_config_with_category`
+    (no length limit there); here we only emit them as TAGS, which W&B caps at
+    ``_WANDB_MAX_TAG_LEN`` chars. Long subcategories (e.g. the cat3
+    scope×selection×budget combos) exceed that, so they are skipped as tags —
+    Group-by still works via ``config.subcategory``.
+    """
+    return [
+        t for t in (category, subcategory)
+        if t and len(t) <= _WANDB_MAX_TAG_LEN
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="NetDrift experiment runner")
     parser.add_argument("--config", required=True, help="Path to YAML config")
@@ -411,6 +450,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--wandb-entity", default=None, metavar="ORG",
         help="Optional W&B entity (team/org). Only used with --wandb-project.",
+    )
+    parser.add_argument(
+        "--wandb-category", default=None, metavar="LABEL",
+        help="Comparison-DB category label (e.g. 'cat4_endlen_recal'). Logged "
+             "to W&B as both config.category and a run tag so runs group "
+             "natively by mode. Sweep drivers set this; safe to omit for "
+             "ad-hoc runs.",
+    )
+    parser.add_argument(
+        "--wandb-subcategory", default=None, metavar="LABEL",
+        help="Finer setting-combination label within a category (e.g. "
+             "'cat3_sc-channel_sel-greedy_gl1p0_lo0p1', 'cat5_lam0p05_inj-fresh'). "
+             "Logged as config.subcategory + a tag so runs group by exact "
+             "configuration. Sweep drivers set this per cell.",
     )
     args = parser.parse_args(argv)
 
@@ -539,7 +592,10 @@ def main(argv: list[str] | None = None) -> int:
             entity=args.wandb_entity,
             group=wandb_group,
             name=f"{cfg.experiment.name}-train",
-            config=_wandb_config(cfg, model),
+            config=_wandb_config_with_category(
+                cfg, model, args.wandb_category, args.wandb_subcategory
+            ),
+            tags=_wandb_tags(args.wandb_category, args.wandb_subcategory),
         )
         # Fault-aware dispatch. With fault_aware != none on a quantized model,
         # route through the fault-aware loop, which handles the gradient path
@@ -801,7 +857,9 @@ def main(argv: list[str] | None = None) -> int:
             rt_errors = (
                 cfg.fault.rt_error if isinstance(cfg.fault.rt_error, list) else [cfg.fault.rt_error]
             )
-            base_wandb_config = _wandb_config(cfg, model)
+            base_wandb_config = _wandb_config_with_category(
+                cfg, model, args.wandb_category, args.wandb_subcategory
+            )
             online = list(cfg.metrics.online)
             all_results = []
             for rt_error in rt_errors:
@@ -825,6 +883,7 @@ def main(argv: list[str] | None = None) -> int:
                     group=wandb_group,
                     name=f"{cfg.experiment.name}-rt{rt_error}",
                     config={**base_wandb_config, "rt_error": float(rt_error)},
+                    tags=_wandb_tags(args.wandb_category, args.wandb_subcategory),
                 )
                 # Baselines + encoder report as one-shot summary scalars so they
                 # are available alongside the per-iteration curves.

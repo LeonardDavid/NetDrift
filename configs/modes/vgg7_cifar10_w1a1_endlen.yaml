@@ -1,0 +1,22 @@
+# MODE: vanilla endlen — endlen post-processing at full budget (global=1.0, local=1.0).
+# scope/selection are no-ops at full budget. = comparison-DB category 2.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_endlen.yaml
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_endlen
+
+fault:
+  weight_encoder: endlen
+  weight_encoder_mode: once
+  global_bitflip_budget: 1.0      # unbounded — vanilla endlen
+  local_bitflip_budget: 1.0
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: false
