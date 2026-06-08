@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import statistics
 import sys
 import time
@@ -74,6 +75,43 @@ def _experiment_name(base_stem: str, tag: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Category-6 checkpoint discovery
+# ---------------------------------------------------------------------------
+
+# cat5 checkpoint dirs are named by sweep_regularizer._make_tag:
+#   cat5_lam{L}[_inj-{state}]_seed{seed}   (cat8 dirs are cat8_ste_seed{seed},
+# excluded — cat6 recalibrates regularizer models only). This regex is the
+# inverse of that convention: group 1 = config_key (lam0p01, lam0p05_inj-fresh),
+# group 2 = the seed the checkpoint was trained with.
+_CAT5_DIR_RE = re.compile(r"^cat5_(.+)_seed(\d+)$")
+
+
+def _discover_cat5_checkpoints(reg_save_root: Path, base_stem: str) -> list[dict]:
+    """Find every cat5 checkpoint under ``<reg_save_root>/<base_stem>/``.
+
+    Returns a list of ``{"config_key", "seed", "path"}`` — one per
+    ``cat5_*/model.pt``, sorted for stable ordering. cat8 (ste) checkpoints are
+    skipped. Missing model.pt (a failed/partial cat5 cell) is skipped silently;
+    the caller reports the resulting count so gaps are visible.
+    """
+    search_dir = reg_save_root / base_stem
+    out: list[dict] = []
+    if not search_dir.is_dir():
+        return out
+    for ckpt in sorted(search_dir.glob("cat5_*/model.pt")):
+        dir_name = ckpt.parent.name
+        m = _CAT5_DIR_RE.match(dir_name)
+        if not m:
+            continue
+        out.append({
+            "config_key": m.group(1),     # e.g. lam0p01, lam0p05_inj-fresh
+            "seed": int(m.group(2)),
+            "path": str(ckpt),
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Cell definitions
 # ---------------------------------------------------------------------------
 
@@ -82,6 +120,7 @@ def _build_cells(
     seeds: list[int],
     reg_checkpoint: Optional[str],
     categories: Optional[set[str]] = None,
+    reg_save_root: Optional[Path] = None,
 ) -> list[dict]:
     """Return the ordered list of cell descriptors (no argv yet).
 
@@ -114,16 +153,38 @@ def _build_cells(
             })
 
     # ---- Category 6 — regularizer model + recalibration (optional) ------
-    if "6" in want and reg_checkpoint is not None:
-        for seed in seeds:
-            cells.append({
-                "category": "6",
-                "exp_name": _experiment_name(
-                    base_stem, f"cat6_reg-recal_seed{seed}"
-                ),
-                "seed": seed,
-                "reg_ckpt": reg_checkpoint,
-            })
+    # Preferred: --reg-save-root → recalibrate EVERY cat5 checkpoint, one cell
+    # per (config_key, seed), reusing each checkpoint's own training seed so the
+    # cat6 cell mirrors its cat5 source 1:1 (cat5_lam0p01_seed1 →
+    # cat6_lam0p01_seed1). Legacy fallback: a single --reg-checkpoint × --seeds.
+    if "6" in want:
+        if reg_save_root is not None:
+            for ck in _discover_cat5_checkpoints(reg_save_root, base_stem):
+                ckey = ck["config_key"]          # e.g. lam0p01, lam0p05_inj-fresh
+                seed = ck["seed"]
+                cells.append({
+                    "category": "6",
+                    "config_key": ckey,
+                    "exp_name": _experiment_name(
+                        base_stem, f"cat6_{ckey}_seed{seed}"
+                    ),
+                    "subcategory": f"cat6_reg-recal_{ckey}",
+                    "seed": seed,
+                    "reg_ckpt": ck["path"],
+                })
+        elif reg_checkpoint is not None:
+            # Legacy single-checkpoint mode (kept for back-compat).
+            for seed in seeds:
+                cells.append({
+                    "category": "6",
+                    "config_key": None,
+                    "exp_name": _experiment_name(
+                        base_stem, f"cat6_reg-recal_seed{seed}"
+                    ),
+                    "subcategory": "cat6_reg-recal",
+                    "seed": seed,
+                    "reg_ckpt": reg_checkpoint,
+                })
 
     return cells
 
@@ -191,20 +252,24 @@ def _cell_argv(
         argv += ["--override", f"experiment.seed={cell['seed']}"]
 
     # W&B (no-op when wandb_project is None). category = coarse mode;
-    # subcategory = exact recal variant so 4a/4b group separately within cat4.
+    # subcategory = exact variant so cells group separately within a category.
     _CAT_LABEL = {
         "4a": "cat4_endlen_recal",
         "4b": "cat4_endlen_recal",
         "6": "cat6_reg_recal",
     }
+    # Static subcategory for the single-variant cells (cat4a/4b). cat6 carries a
+    # PER-CELL subcategory (cat6_reg-recal_<config_key>) so each recalibrated
+    # regularizer model groups separately — fall back to the static map only if
+    # the cell didn't set one.
     _SUBCAT_LABEL = {
         "4a": "cat4_recal-bn",            # BN-stats only
         "4b": "cat4_recal-bn-affine",     # BN + affine/Scale backprop
         "6": "cat6_reg-recal",
     }
+    subcat = cell.get("subcategory") or _SUBCAT_LABEL.get(cat)
     argv += wandb_args(
-        wandb_project, wandb_entity,
-        _CAT_LABEL.get(cat), _SUBCAT_LABEL.get(cat),
+        wandb_project, wandb_entity, _CAT_LABEL.get(cat), subcat,
     )
 
     return argv
@@ -450,8 +515,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument(
         "--reg-checkpoint", default=None, metavar="PATH",
-        help="Path to a model.pt from the regularizer driver. Enables category 6. "
-             "Omit to skip category 6.",
+        help="Legacy single-checkpoint mode: one model.pt from the regularizer "
+             "driver, recalibrated across --seeds. Prefer --reg-save-root, which "
+             "recalibrates EVERY cat5 checkpoint. Enables category 6.",
+    )
+    p.add_argument(
+        "--reg-save-root", default=None, metavar="DIR",
+        help="Root dir where sweep_regularizer wrote cat5 checkpoints (its "
+             "--save-root). Category 6 then recalibrates EVERY cat5_*/model.pt "
+             "found under <DIR>/<config_stem>/, one cell per (config_key, seed) "
+             "reusing the checkpoint's own seed. Takes precedence over "
+             "--reg-checkpoint.",
     )
     p.add_argument(
         "--categories", nargs="+", default=None, choices=["4a", "4b", "6"],
@@ -480,6 +554,9 @@ def main(argv: list[str] | None = None) -> int:
     curve: list[float] = [float(x) for x in args.rt_curve]
     seeds: list[int] = args.seeds
     reg_checkpoint: Optional[str] = args.reg_checkpoint
+    reg_save_root: Optional[Path] = (
+        Path(args.reg_save_root).resolve() if args.reg_save_root else None
+    )
 
     # Resolve experiment output_dir (where the runner writes summary.json).
     runner_out_dir = output_dir_from_cfg(cfg_path)
@@ -487,8 +564,11 @@ def main(argv: list[str] | None = None) -> int:
         runner_out_dir = REPO_ROOT / runner_out_dir
 
     categories = set(args.categories) if args.categories else None
-    cells = _build_cells(cfg_path, seeds, reg_checkpoint, categories)
+    cells = _build_cells(
+        cfg_path, seeds, reg_checkpoint, categories, reg_save_root,
+    )
     total = len(cells)
+    n_cat6 = sum(1 for c in cells if c["category"] == "6")
 
     # ---------------------------------------------------------------------- header
     print("=" * 72)
@@ -499,7 +579,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  rt_error curve     : {curve}")
     print(f"  loops              : {args.loops}")
     print(f"  protection_layers  : {args.protection_layers}")
-    print(f"  reg_checkpoint     : {reg_checkpoint or '(none — cat6 skipped)'}")
+    if reg_save_root is not None:
+        print(f"  reg_save_root      : {reg_save_root}  "
+              f"({n_cat6} cat5 checkpoint(s) found → cat6 cells)")
+    else:
+        print(f"  reg_checkpoint     : {reg_checkpoint or '(none — cat6 skipped)'}")
     print(f"  categories         : {sorted(categories) if categories else 'all (4a,4b,6)'}")
     print(f"  wandb_project      : {args.wandb_project or 'DISABLED'}")
     print(f"  total cells        : {total}")
@@ -507,13 +591,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if total == 0:
         msg = "no cells to run for the requested categories"
-        if categories and "6" in categories and reg_checkpoint is None:
-            msg += " — category 6 needs --reg-checkpoint PATH"
+        if categories and "6" in categories and reg_save_root is None and reg_checkpoint is None:
+            msg += " — category 6 needs --reg-save-root DIR (or legacy --reg-checkpoint PATH)"
+        elif reg_save_root is not None:
+            msg += (f" — no cat5_*/model.pt found under "
+                    f"{reg_save_root / cfg_path.stem} (did cat5 run + finish?)")
         print(f"ERROR: {msg}", file=sys.stderr)
         return 2
 
-    if reg_checkpoint is None:
-        print("NOTE: --reg-checkpoint not provided; category 6 will be skipped.")
+    if "6" in (categories or {"4a", "4b", "6"}) and reg_save_root is None and reg_checkpoint is None:
+        print("NOTE: neither --reg-save-root nor --reg-checkpoint given; "
+              "category 6 will be skipped.")
         print()
 
     # ------------------------------------------------------------------ dry-run

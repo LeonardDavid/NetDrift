@@ -38,7 +38,9 @@ import sys
 # 4/5/6/7/8; categories 1/2/3 are inferred structurally.
 _RULES: list[tuple[str, str]] = [
     ("cat4_endlen_recal", r"_cat4_recal"),
-    ("cat6_reg_recal", r"_cat6_reg-recal"),
+    # cat6 names: new multi-checkpoint form __cat6_lam..._seedN, or legacy
+    # __cat6_reg-recal_seedN. Match any _cat6_ token.
+    ("cat6_reg_recal", r"_cat6_"),
     ("cat7_reg_endlen", r"_cat7_reg-endlen"),
     ("cat8_ste_inject", r"_cat8_ste"),
     ("cat5_regularizer", r"_cat5_lam"),
@@ -84,11 +86,19 @@ def infer_subcategory(run_name: str, category: str) -> str | None:
     if category == "cat5_regularizer":
         m = re.search(r"_(lam\w+?(?:_inj-\w+)?)(?:_seed\d+)?(?:_test)?$", name)
         return f"cat5_regularizer_{m.group(1)}" if m else None
+    if category == "cat6_reg_recal":
+        # New multi-checkpoint cat6: name is <stem>__cat6_<config_key>_seed<N>.
+        # Legacy single-checkpoint cat6 was <stem>__cat6_reg-recal_seed<N> →
+        # falls through to the single-variant default below.
+        m = re.search(r"_cat6_(lam\w+?(?:_inj-\w+)?)_seed\d+$", name)
+        if m:
+            return f"cat6_reg-recal_{m.group(1)}"
+        return "cat6_reg-recal"
     if category == "cat7_reg_endlen":
         m = re.search(r"(lo\w+?)(?:_seed\d+)?$", name)
         return f"cat7_reg_endlen_{m.group(1)}" if m else None
-    # cat1/cat6/cat8 are single-variant — subcategory == category is fine.
-    if category in ("cat1_baseline", "cat6_reg_recal", "cat8_ste_inject"):
+    # cat1/cat8 are single-variant — subcategory == category is fine.
+    if category in ("cat1_baseline", "cat8_ste_inject"):
         return category
     return None
 

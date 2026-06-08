@@ -134,14 +134,20 @@ def build_cells(
     lambdas: list[float],
     seeds: list[int],
     include_ste: bool,
-    inject_lambda: float = 0.05,
+    inject_lambdas: list[float] | None = None,
 ) -> list[dict]:
     """Return the full ordered list of cells.
+
+    ``lambdas``        — λ values for the core (no-injection) regularizer sweep.
+    ``inject_lambdas`` — λ values for the faults-in-the-loop variant (fresh
+                         fault_state_mode only). Defaults to ``[0.05]``.
 
     Each dict has keys:
         category, tag, config_key, seed, lam (None for cat8),
         inject, state (cat5 only; cat8 has fault_aware=ste_inject)
     """
+    if inject_lambdas is None:
+        inject_lambdas = [0.05]
     cells: list[dict] = []
 
     # Category 5
@@ -159,21 +165,23 @@ def build_cells(
                 "state": "fresh",
                 "fault_aware": "regularization",
             })
-        # Faults-in-the-loop at inject_lambda: two fault_state_mode variants
-        for state in ("fresh", "accumulate"):
+        # Faults-in-the-loop: one cell per inject lambda. Only the 'fresh'
+        # fault_state_mode is run (accumulate dropped — fresh is the recommended
+        # augmentation mode; accumulate overfits a single realization).
+        for inj_lam in inject_lambdas:
             tag = _make_tag(
-                category=5, lam=inject_lambda, inject=True, state=state, seed=seed
+                category=5, lam=inj_lam, inject=True, state="fresh", seed=seed
             )
             cells.append({
                 "category": 5,
                 "tag": tag,
                 "config_key": _config_key(
-                    category=5, lam=inject_lambda, inject=True, state=state
+                    category=5, lam=inj_lam, inject=True, state="fresh"
                 ),
                 "seed": seed,
-                "lam": inject_lambda,
+                "lam": inj_lam,
                 "inject": True,
-                "state": state,
+                "state": "fresh",
                 "fault_aware": "regularization",
             })
 
@@ -489,8 +497,14 @@ def main(argv: list[str] | None = None) -> int:
                         "Default: 707 1 42")
     p.add_argument("--lambdas", nargs="+", type=float,
                    default=[0.0, 0.01, 0.05, 0.1],
-                   help="Regularizer lambda values for cat5. lambda=0.0 is the CONTROL. "
+                   help="Regularizer lambda values for the core cat5 sweep "
+                        "(no fault injection). lambda=0.0 is the CONTROL. "
                         "Default: 0.0 0.01 0.05 0.1")
+    p.add_argument("--inject-lambdas", nargs="+", type=float, dest="inject_lambdas",
+                   default=[0.05],
+                   help="Lambda values for the faults-in-the-loop cat5 variant "
+                        "(inject_faults=true, fault_state_mode=fresh). One cell "
+                        "per value. Default: 0.05")
     p.add_argument("--beta", type=float, default=4.0,
                    help="Regularizer beta (tanh sharpness). Default: 4.0")
     p.add_argument("--epochs", type=int, default=10,
@@ -559,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
         lambdas=args.lambdas,
         seeds=args.seeds,
         include_ste=args.include_ste,
+        inject_lambdas=args.inject_lambdas,
     )
     total = len(cells)
     # Each cell is 2 phases (train + test).
