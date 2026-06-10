@@ -222,6 +222,7 @@ def _train_argv(
     crit_tok: str,
     fault_aware_criterion: str,
     fault_aware_hinge_b: float,
+    base_checkpoint: str | None = None,
 ) -> list[str]:
     """Build the argv list for the TRAIN phase of one cell.
 
@@ -231,6 +232,10 @@ def _train_argv(
     save_dir PATH-LEVEL segment (``save_root/<crit_tok>/<tag>``) so the leaf tag
     — which cat6 parses — stays criterion-free, while runs/checkpoints don't
     collide across criteria that share a --save-root.
+
+    ``base_checkpoint`` overrides the pretrained BNN that fault-aware training
+    warm-starts from (e.g. a CEL-trained baseline). ``None`` → the config's
+    ``model.checkpoint`` (the default MHL baseline).
     """
     tag = cell["tag"]
     exp_name = f"{base_stem}__{crit_tok}__{tag}_train"
@@ -241,6 +246,15 @@ def _train_argv(
         # mode + fault-aware training
         "--override", "training.mode=train",
         "--override", f"training.fault_aware={cell['fault_aware']}",
+    ]
+    # Optional warm-start base override (e.g. CEL-trained baseline). Mode stays
+    # strict — both MHL and CEL baselines are full BNN state_dicts.
+    if base_checkpoint is not None:
+        argv += [
+            "--override", f"model.checkpoint={base_checkpoint}",
+            "--override", "model.checkpoint_mode=strict",
+        ]
+    argv += [
         # fault-aware loss criterion (cat5/cat8).
         "--override", f"training.fault_aware_criterion={fault_aware_criterion}",
         "--override", f"training.fault_aware_hinge_b={fault_aware_hinge_b}",
@@ -564,6 +578,13 @@ def main(argv: list[str] | None = None) -> int:
              "save_dir = <save-root>/<tag>/ — unique per config_stem+seed+lambda. "
              "Default: runs/sweeps/reg_checkpoints",
     )
+    p.add_argument(
+        "--base-checkpoint", dest="base_checkpoint", default=None, metavar="PATH",
+        help="Pretrained BNN that fault-aware training (cat5/cat8) warm-starts "
+             "from. Default: the config's model.checkpoint (the MHL baseline). "
+             "Pass a CEL-trained baseline (e.g. models/w1a1_cel/<model>/"
+             "model_best.pt) for an all-CEL pipeline.",
+    )
     p.add_argument("--wandb-project", default=None,
                    help="W&B project. Omit for a local-only sweep.")
     p.add_argument("--wandb-entity", default=None,
@@ -649,6 +670,7 @@ def main(argv: list[str] | None = None) -> int:
                 wdb_args=_wdb_for(cell), crit_tok=crit_tok,
                 fault_aware_criterion=args.fault_aware_criterion,
                 fault_aware_hinge_b=args.fault_aware_hinge_b,
+                base_checkpoint=args.base_checkpoint,
             )
             test_argv = _test_argv(
                 cfg_path=cfg_path, cell=cell, base_stem=base_stem,
@@ -695,6 +717,7 @@ def main(argv: list[str] | None = None) -> int:
             wdb_args=_wdb_for(cell), crit_tok=crit_tok,
             fault_aware_criterion=args.fault_aware_criterion,
             fault_aware_hinge_b=args.fault_aware_hinge_b,
+            base_checkpoint=args.base_checkpoint,
         )
         print(f"  Phase 1 (train): fault_aware={cell['fault_aware']}  "
               f"criterion={args.fault_aware_criterion}  lr={args.train_lr}  "

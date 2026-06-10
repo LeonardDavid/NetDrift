@@ -201,6 +201,80 @@ def test_cat6_argv_overrides_inherited_criterion(tmp_path):
     assert "training.criterion=hinge" not in s
 
 
+def test_cat6_source_criterion_filter(tmp_path):
+    """--source-criterion (→ crit_filter) restricts cat6 to one criterion's cat5
+    checkpoints even when the save-root holds multiple criteria."""
+    import sweep_recalibration as recal
+
+    stem = "vgg3_fmnist_w1a1_rtm"
+    _make_fake_cat5_tree(tmp_path, stem, "crit-ce", "lam0p05", 1)
+    _make_fake_cat5_tree(tmp_path, stem, "crit-h128p0", "lam0p05", 1)
+    _make_fake_cat5_tree(tmp_path, stem, "crit-ce", "lam0p1", 42)
+
+    # no filter → all 3
+    allc = recal._discover_cat5_checkpoints(tmp_path, stem)
+    assert len(allc) == 3
+
+    # filter to CE → only the 2 crit-ce ones
+    ce = recal._discover_cat5_checkpoints(tmp_path, stem, crit_filter="crit-ce")
+    assert len(ce) == 2
+    assert all(c["crit_tok"] == "crit-ce" for c in ce)
+
+    # filter to hinge → only the 1 crit-h128p0 one
+    hi = recal._discover_cat5_checkpoints(tmp_path, stem, crit_filter="crit-h128p0")
+    assert len(hi) == 1 and hi[0]["crit_tok"] == "crit-h128p0"
+
+    # end-to-end via _build_cells: CE filter → 2 cat6 cells, all CE
+    cells = recal._build_cells(
+        Path(f"configs/x/{stem}.yaml"), seeds=[707], reg_checkpoint=None,
+        categories={"6"}, reg_save_root=tmp_path, source_crit_filter="crit-ce",
+    )
+    assert len(cells) == 2
+    assert all(c["criterion"] == "cross_entropy" for c in cells)
+
+
+def test_cat4b_base_checkpoint_override():
+    """--base-checkpoint overrides the cat4b model.checkpoint (e.g. CEL baseline);
+    cat6 is unaffected (it loads its discovered cat5 checkpoint)."""
+    import sweep_recalibration as recal
+
+    stem = "vgg3_fmnist_w1a1_rtm"
+    cells = recal._build_cells(
+        Path(f"configs/x/{stem}.yaml"), seeds=[707], reg_checkpoint=None,
+        categories={"4b"}, reg_save_root=None,
+    )
+    argv = recal._cell_argv(
+        cells[0], Path("c.yaml"), curve=[1e-6], loops=10, protection_layers=[2, 3],
+        wandb_project=None, wandb_entity=None,
+        base_checkpoint="models/w1a1_cel/vgg3_fmnist/model_best.pt",
+    )
+    s = " ".join(argv)
+    assert "model.checkpoint=models/w1a1_cel/vgg3_fmnist/model_best.pt" in s
+    assert "model.checkpoint_mode=strict" in s
+
+
+def test_cat5_base_checkpoint_warmstart():
+    """--base-checkpoint sets the cat5 TRAIN-phase warm-start model.checkpoint."""
+    reg, cell = _one_cat5_cell()
+    train_argv = reg._train_argv(
+        cfg_path=Path("c.yaml"), cell=cell, base_stem="stem",
+        save_root=Path("/tmp/r"), epochs=1, train_lr=0.001, beta=4.0,
+        protection_layers=[2, 3], wdb_args=[], crit_tok="crit-ce",
+        fault_aware_criterion="cross_entropy", fault_aware_hinge_b=128.0,
+        base_checkpoint="models/w1a1_cel/vgg3_fmnist/model_best.pt",
+    )
+    s = " ".join(train_argv)
+    assert "model.checkpoint=models/w1a1_cel/vgg3_fmnist/model_best.pt" in s
+    # default (no base_checkpoint) must NOT inject a model.checkpoint override
+    train_argv2 = reg._train_argv(
+        cfg_path=Path("c.yaml"), cell=cell, base_stem="stem",
+        save_root=Path("/tmp/r"), epochs=1, train_lr=0.001, beta=4.0,
+        protection_layers=[2, 3], wdb_args=[], crit_tok="crit-ce",
+        fault_aware_criterion="cross_entropy", fault_aware_hinge_b=128.0,
+    )
+    assert "model.checkpoint=" not in " ".join(train_argv2)
+
+
 def test_cat6_old_layout_no_criterion_segment_back_compat(tmp_path):
     """A cat5 dir WITHOUT a criterion segment (old layout) → no crit prefix,
     inherited criterion defaults to hinge."""

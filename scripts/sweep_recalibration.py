@@ -88,8 +88,10 @@ def _experiment_name(base_stem: str, tag: str) -> str:
 _CAT5_DIR_RE = re.compile(r"^cat5_(.+)_seed(\d+)$")
 
 
-def _discover_cat5_checkpoints(reg_save_root: Path, base_stem: str) -> list[dict]:
-    """Find every cat5 checkpoint under ``<reg_save_root>/<base_stem>/``.
+def _discover_cat5_checkpoints(
+    reg_save_root: Path, base_stem: str, crit_filter: Optional[str] = None,
+) -> list[dict]:
+    """Find cat5 checkpoints under ``<reg_save_root>/<base_stem>/``.
 
     sweep_regularizer writes checkpoints at
     ``<base_stem>/<crit_tok>/cat5_<config_key>_seed<N>/model.pt`` — the criterion
@@ -97,6 +99,11 @@ def _discover_cat5_checkpoints(reg_save_root: Path, base_stem: str) -> list[dict
     without the segment are at ``<base_stem>/cat5_*/model.pt``.) We glob both
     depths and recover the criterion token from the parent-of-parent dir when it
     is a ``crit-…`` segment.
+
+    ``crit_filter`` (a ``crit-…`` token) restricts discovery to checkpoints whose
+    path segment matches — so an all-CEL cat6 run only recalibrates the CEL cat5
+    checkpoints even when the save-root also holds MHL ones. ``None`` = all
+    (every criterion + the segment-less legacy layout).
 
     Returns ``{"config_key", "seed", "path", "crit_tok"}`` per checkpoint
     (``crit_tok`` is ``None`` for the old layout). cat8 (ste) checkpoints are
@@ -116,11 +123,14 @@ def _discover_cat5_checkpoints(reg_save_root: Path, base_stem: str) -> list[dict
             m = _CAT5_DIR_RE.match(ckpt.parent.name)
             if not m:
                 continue
-            seen.add(key)
             # criterion segment = the dir between <stem> and the cat5_* leaf,
             # when it looks like a crit token.
             grandparent = ckpt.parent.parent.name
             crit_tok = grandparent if grandparent.startswith("crit-") else None
+            # Scope to a single criterion when requested.
+            if crit_filter is not None and crit_tok != crit_filter:
+                continue
+            seen.add(key)
             out.append({
                 "config_key": m.group(1),     # e.g. lam0p01, lam0p05_inj-fresh
                 "seed": int(m.group(2)),
@@ -141,13 +151,17 @@ def _build_cells(
     categories: Optional[set[str]] = None,
     reg_save_root: Optional[Path] = None,
     baseline_crit_tok: Optional[str] = None,
+    source_crit_filter: Optional[str] = None,
 ) -> list[dict]:
     """Return the ordered list of cell descriptors (no argv yet).
 
     ``categories`` selects which of ``{"4a", "4b", "6"}`` to build; ``None`` =
     all (legacy behaviour). Category 6 additionally requires ``reg_checkpoint``
-    or ``reg_save_root``. ``baseline_crit_tok`` (e.g. ``crit-ce``) prefixes the
-    cat4b name so its criterion variants don't collide; cat4a is left unprefixed
+    or ``reg_save_root``. ``source_crit_filter`` (a ``crit-…`` token) scopes cat6
+    discovery to cat5 checkpoints of that criterion only (so an all-CEL cat6 run
+    skips MHL checkpoints sharing the save-root). ``baseline_crit_tok`` (e.g.
+    ``crit-ce``) prefixes the cat4b name so its criterion variants don't collide;
+    cat4a is left unprefixed
     (epochs=0, no backprop → criterion inert).
     """
     base_stem = cfg_path.stem
@@ -183,7 +197,9 @@ def _build_cells(
     # cat6_lam0p01_seed1). Legacy fallback: a single --reg-checkpoint × --seeds.
     if "6" in want:
         if reg_save_root is not None:
-            for ck in _discover_cat5_checkpoints(reg_save_root, base_stem):
+            for ck in _discover_cat5_checkpoints(
+                reg_save_root, base_stem, crit_filter=source_crit_filter
+            ):
                 ckey = ck["config_key"]          # e.g. lam0p01, lam0p05_inj-fresh
                 seed = ck["seed"]
                 tok = ck["crit_tok"]             # crit-… of the SOURCE cat5 ckpt
@@ -238,6 +254,7 @@ def _cell_argv(
     wandb_entity: Optional[str],
     baseline_criterion: str = "hinge",
     baseline_hinge_b: float = 128.0,
+    base_checkpoint: Optional[str] = None,
 ) -> list[str]:
     """Assemble the full argv list for one cell.
 
@@ -246,6 +263,10 @@ def _cell_argv(
     of the source cat5 checkpoint (``cell['criterion']``/``cell['hinge_b']`` set
     at discovery) — 1:1, so the recal loss matches how the checkpoint was
     trained. A ``None`` cell criterion (legacy cat6) falls back to the baseline.
+
+    ``base_checkpoint`` overrides the model loaded for cat4a/4b (e.g. a
+    CEL-trained baseline). cat6 IGNORES it — cat6 loads each discovered cat5
+    checkpoint (``cell['reg_ckpt']``).
     """
     argv = ["--config", str(cfg_path)]
 
@@ -292,6 +313,14 @@ def _cell_argv(
             "--override", "training.recalibrate.tune_affine=true",
             "--override", "training.recalibrate.epochs=2",
             "--override", "training.recalibrate.lr=0.001",
+        ]
+
+    # Optional base-checkpoint override for cat4a/4b (e.g. CEL-trained baseline).
+    # cat6 sets its own checkpoint from the discovered cat5 path, so skip it there.
+    if base_checkpoint is not None and cat in ("4a", "4b"):
+        argv += [
+            "--override", f"model.checkpoint={base_checkpoint}",
+            "--override", "model.checkpoint_mode=strict",
         ]
 
     # Recalibration criterion: cat6 inherits its source checkpoint's criterion
@@ -573,6 +602,28 @@ def main(argv: list[str] | None = None) -> int:
              "--criterion=cross_entropy. Default: 128.0",
     )
     p.add_argument(
+        "--base-checkpoint", dest="base_checkpoint", default=None, metavar="PATH",
+        help="Override the base model loaded for cat4a/4b (e.g. a CEL-trained "
+             "baseline models/w1a1_cel/<model>/model_best.pt). Default: the "
+             "config's model.checkpoint (MHL baseline). cat6 ignores this — it "
+             "loads each discovered cat5 checkpoint.",
+    )
+    p.add_argument(
+        "--source-criterion", dest="source_criterion", default=None,
+        choices=["hinge", "cross_entropy"],
+        help="cat6 ONLY: restrict recalibration to cat5 checkpoints trained with "
+             "this fault-aware criterion (matches the /crit-…/ save-root segment). "
+             "Use it so an all-CEL cat6 run recalibrates only the CEL cat5 "
+             "checkpoints and an all-MHL run only the MHL ones, even when both "
+             "share a --reg-save-root. Default: all criteria (every checkpoint).",
+    )
+    p.add_argument(
+        "--source-hinge-b", dest="source_hinge_b", type=float, default=128.0,
+        help="b for the --source-criterion filter token when it is 'hinge' "
+             "(must match the b the cat5 checkpoints were saved under). "
+             "Default: 128.0",
+    )
+    p.add_argument(
         "--rt-curve", nargs="+", type=float, default=DEFAULT_RT_ERROR_CURVE,
         help="rt_error curve to evaluate over. Default: the canonical DB curve.",
     )
@@ -639,9 +690,15 @@ def main(argv: list[str] | None = None) -> int:
 
     categories = set(args.categories) if args.categories else None
     baseline_crit_tok = crit_token(args.criterion, args.hinge_b)
+    # cat6 source filter: None (all) unless --source-criterion was given.
+    source_crit_filter = (
+        crit_token(args.source_criterion, args.source_hinge_b)
+        if args.source_criterion is not None else None
+    )
     cells = _build_cells(
         cfg_path, seeds, reg_checkpoint, categories, reg_save_root,
         baseline_crit_tok=baseline_crit_tok,
+        source_crit_filter=source_crit_filter,
     )
     total = len(cells)
     n_cat6 = sum(1 for c in cells if c["category"] == "6")
@@ -658,6 +715,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  baseline criterion : {args.criterion} (b={args.hinge_b}) "
           f"[cat4a/4b; tag {baseline_crit_tok}]")
     print(f"  cat6 criterion     : inherited 1:1 from each cat5 checkpoint")
+    print(f"  cat6 source filter : "
+          f"{source_crit_filter or 'all criteria (no --source-criterion)'}")
     if reg_save_root is not None:
         print(f"  reg_save_root      : {reg_save_root}  "
               f"({n_cat6} cat5 checkpoint(s) found → cat6 cells)")
@@ -673,8 +732,15 @@ def main(argv: list[str] | None = None) -> int:
         if categories and "6" in categories and reg_save_root is None and reg_checkpoint is None:
             msg += " — category 6 needs --reg-save-root DIR (or legacy --reg-checkpoint PATH)"
         elif reg_save_root is not None:
-            msg += (f" — no cat5_*/model.pt found under "
-                    f"{reg_save_root / cfg_path.stem} (did cat5 run + finish?)")
+            where = reg_save_root / cfg_path.stem
+            if source_crit_filter is not None:
+                msg += (f" — no cat5_*/model.pt with criterion segment "
+                        f"'{source_crit_filter}' under {where} "
+                        f"(did the {args.source_criterion} cat5 run finish? "
+                        f"drop --source-criterion to recalibrate all criteria)")
+            else:
+                msg += (f" — no cat5_*/model.pt found under {where} "
+                        f"(did cat5 run + finish?)")
         print(f"ERROR: {msg}", file=sys.stderr)
         return 2
 
@@ -693,6 +759,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.wandb_project, args.wandb_entity,
                 baseline_criterion=args.criterion,
                 baseline_hinge_b=args.hinge_b,
+                base_checkpoint=args.base_checkpoint,
             )
             seed_str = f"seed={cell['seed']}" if cell["seed"] is not None else "seed=<deterministic>"
             print(f"[{i:3d}/{total}] cat={cell['category']}  {seed_str}")
@@ -718,6 +785,7 @@ def main(argv: list[str] | None = None) -> int:
             args.wandb_project, args.wandb_entity,
             baseline_criterion=args.criterion,
             baseline_hinge_b=args.hinge_b,
+            base_checkpoint=args.base_checkpoint,
         )
 
         bar = "=" * 72
