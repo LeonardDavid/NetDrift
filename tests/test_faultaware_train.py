@@ -191,3 +191,30 @@ def test_regularizer_adds_to_loss_and_grads_weights():
     )
     assert model.conv1.weight.grad is not None
     assert torch.isfinite(model.conv1.weight.grad).all()
+
+
+def test_fault_aware_cross_entropy_criterion_runs():
+    """fault_aware_criterion=cross_entropy trains a step without error and still
+    produces finite weight gradients (criterion is config-selectable for cat5/8)."""
+    from torch.utils.data import DataLoader, TensorDataset
+    from netdrift.config.schema import TrainCfg
+    from netdrift.training.faultaware import train_one_epoch_fault_aware
+
+    fm = _ZeroingFault()
+    model = _build_quant_vgg3_with_fault(fm)
+    x = torch.randn(8, 1, 28, 28)
+    y = torch.randint(0, 10, (8,))
+    loader = DataLoader(TensorDataset(x, y), batch_size=8)
+    # ste_inject path, with the cross-entropy fault-aware criterion.
+    cfg = TrainCfg(
+        mode="train", fault_aware="ste_inject", fault_state_mode="fresh",
+        fault_aware_criterion="cross_entropy",
+    )
+
+    optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=0.0)
+    train_one_epoch_fault_aware(
+        model, loader, optimizer, torch.device("cpu"),
+        rt_size=64, layout="ROW", kernel_mapping="ROW", cfg=cfg, epoch=1,
+    )
+    assert model.conv1.weight.grad is not None
+    assert torch.isfinite(model.conv1.weight.grad).all()

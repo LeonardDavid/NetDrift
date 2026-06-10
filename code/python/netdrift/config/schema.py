@@ -272,6 +272,19 @@ class TrainCfg:
                      realization.
         recalibrate: Pattern-preserving BN+Scale recalibration config.
         reg:         Run-length regularizer config.
+        criterion:   Loss for BNN baseline training AND recalibration sub-step B
+                     (cat4b/cat6 tune_affine): ``hinge`` (modified hinge loss,
+                     MHL per Yayla et al.) or ``cross_entropy``. Default
+                     ``hinge``. Note: full-precision (scheme=None) training
+                     always uses CrossEntropyLoss regardless of this field.
+        hinge_b:     ``b`` parameter of the hinge loss for the baseline/recal
+                     criterion. Ignored when criterion=cross_entropy.
+        fault_aware_criterion: Loss for fault-aware training (cat5 regularization
+                     + cat8 ste_inject): ``hinge`` | ``cross_entropy``. Default
+                     ``hinge``. Lets the RTM-optimizing training use a different
+                     criterion than the baseline.
+        fault_aware_hinge_b: ``b`` parameter for the fault-aware hinge loss.
+                     Ignored when fault_aware_criterion=cross_entropy.
     """
 
     mode: str = "test"
@@ -285,6 +298,11 @@ class TrainCfg:
     fault_state_mode: str = "fresh"  # fresh | accumulate (when faults injected in training)
     recalibrate: RecalibrateCfg = field(default_factory=RecalibrateCfg)
     reg: RegCfg = field(default_factory=RegCfg)
+    # Loss criterion (BNN paths only; FP32 always uses CrossEntropyLoss).
+    criterion: str = "hinge"               # hinge | cross_entropy (baseline + recal)
+    hinge_b: float = 128.0
+    fault_aware_criterion: str = "hinge"   # hinge | cross_entropy (cat5 + cat8)
+    fault_aware_hinge_b: float = 128.0
 
     def __post_init__(self) -> None:
         if self.fault_aware not in ("none", "ste_inject", "kd", "regularization"):
@@ -297,6 +315,15 @@ class TrainCfg:
                 "training.fault_state_mode must be fresh|accumulate; "
                 f"got {self.fault_state_mode!r}"
             )
+        for fld in ("criterion", "fault_aware_criterion"):
+            v = getattr(self, fld)
+            if v not in ("hinge", "cross_entropy"):
+                raise ValueError(
+                    f"training.{fld} must be hinge|cross_entropy; got {v!r}"
+                )
+        for fld in ("hinge_b", "fault_aware_hinge_b"):
+            if float(getattr(self, fld)) <= 0:
+                raise ValueError(f"training.{fld} must be > 0; got {getattr(self, fld)}")
 
 
 @dataclass

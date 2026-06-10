@@ -50,9 +50,11 @@ from comparison_common import (  # noqa: E402
     DEFAULT_WANDB_PROJECT,
     REPO_ROOT,
     base_overrides,
+    crit_token,
     harvest_summary,
     import_runner_main,
     json_list,
+    parse_crit_token,
     latest_summary,
     new_sweep_out_dir,
     output_dir_from_cfg,
@@ -89,25 +91,42 @@ _CAT5_DIR_RE = re.compile(r"^cat5_(.+)_seed(\d+)$")
 def _discover_cat5_checkpoints(reg_save_root: Path, base_stem: str) -> list[dict]:
     """Find every cat5 checkpoint under ``<reg_save_root>/<base_stem>/``.
 
-    Returns a list of ``{"config_key", "seed", "path"}`` — one per
-    ``cat5_*/model.pt``, sorted for stable ordering. cat8 (ste) checkpoints are
-    skipped. Missing model.pt (a failed/partial cat5 cell) is skipped silently;
-    the caller reports the resulting count so gaps are visible.
+    sweep_regularizer writes checkpoints at
+    ``<base_stem>/<crit_tok>/cat5_<config_key>_seed<N>/model.pt`` — the criterion
+    is a PATH-LEVEL segment, the leaf dir stays criterion-free. (Older runs
+    without the segment are at ``<base_stem>/cat5_*/model.pt``.) We glob both
+    depths and recover the criterion token from the parent-of-parent dir when it
+    is a ``crit-…`` segment.
+
+    Returns ``{"config_key", "seed", "path", "crit_tok"}`` per checkpoint
+    (``crit_tok`` is ``None`` for the old layout). cat8 (ste) checkpoints are
+    skipped; missing model.pt (a failed/partial cat5 cell) is skipped silently.
     """
     search_dir = reg_save_root / base_stem
     out: list[dict] = []
     if not search_dir.is_dir():
         return out
-    for ckpt in sorted(search_dir.glob("cat5_*/model.pt")):
-        dir_name = ckpt.parent.name
-        m = _CAT5_DIR_RE.match(dir_name)
-        if not m:
-            continue
-        out.append({
-            "config_key": m.group(1),     # e.g. lam0p01, lam0p05_inj-fresh
-            "seed": int(m.group(2)),
-            "path": str(ckpt),
-        })
+    seen: set[str] = set()
+    # Match both <stem>/cat5_*/model.pt and <stem>/<crit>/cat5_*/model.pt.
+    for pattern in ("cat5_*/model.pt", "*/cat5_*/model.pt"):
+        for ckpt in sorted(search_dir.glob(pattern)):
+            key = str(ckpt)
+            if key in seen:
+                continue
+            m = _CAT5_DIR_RE.match(ckpt.parent.name)
+            if not m:
+                continue
+            seen.add(key)
+            # criterion segment = the dir between <stem> and the cat5_* leaf,
+            # when it looks like a crit token.
+            grandparent = ckpt.parent.parent.name
+            crit_tok = grandparent if grandparent.startswith("crit-") else None
+            out.append({
+                "config_key": m.group(1),     # e.g. lam0p01, lam0p05_inj-fresh
+                "seed": int(m.group(2)),
+                "path": str(ckpt),
+                "crit_tok": crit_tok,
+            })
     return out
 
 
@@ -121,15 +140,20 @@ def _build_cells(
     reg_checkpoint: Optional[str],
     categories: Optional[set[str]] = None,
     reg_save_root: Optional[Path] = None,
+    baseline_crit_tok: Optional[str] = None,
 ) -> list[dict]:
     """Return the ordered list of cell descriptors (no argv yet).
 
     ``categories`` selects which of ``{"4a", "4b", "6"}`` to build; ``None`` =
-    all (legacy behaviour). Category 6 additionally requires ``reg_checkpoint``.
+    all (legacy behaviour). Category 6 additionally requires ``reg_checkpoint``
+    or ``reg_save_root``. ``baseline_crit_tok`` (e.g. ``crit-ce``) prefixes the
+    cat4b name so its criterion variants don't collide; cat4a is left unprefixed
+    (epochs=0, no backprop → criterion inert).
     """
     base_stem = cfg_path.stem
     want = categories if categories is not None else {"4a", "4b", "6"}
     cells: list[dict] = []
+    b_prefix = f"{baseline_crit_tok}__" if baseline_crit_tok else ""
 
     # ---- Category 4a — BN-only, deterministic, 1 seed -------------------
     if "4a" in want:
@@ -146,7 +170,7 @@ def _build_cells(
             cells.append({
                 "category": "4b",
                 "exp_name": _experiment_name(
-                    base_stem, f"cat4_recal-bn-affine_seed{seed}"
+                    base_stem, f"{b_prefix}cat4_recal-bn-affine_seed{seed}"
                 ),
                 "seed": seed,
                 "reg_ckpt": None,
@@ -162,18 +186,31 @@ def _build_cells(
             for ck in _discover_cat5_checkpoints(reg_save_root, base_stem):
                 ckey = ck["config_key"]          # e.g. lam0p01, lam0p05_inj-fresh
                 seed = ck["seed"]
+                tok = ck["crit_tok"]             # crit-… of the SOURCE cat5 ckpt
+                # 1:1 inherit — cat6 recalibrates with the SAME criterion that
+                # trained this cat5 checkpoint (recovered from its path segment).
+                recal_crit, recal_b = parse_crit_token(tok)
+                # Name/subcategory carry the criterion as a prefix segment when
+                # present, so cat6 runs across criteria don't collide.
+                prefix = f"{tok}__" if tok else ""
                 cells.append({
                     "category": "6",
                     "config_key": ckey,
                     "exp_name": _experiment_name(
-                        base_stem, f"cat6_{ckey}_seed{seed}"
+                        base_stem, f"{prefix}cat6_{ckey}_seed{seed}"
                     ),
-                    "subcategory": f"cat6_reg-recal_{ckey}",
+                    "subcategory": (
+                        f"cat6_reg-recal_{ckey}_{tok}" if tok
+                        else f"cat6_reg-recal_{ckey}"
+                    ),
                     "seed": seed,
                     "reg_ckpt": ck["path"],
+                    "criterion": recal_crit,
+                    "hinge_b": recal_b,
                 })
         elif reg_checkpoint is not None:
-            # Legacy single-checkpoint mode (kept for back-compat).
+            # Legacy single-checkpoint mode (kept for back-compat). Uses the
+            # baseline criterion passed by the caller (default hinge/128).
             for seed in seeds:
                 cells.append({
                     "category": "6",
@@ -184,6 +221,8 @@ def _build_cells(
                     "subcategory": "cat6_reg-recal",
                     "seed": seed,
                     "reg_ckpt": reg_checkpoint,
+                    "criterion": None,   # caller's baseline criterion
+                    "hinge_b": None,
                 })
 
     return cells
@@ -197,8 +236,17 @@ def _cell_argv(
     protection_layers: list[int],
     wandb_project: Optional[str],
     wandb_entity: Optional[str],
+    baseline_criterion: str = "hinge",
+    baseline_hinge_b: float = 128.0,
 ) -> list[str]:
-    """Assemble the full argv list for one cell."""
+    """Assemble the full argv list for one cell.
+
+    Recalibration's loss criterion: cat4a/4b use the driver's baseline criterion
+    (``baseline_criterion``/``baseline_hinge_b``); cat6 INHERITS the criterion
+    of the source cat5 checkpoint (``cell['criterion']``/``cell['hinge_b']`` set
+    at discovery) — 1:1, so the recal loss matches how the checkpoint was
+    trained. A ``None`` cell criterion (legacy cat6) falls back to the baseline.
+    """
     argv = ["--config", str(cfg_path)]
 
     # Shared overrides: rt_error curve, loops, protection policy.
@@ -246,6 +294,18 @@ def _cell_argv(
             "--override", "training.recalibrate.lr=0.001",
         ]
 
+    # Recalibration criterion: cat6 inherits its source checkpoint's criterion
+    # (cell['criterion']); cat4a/4b use the driver baseline. (Inert for cat4a,
+    # which has epochs=0 / no backprop, but logged for config consistency.)
+    cell_crit = cell.get("criterion")
+    cell_b = cell.get("hinge_b")
+    eff_crit = cell_crit if cell_crit is not None else baseline_criterion
+    eff_b = cell_b if cell_b is not None else baseline_hinge_b
+    argv += [
+        "--override", f"training.criterion={eff_crit}",
+        "--override", f"training.hinge_b={eff_b}",
+    ]
+
     # Experiment identity overrides.
     argv += ["--override", f"experiment.name={cell['exp_name']}"]
     if cell["seed"] is not None:
@@ -259,12 +319,14 @@ def _cell_argv(
         "6": "cat6_reg_recal",
     }
     # Static subcategory for the single-variant cells (cat4a/4b). cat6 carries a
-    # PER-CELL subcategory (cat6_reg-recal_<config_key>) so each recalibrated
-    # regularizer model groups separately — fall back to the static map only if
-    # the cell didn't set one.
+    # PER-CELL subcategory (cat6_reg-recal_<config_key>_<crit>) set at discovery,
+    # so prefer the cell's own value. cat4b appends the baseline criterion token
+    # so CE vs hinge group separately (matches the backfill convention); cat4a
+    # has no backprop so its criterion is inert (left untagged).
+    _b_tok = crit_token(baseline_criterion, baseline_hinge_b)
     _SUBCAT_LABEL = {
-        "4a": "cat4_recal-bn",            # BN-stats only
-        "4b": "cat4_recal-bn-affine",     # BN + affine/Scale backprop
+        "4a": "cat4_recal-bn",                       # BN-stats only (no criterion)
+        "4b": f"cat4_recal-bn-affine_{_b_tok}",      # BN + affine/Scale backprop
         "6": "cat6_reg-recal",
     }
     subcat = cell.get("subcategory") or _SUBCAT_LABEL.get(cat)
@@ -499,6 +561,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Random seeds for seeded cells (cat 4b, cat 6). Default: 707 1 42",
     )
     p.add_argument(
+        "--criterion", default="hinge", choices=["hinge", "cross_entropy"],
+        help="BASELINE recalibration criterion for cat4a/4b (sub-step B). "
+             "Embedded as a name prefix so cat4b runs don't collide across "
+             "criteria. cat6 IGNORES this — it inherits each source cat5 "
+             "checkpoint's criterion. Default: hinge",
+    )
+    p.add_argument(
+        "--hinge-b", dest="hinge_b", type=float, default=128.0,
+        help="b for the cat4a/4b hinge criterion. Ignored when "
+             "--criterion=cross_entropy. Default: 128.0",
+    )
+    p.add_argument(
         "--rt-curve", nargs="+", type=float, default=DEFAULT_RT_ERROR_CURVE,
         help="rt_error curve to evaluate over. Default: the canonical DB curve.",
     )
@@ -564,8 +638,10 @@ def main(argv: list[str] | None = None) -> int:
         runner_out_dir = REPO_ROOT / runner_out_dir
 
     categories = set(args.categories) if args.categories else None
+    baseline_crit_tok = crit_token(args.criterion, args.hinge_b)
     cells = _build_cells(
         cfg_path, seeds, reg_checkpoint, categories, reg_save_root,
+        baseline_crit_tok=baseline_crit_tok,
     )
     total = len(cells)
     n_cat6 = sum(1 for c in cells if c["category"] == "6")
@@ -579,6 +655,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  rt_error curve     : {curve}")
     print(f"  loops              : {args.loops}")
     print(f"  protection_layers  : {args.protection_layers}")
+    print(f"  baseline criterion : {args.criterion} (b={args.hinge_b}) "
+          f"[cat4a/4b; tag {baseline_crit_tok}]")
+    print(f"  cat6 criterion     : inherited 1:1 from each cat5 checkpoint")
     if reg_save_root is not None:
         print(f"  reg_save_root      : {reg_save_root}  "
               f"({n_cat6} cat5 checkpoint(s) found → cat6 cells)")
@@ -612,6 +691,8 @@ def main(argv: list[str] | None = None) -> int:
             argv_cell = _cell_argv(
                 cell, cfg_path, curve, args.loops, args.protection_layers,
                 args.wandb_project, args.wandb_entity,
+                baseline_criterion=args.criterion,
+                baseline_hinge_b=args.hinge_b,
             )
             seed_str = f"seed={cell['seed']}" if cell["seed"] is not None else "seed=<deterministic>"
             print(f"[{i:3d}/{total}] cat={cell['category']}  {seed_str}")
@@ -635,6 +716,8 @@ def main(argv: list[str] | None = None) -> int:
         argv_cell = _cell_argv(
             cell, cfg_path, curve, args.loops, args.protection_layers,
             args.wandb_project, args.wandb_entity,
+            baseline_criterion=args.criterion,
+            baseline_hinge_b=args.hinge_b,
         )
 
         bar = "=" * 72

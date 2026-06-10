@@ -270,3 +270,52 @@ def test_invalid_recalibrate_on_raises():
 
     with pytest.raises(ValueError):
         RecalibrateCfg(on="whenever")
+
+
+def test_criterion_defaults_are_hinge_128():
+    from netdrift.config.schema import ExperimentConfig
+
+    cfg = ExperimentConfig()
+    assert cfg.training.criterion == "hinge"
+    assert cfg.training.hinge_b == 128.0
+    assert cfg.training.fault_aware_criterion == "hinge"
+    assert cfg.training.fault_aware_hinge_b == 128.0
+
+
+def test_criterion_parses_from_yaml_dict():
+    from netdrift.config.loader import _from_dict
+    from netdrift.config.schema import ExperimentConfig
+
+    raw = {
+        "training": {
+            "criterion": "cross_entropy",
+            "hinge_b": 64.0,
+            "fault_aware_criterion": "cross_entropy",
+            "fault_aware_hinge_b": 32.0,
+        }
+    }
+    cfg = _from_dict(ExperimentConfig, raw)
+    assert cfg.training.criterion == "cross_entropy"
+    assert cfg.training.hinge_b == 64.0
+    assert cfg.training.fault_aware_criterion == "cross_entropy"
+    assert cfg.training.fault_aware_hinge_b == 32.0
+
+
+def test_invalid_criterion_raises():
+    import pytest
+    from netdrift.config.schema import TrainCfg
+
+    with pytest.raises(ValueError):
+        TrainCfg(criterion="focal")
+    with pytest.raises(ValueError):
+        TrainCfg(fault_aware_criterion="focal")
+
+
+def test_invalid_hinge_b_raises():
+    import pytest
+    from netdrift.config.schema import TrainCfg
+
+    with pytest.raises(ValueError):
+        TrainCfg(hinge_b=0.0)
+    with pytest.raises(ValueError):
+        TrainCfg(fault_aware_hinge_b=-1.0)

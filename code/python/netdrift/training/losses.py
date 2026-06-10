@@ -33,6 +33,26 @@ class BinaryHingeLoss:
         return binary_hingeloss(yhat, y, self.b)
 
 
+def build_criterion(name: str, hinge_b: float = 128.0):
+    """Return a loss callable selected by ``name``.
+
+    ``"hinge"``         → :class:`BinaryHingeLoss` (the modified hinge loss, MHL,
+                          per Yayla et al.) with the given ``hinge_b``.
+    ``"cross_entropy"`` → :class:`torch.nn.CrossEntropyLoss`.
+
+    Both callables work at the existing ``loss_fn(out, target).mean()`` call
+    sites: ``BinaryHingeLoss`` returns a per-sample tensor, ``CrossEntropyLoss``
+    returns a scalar, and ``.mean()`` on a scalar tensor is a no-op.
+    """
+    if name == "hinge":
+        return BinaryHingeLoss(b=hinge_b)
+    if name == "cross_entropy":
+        return nn.CrossEntropyLoss()
+    raise ValueError(
+        f"unknown criterion {name!r}; expected 'hinge' or 'cross_entropy'"
+    )
+
+
 def run_length_penalty(
     model: nn.Module,
     *,

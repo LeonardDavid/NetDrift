@@ -53,7 +53,7 @@ from netdrift.quant.binary import BinaryScheme
 from netdrift.runner.wandb_logger import init_wandb_run
 from netdrift.quant.uniform import IntUniformActScheme
 from netdrift.training import (
-    BinaryHingeLoss,
+    build_criterion,
     Clippy,
     evaluate_clean,
     evaluate_with_faults,
@@ -393,6 +393,12 @@ def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
         "protection_policy": cfg.fault.protection.policy,
         "protected_layers": protected,
         "unprotected_layers": unprotected,
+        # Loss criterion — flat keys so the W&B runs table is filterable by the
+        # baseline-training loss and the fault-aware-training loss independently.
+        "criterion": cfg.training.criterion,
+        "hinge_b": cfg.training.hinge_b,
+        "fault_aware_criterion": cfg.training.fault_aware_criterion,
+        "fault_aware_hinge_b": cfg.training.fault_aware_hinge_b,
     }
 
 
@@ -582,7 +588,9 @@ def main(argv: list[str] | None = None) -> int:
                 momentum=0.9, weight_decay=1e-4,
             )
         else:
-            loss_fn = BinaryHingeLoss(b=128.0)
+            loss_fn = build_criterion(
+                cfg.training.criterion, cfg.training.hinge_b
+            )
             optimizer = Clippy(model.parameters(), lr=cfg.training.lr)
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=cfg.training.step_size, gamma=cfg.training.gamma,
@@ -830,7 +838,11 @@ def main(argv: list[str] | None = None) -> int:
                 # no fault model attached for the sweep.
                 attach_fault_model(model, None)
                 try:
-                    recalibrate(model, train_loader, device, recal_cfg)
+                    recalibrate(
+                        model, train_loader, device, recal_cfg,
+                        criterion=cfg.training.criterion,
+                        hinge_b=cfg.training.hinge_b,
+                    )
                     baseline_endlen_recal_acc = evaluate_clean(model, test_loader, device)
                 finally:
                     attach_fault_model(

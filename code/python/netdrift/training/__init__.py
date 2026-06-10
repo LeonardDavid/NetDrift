@@ -8,6 +8,7 @@ fault-aware modes: ``ste_inject``, ``kd``, ``regularization``.
 from netdrift.training.losses import (
     BinaryHingeLoss,
     binary_hingeloss,
+    build_criterion,
     run_length_penalty,
 )
 from netdrift.training.optim import Clippy
@@ -22,6 +23,7 @@ from netdrift.training.train import (
 __all__ = [
     "BinaryHingeLoss",
     "binary_hingeloss",
+    "build_criterion",
     "run_length_penalty",
     "Clippy",
     "recalibrate",

@@ -26,7 +26,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
-from netdrift.training.losses import BinaryHingeLoss
+from netdrift.training.losses import build_criterion
 
 
 def _set_recal_trainable(model: nn.Module) -> list[nn.Parameter]:
@@ -92,12 +92,18 @@ def _tune_affine(
     epochs: int,
     lr: float,
     trainable: list[nn.Parameter],
+    criterion: str = "hinge",
+    hinge_b: float = 128.0,
 ) -> None:
-    """Short backprop fine-tune of BN affine + Scale only (BinaryHingeLoss)."""
+    """Short backprop fine-tune of BN affine + Scale only.
+
+    Uses the baseline-training criterion (``criterion``/``hinge_b``); default
+    is the modified hinge loss with b=128, matching plain BNN training.
+    """
     if epochs <= 0 or not trainable:
         return
     optimizer = torch.optim.Adam(trainable, lr=lr)
-    loss_fn = BinaryHingeLoss(b=128.0)
+    loss_fn = build_criterion(criterion, hinge_b)
     model.train()
     for _ in range(epochs):
         for data, target in loader:
@@ -109,10 +115,21 @@ def _tune_affine(
             optimizer.step()
 
 
-def recalibrate(model: nn.Module, loader: DataLoader, device: torch.device, cfg) -> None:
+def recalibrate(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    cfg,
+    *,
+    criterion: str = "hinge",
+    hinge_b: float = 128.0,
+) -> None:
     """Run the configured recalibration sub-steps in place.
 
-    ``cfg`` is a :class:`netdrift.config.schema.RecalibrateCfg`. The caller is
+    ``cfg`` is a :class:`netdrift.config.schema.RecalibrateCfg`. ``criterion`` /
+    ``hinge_b`` select the loss for sub-step B (``tune_affine``) — the caller
+    passes the baseline-training criterion (``cfg.training.criterion`` /
+    ``hinge_b``); default is the modified hinge loss with b=128. The caller is
     responsible for detaching the fault model BEFORE calling this (no faults
     during recalibration) and restoring it / calling ``model.eval()`` after.
     """
@@ -131,5 +148,6 @@ def recalibrate(model: nn.Module, loader: DataLoader, device: torch.device, cfg)
         _tune_affine(
             model, loader, device,
             epochs=cfg.epochs, lr=cfg.lr, trainable=trainable,
+            criterion=criterion, hinge_b=hinge_b,
         )
     model.eval()

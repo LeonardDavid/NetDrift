@@ -1,0 +1,27 @@
+# VGG7 / CIFAR-10 — CEL-trained BNN baseline (cross-entropy variant).
+#
+# Thin overlay over the standard BNN training recipe (vgg7_cifar10_bnn_train.yaml),
+# changing ONLY the loss criterion (MHL → cross_entropy) and the learning rate,
+# and writing to a SEPARATE save_dir so the MHL baseline in
+# models/w1a1/vgg7_cifar10/ is untouched.
+#
+# Rationale identical to the vgg3 CEL overlay:
+#  - criterion: cross_entropy — the CEL counterpart for the criterion sweeps.
+#  - lr: bumped 0.001 → 0.01 (CEL gradients are smaller-scale than the hinge
+#    loss's, which b=128 amplifies). Same gamma/step_size schedule, same 150
+#    epochs as the MHL recipe.
+#  - Scale init untouched: warm-starts from the FP checkpoint whose trained
+#    output Scale (~2.02) is already O(1) and CEL-friendly.
+#
+# Run (after the FP stage):
+#   python netdrift_run.py --config configs/vgg7_cifar10/vgg7_cifar10_bnn_train_cel.yaml
+defaults:
+  - vgg7_cifar10_bnn_train.yaml
+
+experiment:
+  name: vgg7_cifar10_bnn_cel
+
+training:
+  criterion: cross_entropy      # MHL → CEL (the variable under study)
+  lr: 0.01                      # CEL-tuned (MHL recipe used 0.001)
+  save_dir: models/w1a1_cel/vgg7_cifar10/

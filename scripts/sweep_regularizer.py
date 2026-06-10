@@ -69,6 +69,7 @@ from comparison_common import (  # noqa: E402
     DEFAULT_PROTECTION_LAYERS,
     DEFAULT_RT_ERROR_CURVE,
     base_overrides,
+    crit_token,
     fmt_num,
     harvest_summary,
     import_runner_main,
@@ -218,21 +219,31 @@ def _train_argv(
     beta: float,
     protection_layers: list[int],
     wdb_args: list[str],
+    crit_tok: str,
+    fault_aware_criterion: str,
+    fault_aware_hinge_b: float,
 ) -> list[str]:
     """Build the argv list for the TRAIN phase of one cell.
 
     We do NOT include base_overrides (rt_error curve + loops) here — those
-    belong to the test/eval phase.  Protection is added explicitly.
+    belong to the test/eval phase.  Protection is added explicitly. The
+    fault-aware criterion is embedded as a NAME PREFIX (``<crit_tok>__``) and a
+    save_dir PATH-LEVEL segment (``save_root/<crit_tok>/<tag>``) so the leaf tag
+    — which cat6 parses — stays criterion-free, while runs/checkpoints don't
+    collide across criteria that share a --save-root.
     """
     tag = cell["tag"]
-    exp_name = f"{base_stem}__{tag}_train"
-    save_dir = str(save_root / tag)
+    exp_name = f"{base_stem}__{crit_tok}__{tag}_train"
+    save_dir = str(save_root / crit_tok / tag)
 
     argv = [
         "--config", str(cfg_path),
         # mode + fault-aware training
         "--override", "training.mode=train",
         "--override", f"training.fault_aware={cell['fault_aware']}",
+        # fault-aware loss criterion (cat5/cat8).
+        "--override", f"training.fault_aware_criterion={fault_aware_criterion}",
+        "--override", f"training.fault_aware_hinge_b={fault_aware_hinge_b}",
         # regularizer parameters (ignored by ste_inject but harmless).
         # NOTE: reg is a sub-section of training in the YAML, so the override
         # path is training.reg.* not reg.* — the loader traverses the raw dict.
@@ -243,7 +254,8 @@ def _train_argv(
         # CRITICAL: override lr to prevent divergence (default 1.0 in rtm configs)
         "--override", f"training.lr={train_lr}",
         "--override", f"training.epochs={epochs}",
-        # save_dir: unique per (config_stem, tag) — no collision across seeds/lambdas
+        # save_dir: criterion path segment + unique tag → no collision across
+        # seeds/lambdas/criteria.
         "--override", f"training.save_dir={save_dir}",
         # experiment identity
         "--override", f"experiment.seed={cell['seed']}",
@@ -266,11 +278,17 @@ def _test_argv(
     loops: int,
     protection_layers: list[int],
     wdb_args: list[str],
+    crit_tok: str,
 ) -> list[str]:
-    """Build the argv list for the TEST phase of one cell."""
+    """Build the argv list for the TEST phase of one cell.
+
+    Mirrors the train phase's criterion encoding: name prefix ``<crit_tok>__``
+    and the checkpoint loaded from the criterion path segment
+    ``save_root/<crit_tok>/<tag>/model.pt``.
+    """
     tag = cell["tag"]
-    exp_name = f"{base_stem}__{tag}_test"
-    checkpoint = str(save_root / tag / "model.pt")
+    exp_name = f"{base_stem}__{crit_tok}__{tag}_test"
+    checkpoint = str(save_root / crit_tok / tag / "model.pt")
 
     argv = [
         "--config", str(cfg_path),
@@ -507,6 +525,17 @@ def main(argv: list[str] | None = None) -> int:
                         "per value. Default: 0.05")
     p.add_argument("--beta", type=float, default=4.0,
                    help="Regularizer beta (tanh sharpness). Default: 4.0")
+    p.add_argument("--fault-aware-criterion", dest="fault_aware_criterion",
+                   default="hinge", choices=["hinge", "cross_entropy"],
+                   help="Loss criterion for fault-aware training (cat5+cat8). "
+                        "Embedded as a name prefix + save_dir path segment so "
+                        "runs/checkpoints don't collide across criteria sharing "
+                        "a --save-root. Default: hinge")
+    p.add_argument("--fault-aware-hinge-b", dest="fault_aware_hinge_b",
+                   type=float, default=128.0,
+                   help="b parameter for the fault-aware hinge loss. "
+                        "Ignored when --fault-aware-criterion=cross_entropy. "
+                        "Default: 128.0")
     p.add_argument("--epochs", type=int, default=10,
                    help="Training epochs per cell. Default: 10")
     p.add_argument(
@@ -564,9 +593,14 @@ def main(argv: list[str] | None = None) -> int:
     # cell's config_key (e.g. lam0p05, lam0p05_inj-fresh, ste).
     _REG_CAT_LABEL = {5: "cat5_regularizer", 8: "cat8_ste_inject"}
 
+    # Fault-aware criterion token (uniform across this invocation's cells).
+    crit_tok = crit_token(args.fault_aware_criterion, args.fault_aware_hinge_b)
+
     def _wdb_for(cell: dict) -> list[str]:
         cat = _REG_CAT_LABEL.get(cell["category"])
-        sub = f"{cat}_{cell['config_key']}" if cat else None
+        # subcategory includes the criterion token so CE vs hinge runs group
+        # separately within a category in the W&B UI.
+        sub = f"{cat}_{cell['config_key']}_{crit_tok}" if cat else None
         return wandb_args(args.wandb_project, args.wandb_entity, cat, sub)
 
     cells = build_cells(
@@ -606,18 +640,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         for i, cell in enumerate(cells, 1):
             tag = cell["tag"]
-            save_dir = str(save_root / tag)
-            checkpoint = str(save_root / tag / "model.pt")
+            save_dir = str(save_root / crit_tok / tag)
+            checkpoint = str(save_root / crit_tok / tag / "model.pt")
             train_argv = _train_argv(
                 cfg_path=cfg_path, cell=cell, base_stem=base_stem,
                 save_root=save_root, epochs=args.epochs, train_lr=args.train_lr,
                 beta=args.beta, protection_layers=args.protection_layers,
-                wdb_args=_wdb_for(cell),
+                wdb_args=_wdb_for(cell), crit_tok=crit_tok,
+                fault_aware_criterion=args.fault_aware_criterion,
+                fault_aware_hinge_b=args.fault_aware_hinge_b,
             )
             test_argv = _test_argv(
                 cfg_path=cfg_path, cell=cell, base_stem=base_stem,
                 save_root=save_root, curve=args.rt_curve, loops=args.loops,
                 protection_layers=args.protection_layers, wdb_args=_wdb_for(cell),
+                crit_tok=crit_tok,
             )
             cat_label = f"cat{cell['category']}"
             unvalidated = "  [UNVALIDATED]" if cell["category"] == 8 else ""
@@ -655,10 +692,13 @@ def main(argv: list[str] | None = None) -> int:
             cfg_path=cfg_path, cell=cell, base_stem=base_stem,
             save_root=save_root, epochs=args.epochs, train_lr=args.train_lr,
             beta=args.beta, protection_layers=args.protection_layers,
-            wdb_args=_wdb_for(cell),
+            wdb_args=_wdb_for(cell), crit_tok=crit_tok,
+            fault_aware_criterion=args.fault_aware_criterion,
+            fault_aware_hinge_b=args.fault_aware_hinge_b,
         )
-        print(f"  Phase 1 (train): fault_aware={cell['fault_aware']}  lr={args.train_lr}  "
-              f"epochs={args.epochs}  save_dir={save_root / tag}")
+        print(f"  Phase 1 (train): fault_aware={cell['fault_aware']}  "
+              f"criterion={args.fault_aware_criterion}  lr={args.train_lr}  "
+              f"epochs={args.epochs}  save_dir={save_root / crit_tok / tag}")
         t_train = time.perf_counter()
         train_status, train_err = run_cell(runner_main, train_argv)
         train_elapsed = time.perf_counter() - t_train
@@ -671,8 +711,9 @@ def main(argv: list[str] | None = None) -> int:
             cfg_path=cfg_path, cell=cell, base_stem=base_stem,
             save_root=save_root, curve=args.rt_curve, loops=args.loops,
             protection_layers=args.protection_layers, wdb_args=_wdb_for(cell),
+            crit_tok=crit_tok,
         )
-        test_exp_name = f"{base_stem}__{tag}_test"
+        test_exp_name = f"{base_stem}__{crit_tok}__{tag}_test"
         print(f"  Phase 2 (test):  encoder=null  rt_curve={args.rt_curve}  "
               f"exp_name={test_exp_name}")
         t_test = time.perf_counter()

@@ -65,6 +65,16 @@ training:
   #                eval-sweep semantics. Faithful to one deployment scenario but
   #                risks overfitting to a single fault realization.
   fault_state_mode: fresh       # fresh | accumulate
+  # Loss criterion (BNN paths only — full-precision always uses CrossEntropyLoss).
+  #   criterion / hinge_b            → baseline BNN training AND recalibration
+  #                                    sub-step B (cat4b/cat6 tune_affine).
+  #   fault_aware_criterion / *_hinge_b → fault-aware training (cat5 regularization
+  #                                    + cat8 ste_inject).
+  # 'hinge' = modified hinge loss (MHL, Yayla et al.); 'cross_entropy' = CEL.
+  criterion: hinge              # hinge | cross_entropy
+  hinge_b: 128.0
+  fault_aware_criterion: hinge  # hinge | cross_entropy
+  fault_aware_hinge_b: 128.0
   # Capability #1 — pattern-preserving recalibration (runs in mode=test, AFTER
   # endlen, BEFORE the rt_error sweep). Recovers the clean-accuracy gap endlen
   # introduces by re-fitting BN running stats + output Scale. Binary weight

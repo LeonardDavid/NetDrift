@@ -40,7 +40,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
-from netdrift.training.losses import BinaryHingeLoss, run_length_penalty
+from netdrift.training.losses import build_criterion, run_length_penalty
 
 try:
     from tqdm.auto import tqdm
@@ -113,7 +113,7 @@ def train_one_epoch_fault_aware(
                 saved_fault_models[name] = m.fault_model
                 m.attach_fault_model(None)
 
-    loss_fn = BinaryHingeLoss(b=128.0)
+    loss_fn = build_criterion(cfg.fault_aware_criterion, cfg.fault_aware_hinge_b)
     model.train()
     running = 0.0
     n_batches = 0

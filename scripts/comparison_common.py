@@ -40,6 +40,41 @@ def fmt_num(v: float) -> str:
     return str(v).replace(".", "p").replace("+", "")
 
 
+def crit_token(criterion: str, hinge_b: float = 128.0) -> str:
+    """Compact, parser-safe criterion tag for run/dir names.
+
+    ``hinge`` → ``crit-h<b>`` (e.g. ``crit-h128p0``); ``cross_entropy`` →
+    ``crit-ce``. Used as a NAME PREFIX segment and a save_dir PATH-LEVEL segment
+    (never infix, never trailing-after-seed) so the existing $-anchored
+    config_key/seed parsers stay valid. A driver invocation = one criterion, so
+    embedding it disambiguates artifacts/runs when criteria share a save-root +
+    W&B project.
+    """
+    if criterion == "cross_entropy":
+        return "crit-ce"
+    if criterion == "hinge":
+        return f"crit-h{fmt_num(float(hinge_b))}"
+    raise ValueError(f"unknown criterion {criterion!r}")
+
+
+def parse_crit_token(tok: Optional[str]) -> tuple[str, float]:
+    """Inverse of :func:`crit_token`: ``crit-…`` → ``(criterion, hinge_b)``.
+
+    ``crit-ce`` → ``("cross_entropy", 128.0)``; ``crit-h128p0`` →
+    ``("hinge", 128.0)``. ``None`` / unrecognized → ``("hinge", 128.0)`` (the
+    default), so callers can treat a missing token as plain MHL.
+    """
+    if not tok or not tok.startswith("crit-"):
+        return "hinge", 128.0
+    body = tok[len("crit-"):]
+    if body == "ce":
+        return "cross_entropy", 128.0
+    if body.startswith("h"):
+        b = float(body[1:].replace("p", "."))
+        return "hinge", b
+    return "hinge", 128.0
+
+
 def rt_error_list_override(curve: list[float]) -> str:
     """Render an rt_error curve as the JSON-list string the override parser wants.
 

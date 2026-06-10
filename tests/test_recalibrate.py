@@ -75,3 +75,30 @@ def test_tune_affine_false_leaves_gamma_beta_fixed():
     recalibrate(model, loader, torch.device("cpu"), cfg)
     # Affine gamma untouched when tune_affine is False.
     assert torch.allclose(model.bn1.weight, pre_gamma)
+
+
+def test_recalibrate_cross_entropy_criterion_runs_signs_frozen():
+    """tune_affine with criterion=cross_entropy trains without error and still
+    freezes the binary weight signs (criterion choice doesn't touch weights)."""
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+    from netdrift.training.recalibrate import recalibrate
+
+    model = _build_quant_vgg3()
+    loader = _tiny_loader()
+    pre_signs = {
+        n: torch.sign(m.weight.detach().clone())
+        for n, m in model.named_modules()
+        if isinstance(m, (QuantizedConv2d, QuantizedLinear))
+    }
+    pre_gamma = model.bn1.weight.detach().clone()
+    cfg = RecalibrateCfg(enabled=True, bn_stats=True, tune_affine=True, epochs=1, lr=0.01)
+    recalibrate(
+        model, loader, torch.device("cpu"), cfg,
+        criterion="cross_entropy", hinge_b=128.0,
+    )
+    # affine moved (backprop ran under CEL)
+    assert not torch.allclose(model.bn1.weight, pre_gamma)
+    # binary signs unchanged
+    for n, m in model.named_modules():
+        if isinstance(m, (QuantizedConv2d, QuantizedLinear)):
+            assert torch.equal(torch.sign(m.weight.detach()), pre_signs[n]), n

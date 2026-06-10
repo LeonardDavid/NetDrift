@@ -65,12 +65,24 @@ def infer_category(run_name: str) -> str | None:
 # drivers now emit live via --wandb-subcategory, so backfilled (weekend) runs
 # and future live-tagged runs share one subcategory axis. Patterns capture the
 # combo token sequence; the W&B run-name suffix (-rt<val> / -train) is ignored.
+def _crit_suffix(name: str) -> str:
+    """Return ``_crit-…`` if the name carries a criterion prefix segment, else ''.
+
+    The training drivers embed the criterion as a ``__crit-…__`` prefix segment
+    (e.g. ``..._rtm__crit-ce__cat5_...``). We append it to the subcategory so the
+    live ``_wdb_for`` convention (``<base>_<crit_tok>``) and this backfill agree.
+    """
+    m = re.search(r"__(crit-[A-Za-z0-9p]+)__", name)
+    return f"_{m.group(1)}" if m else ""
+
+
 def infer_subcategory(run_name: str, category: str) -> str | None:
     """Best-effort subcategory from a run name, given its inferred category."""
     name = run_name
     # Strip the runner's per-run suffix so the combo token is at the tail.
     name = re.sub(r"-rt[0-9.eE+-]+$", "", name)
     name = re.sub(r"-train$", "", name)
+    crit = _crit_suffix(name)  # '' when no criterion prefix present
 
     if category == "cat3_budgeted_endlen":
         m = re.search(r"(gl\w+?_lo\w+?(?:_sc-\w+)?(?:_sel-\w+)?)$", name)
@@ -79,20 +91,20 @@ def infer_subcategory(run_name: str, category: str) -> str | None:
         return "cat2_vanilla_endlen_gl1p0_lo1p0"
     if category == "cat4_endlen_recal":
         if "recal-bn-affine" in name:
-            return "cat4_recal-bn-affine"
+            return f"cat4_recal-bn-affine{crit}"
         if "recal-bn" in name:
             return "cat4_recal-bn"
         return None
     if category == "cat5_regularizer":
         m = re.search(r"_(lam\w+?(?:_inj-\w+)?)(?:_seed\d+)?(?:_test)?$", name)
-        return f"cat5_regularizer_{m.group(1)}" if m else None
+        return f"cat5_regularizer_{m.group(1)}{crit}" if m else None
     if category == "cat6_reg_recal":
-        # New multi-checkpoint cat6: name is <stem>__cat6_<config_key>_seed<N>.
+        # New multi-checkpoint cat6: name is <stem>[__crit-…]__cat6_<key>_seed<N>.
         # Legacy single-checkpoint cat6 was <stem>__cat6_reg-recal_seed<N> →
         # falls through to the single-variant default below.
         m = re.search(r"_cat6_(lam\w+?(?:_inj-\w+)?)_seed\d+$", name)
         if m:
-            return f"cat6_reg-recal_{m.group(1)}"
+            return f"cat6_reg-recal_{m.group(1)}{crit}"
         return "cat6_reg-recal"
     if category == "cat7_reg_endlen":
         m = re.search(r"(lo\w+?)(?:_seed\d+)?$", name)

@@ -1,0 +1,29 @@
+# VGG3 / FashionMNIST — CEL-trained BNN baseline (cross-entropy variant).
+#
+# Thin overlay over the standard BNN training recipe (vgg3_fmnist_bnn_train.yaml),
+# changing ONLY the loss criterion (MHL → cross_entropy) and the learning rate,
+# and writing to a SEPARATE save_dir so the MHL baseline in
+# models/w1a1/vgg3_fmnist/ is untouched.
+#
+# Why these two differ and nothing else:
+#  - criterion: cross_entropy is the whole point — a CEL-trained baseline for the
+#    criterion-comparison sweeps, the controlled counterpart to the MHL model.
+#  - lr: bumped 0.001 → 0.01. The MHL recipe's lr is tuned for the hinge loss
+#    (b=128 amplifies gradients); CEL on logits produces smaller-scale gradients,
+#    so a higher lr converges better. Same step schedule (gamma/step_size).
+#  - Scale init is NOT touched: this warm-starts from the FP checkpoint, whose
+#    trained output Scale (~1.24) is already O(1) and CEL-friendly — the topology
+#    default (1e-3) is overwritten on load, so there is nothing to tune here.
+#
+# Run (after the FP stage, same as the MHL recipe):
+#   python netdrift_run.py --config configs/vgg3_fmnist/vgg3_fmnist_bnn_train_cel.yaml
+defaults:
+  - vgg3_fmnist_bnn_train.yaml
+
+experiment:
+  name: vgg3_fmnist_bnn_cel
+
+training:
+  criterion: cross_entropy      # MHL → CEL (the variable under study)
+  lr: 0.01                      # CEL-tuned (MHL recipe used 0.001)
+  save_dir: models/w1a1_cel/vgg3_fmnist/
