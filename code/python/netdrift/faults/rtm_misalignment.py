@@ -79,6 +79,10 @@ class RTMConfig:
     track_misalign_faults: bool = False
     track_bitflips: bool = False
     track_affected_units: bool = False
+    track_wrong_reads: bool = False
+    """If ``True``, count per-racetrack non-identity reads (wrong bits read due
+    to persistent misalignment) in the simulate kernel and surface the scalar
+    total via ``FaultStats.extra['wrong_bits_read']``."""
     weight_encoder: Optional["WeightEncoder"] = None
     """Optional write-time weight encoder (e.g. endlen). ``None`` disables it."""
     weight_encoder_mode: str = "once"
@@ -119,6 +123,10 @@ class RTMState(FaultState):
 
     kernel_mapping: Optional[str] = None
     """For conv layers: ``"ROW"``, ``"COL"``, ``"CLW"``, or ``"ACW"``. ``None`` for linear."""
+
+    last_wrong_read: Optional[np.ndarray] = None
+    """Most-recent per-racetrack wrong-read counts (2D int array) or ``None``.
+    Populated only when ``track_wrong_reads`` is enabled; used for the .npz dump."""
 
 
 class RTMMisalignmentFault(FaultModel):
@@ -173,7 +181,7 @@ class RTMMisalignmentFault(FaultModel):
 
         # 3) Run the racetrack simulation kernels
         ap_reads = _ap_reads_for_mapping(self.cfg.rt_size, state.rt_mapping)
-        new_w_2d_np, new_offset, total_misalign = self._run_rtm_kernels(
+        new_w_2d_np, new_offset, total_misalign, wrong_read = self._run_rtm_kernels(
             w_2d.detach(), state.index_offset, ap_reads, ctx.nr_run,
         )
         new_w_2d = torch.from_numpy(new_w_2d_np).to(weight.device, dtype=weight.dtype)
@@ -189,11 +197,14 @@ class RTMMisalignmentFault(FaultModel):
             stats.affected_units = int(np.count_nonzero(new_offset))
         if self.cfg.track_bitflips and pre_fault is not None:
             stats.bitflips = int((pre_fault != new_w).sum().item())
+        if self.cfg.track_wrong_reads:
+            stats.extra["wrong_bits_read"] = int(wrong_read.sum())
 
         new_state = RTMState(
             index_offset=new_offset,
             rt_mapping=state.rt_mapping,
             kernel_mapping=state.kernel_mapping,
+            last_wrong_read=(wrong_read if self.cfg.track_wrong_reads else None),
         )
         return new_w, new_state, stats
 
@@ -203,10 +214,12 @@ class RTMMisalignmentFault(FaultModel):
         index_offset: np.ndarray,
         ap_reads: int,
         nr_run: int,
-    ) -> tuple[np.ndarray, np.ndarray, int]:
+    ) -> tuple[np.ndarray, np.ndarray, int, np.ndarray]:
         """Drive the two CUDA kernels and apply mitigations between them.
 
-        Returns ``(new_weight_2d_np, new_index_offset, total_misalign_count)``.
+        Returns ``(new_weight_2d_np, new_index_offset, total_misalign_count, wrong_read)``.
+        ``wrong_read`` is the per-racetrack non-identity-read count array when
+        ``track_wrong_reads`` is on, else a ``(1, 1)`` zero array.
         """
         # Match the legacy ``racetrack_sim`` initialization sequence: select
         # device 0 (or the value of NUMBA_CUDA_DEFAULT_DEVICE if set) before
@@ -250,6 +263,17 @@ class RTMMisalignmentFault(FaultModel):
         weight_out_np = np.zeros(weight_np.shape, dtype=weight_np.dtype)
         weight_out_gpu = cuda.to_device(weight_out_np)
 
+        # Per-racetrack wrong-read counter — full grid shape only when tracking
+        # is on; a (1,1) dummy otherwise. The kernel gates on the explicit
+        # ``track_wrong`` flag, NOT the array shape, so a genuine (1,1) grid is
+        # still counted.
+        track_wrong = 1 if self.cfg.track_wrong_reads else 0
+        if self.cfg.track_wrong_reads:
+            wrong_read = np.zeros_like(index_offset)
+        else:
+            wrong_read = np.zeros((1, 1), dtype=index_offset.dtype)
+        wrong_gpu = cuda.to_device(wrong_read)
+
         # Per-forward encoder: rewrite the (transposed/kernel-mapped) weight
         # view in place, *before* the racetrack read kernel sees it. Matches
         # legacy ``EXEC_ENDLEN`` ordering in ``racetrack_sim``.
@@ -262,9 +286,11 @@ class RTMMisalignmentFault(FaultModel):
 
         simulate_racetrack_kernel[blocks, threads](
             rng, weight_in_gpu, weight_out_gpu, offset_gpu, self.cfg.rt_size,
+            wrong_gpu, track_wrong,
         )
         cuda.synchronize()
         weight_out_np = weight_out_gpu.copy_to_host()
+        wrong_read = wrong_gpu.copy_to_host()
 
         total_misalign = int(misalign_faults.sum()) if self.cfg.track_misalign_faults else 0
-        return weight_out_np, index_offset, total_misalign
+        return weight_out_np, index_offset, total_misalign, wrong_read

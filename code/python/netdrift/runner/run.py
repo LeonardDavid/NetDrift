@@ -174,6 +174,7 @@ def _build_fault_model(
             track_misalign_faults="misalign_faults" in metrics_online,
             track_bitflips="bitflips" in metrics_online,
             track_affected_units="affected_units" in metrics_online,
+            track_wrong_reads="wrong_bits_read" in metrics_online,
             weight_encoder=weight_encoder,
             weight_encoder_mode=weight_encoder_mode,
         )
@@ -181,9 +182,36 @@ def _build_fault_model(
     raise NotImplementedError(f"fault model {cfg.fault.model!r} not yet implemented")
 
 
-def _setup_run_dir(cfg: ExperimentConfig) -> tuple[Path, str]:
+def _sanitize_path_segment(s: str) -> str:
+    """Make a label safe to use as a single path segment.
+
+    Keeps alphanumerics, dot, underscore and hyphen; replaces every other
+    character (including path separators and whitespace) with an underscore.
+    """
+    return re.sub(r"[^A-Za-z0-9._-]", "_", s.strip())
+
+
+def _setup_run_dir(
+    cfg: ExperimentConfig,
+    category: str | None = None,
+    subcategory: str | None = None,
+) -> tuple[Path, str]:
+    """Create and return the run directory + timestamp.
+
+    Layout is ``<output_dir>/<experiment.name>/[<category>/[<subcategory>/]]<timestamp>``.
+    The ``category``/``subcategory`` segments are inserted only when provided
+    (from ``--wandb-category``/``--wandb-subcategory``) so distinct experiment
+    modes that share an ``experiment.name`` no longer collide under
+    indistinguishable timestamp dirs. These labels are independent of W&B
+    being enabled — the directory layout keys off the labels, not the project.
+    """
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = Path(cfg.experiment.output_dir) / cfg.experiment.name / ts
+    run_dir = Path(cfg.experiment.output_dir) / cfg.experiment.name
+    if category:
+        run_dir = run_dir / _sanitize_path_segment(category)
+        if subcategory:
+            run_dir = run_dir / _sanitize_path_segment(subcategory)
+    run_dir = run_dir / ts
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir, ts
 
@@ -281,6 +309,37 @@ def _summarize_layer_metrics(model: torch.nn.Module) -> dict:
     return out
 
 
+def _summarize_layer_metrics_by_rt_error(
+    model: torch.nn.Module,
+    bounds: list[tuple[float, dict[str, dict[str, int]]]],
+) -> list[dict]:
+    """Nest the raw per-forward metric dump by rt_error.
+
+    ``bounds`` is ``[(rt_error, start_lengths), ...]`` captured at each rt_error
+    boundary (start_lengths = per-layer per-key list lengths just before that
+    rt_error's passes). Each rt_error's slice runs from its own start to the
+    next rt_error's start (or end of list). This makes the dump self-explanatory:
+    the per-forward arrays are grouped per rt_error rather than concatenated into
+    one array whose stock-metric value "resets" at each (re-seeded) boundary.
+
+    Returns ``[{"rt_error": x, "layer_metrics": {layer: {key: [...]}}}, ...]``.
+    """
+    raw = _summarize_layer_metrics(model)  # {layer: {key: full_list}}
+    out: list[dict] = []
+    for i, (rt_error, start) in enumerate(bounds):
+        end = bounds[i + 1][1] if i + 1 < len(bounds) else None
+        seg: dict[str, dict] = {}
+        for layer, keymap in raw.items():
+            lstart = start.get(layer, {})
+            lend = end.get(layer, {}) if end is not None else None
+            seg[layer] = {
+                k: v[lstart.get(k, 0):(lend.get(k, len(v)) if lend is not None else len(v))]
+                for k, v in keymap.items()
+            }
+        out.append({"rt_error": rt_error, "layer_metrics": seg})
+    return out
+
+
 def _maybe_warn_per_forward_budget(
     *, mode: str, global_budget: float, local_budget: float
 ) -> None:
@@ -331,16 +390,43 @@ def _layer_metric_lengths(model: torch.nn.Module) -> dict[str, dict[str, int]]:
     return out
 
 
+# Per-loop reduction depends on whether a metric is a FLOW or a STOCK.
+#
+# FLOW metrics count NEW events that occur during a forward pass (the kernel
+# increments them only when a fresh fault fires). They are additive: summing a
+# flow over the loop's batches — and across loops — is physically meaningful.
+# Only ``misalign_faults`` is a flow.
+#
+# STOCK metrics are pure functions of the STANDING per-racetrack offset state
+# (bitflips = pre!=post readout, wrong_bits_read = q_in!=q_out, affected_units =
+# count_nonzero(offset)). Each batch RE-MEASURES the same standing corruption,
+# so summing over the loop's ~N batches multi-counts the same stuck positions
+# (this produced affected_units > total racetracks and BER > 1 in early runs).
+# The correct per-loop summary is the END-OF-LOOP SNAPSHOT: the value from the
+# loop's LAST batch — "device corruption state after k inference passes". The
+# offset state still PERSISTS across loops (stuck-stays-stuck physics), so the
+# across-loop trajectory of these snapshots is the cumulative-degradation curve.
+_FLOW_METRICS = frozenset({"misalign_faults"})
+
+
 def _loop_metric_delta(
     model: torch.nn.Module,
     before: dict[str, dict[str, int]],
     online: list[str],
 ) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
-    """Aggregate per-loop fault metrics from the slice produced since ``before``.
+    """Reduce per-loop fault metrics from the slice produced since ``before``.
 
-    Returns ``(totals, per_layer)`` where ``totals`` sums each online metric over
-    all layers/batches in the loop and ``per_layer`` keeps the per-layer sums.
-    Only keys in ``online`` are considered (the fault model only populates those).
+    Returns ``(totals, per_layer)``. Each online metric is reduced per the
+    flow/stock distinction (see ``_FLOW_METRICS``):
+
+    * FLOW (``misalign_faults``) → SUM over the loop's batches (new events).
+    * STOCK (``bitflips``, ``wrong_bits_read``, ``affected_units``) → the
+      LAST value in the slice (end-of-loop snapshot of standing corruption).
+
+    ``totals`` aggregates across layers with the SAME reduction (sum of flows /
+    sum of per-layer snapshots), so e.g. ``affected_units`` total is the count
+    of currently-nonzero racetracks across all layers — bounded by the racetrack
+    count, never multi-counted. Only keys in ``online`` are considered.
     """
     from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
     totals: dict[str, int] = {}
@@ -356,9 +442,15 @@ def _loop_metric_delta(
             values = lm.data.get(key)
             if not values:
                 continue
-            loop_sum = int(sum(values[start.get(key, 0):]))
-            totals[key] = totals.get(key, 0) + loop_sum
-            per_layer.setdefault(name, {})[key] = loop_sum
+            loop_slice = values[start.get(key, 0):]
+            if not loop_slice:
+                continue
+            if key in _FLOW_METRICS:
+                reduced = int(sum(loop_slice))           # additive event count
+            else:
+                reduced = int(loop_slice[-1])            # end-of-loop snapshot
+            totals[key] = totals.get(key, 0) + reduced
+            per_layer.setdefault(name, {})[key] = reduced
     return totals, per_layer
 
 
@@ -423,6 +515,80 @@ def _wandb_config_with_category(
     return base
 
 
+_METRICS_ONLINE_KEYS = ("bitflips", "misalign_faults", "affected_units", "wrong_bits_read")
+
+
+def _metrics_track_flags(level: str) -> set[str]:
+    """Which fault-model track-keys the metrics level requires."""
+    if level in ("online", "all"):
+        return set(_METRICS_ONLINE_KEYS)
+    return set()
+
+
+def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
+    """Build the self-describing ``meta`` block for metrics artifacts.
+
+    Reuses ``_wandb_config`` for the flat context keys and adds a per-layer
+    geometry list (shape, rt_mapping, racetrack count, total weights).
+    """
+    from netdrift.faults.layout import compute_index_offset_shape
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+
+    base = _wandb_config_with_category(cfg, model, category, subcategory)
+    layers = []
+    protected_weights = 0
+    unprotected_weights = 0
+    for name, mod in model.named_modules():
+        if not isinstance(mod, (QuantizedConv2d, QuantizedLinear)):
+            continue
+        ks = mod._kernel_size_for_state()
+        shape = tuple(mod.weight.shape)
+        n_rt = compute_index_offset_shape(
+            shape, rt_size=cfg.storage.rt_size,
+            rt_mapping=(mod.rt_mapping or "ROW"), kernel_size=ks,
+        )
+        nweights = int(mod.weight.numel())
+        is_protected = bool(getattr(mod, "protected", False))
+        if is_protected:
+            protected_weights += nweights
+        else:
+            unprotected_weights += nweights
+        layers.append({
+            "id": mod.layer_id,
+            "name": name,
+            "weight_shape": list(shape),
+            "rt_mapping": mod.rt_mapping or "ROW",
+            "n_racetracks": list(n_rt),
+            "total_weights": nweights,
+            "protected": is_protected,
+        })
+    return {
+        "model": base["model"],
+        "dataset": base["dataset"],
+        "category": category,
+        "subcategory": subcategory,
+        "quant": {"scheme": base["quant_scheme"], "bits": cfg.quant.bits},
+        "storage": {"rt_size": base["rt_size"], "layout": base["layout"],
+                    "kernel_mapping": base["kernel_mapping"]},
+        "seed": base["seed"], "loops": base["loops"],
+        "weight_encoder": base["weight_encoder"],
+        "weight_encoder_mode": base["weight_encoder_mode"],
+        "protection": {"protected": base["protected_layers"],
+                       "unprotected": base["unprotected_layers"]},
+        # Quantized-layer weight counts. ``unprotected`` is the BER denominator
+        # (only unprotected layers can flip); ``total`` includes protected ones.
+        # Counts cover quantized layers only (Conv/Linear) — not BN/Scale params.
+        "weights": {
+            "total": protected_weights + unprotected_weights,
+            "protected": protected_weights,
+            "unprotected": unprotected_weights,
+        },
+        "criterion": base["criterion"],
+        "layers": layers,
+        "config": base["config"],
+    }
+
+
 _WANDB_MAX_TAG_LEN = 64  # W&B rejects tags longer than this (HTTP 400).
 
 
@@ -471,13 +637,24 @@ def main(argv: list[str] | None = None) -> int:
              "Logged as config.subcategory + a tag so runs group by exact "
              "configuration. Sweep drivers set this per cell.",
     )
+    parser.add_argument(
+        "--metrics", default="none", choices=["none", "offline", "online", "all"],
+        help="Metrics-tracking level. 'offline' = static-weight snapshots only; "
+             "'online' = per-iteration fault/accuracy artifacts; 'all' = both. "
+             "Default 'none' (existing behaviour, no JSON artifacts).",
+    )
     args = parser.parse_args(argv)
 
     overrides = parse_overrides(args.override)
     cfg = load_config(args.config, overrides=overrides)
 
+    # Union the requested metrics level into the online metric list so the
+    # fault model enables the matching track_* flags. Computed once and passed
+    # everywhere the online list is consumed.
+    metrics_online = sorted(set(cfg.metrics.online) | _metrics_track_flags(args.metrics))
+
     _seed_everything(cfg.experiment.seed)
-    run_dir, run_ts = _setup_run_dir(cfg)
+    run_dir, run_ts = _setup_run_dir(cfg, args.wandb_category, args.wandb_subcategory)
     wandb_group = f"{cfg.experiment.name}-{run_ts}"
     # Snapshot the resolved config for traceability.
     with open(run_dir / "config.json", "w") as f:
@@ -564,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
     fault_model = None
     if scheme is not None:
         fault_model = _build_fault_model(
-            cfg, cfg.metrics.online,
+            cfg, metrics_online,
             weight_encoder=encoder,
             weight_encoder_mode=encoder_mode,
         )
@@ -676,6 +853,33 @@ def main(argv: list[str] | None = None) -> int:
                 kernel_mapping=kernel_mapping_str,
             )
             print(f"  ⇒ baseline_clean_accuracy = {baseline_clean_acc:.2f}%")
+
+            # ---- metrics: meta + offline snapshots ----
+            # NOTE: must come AFTER the re-attach above so each layer's
+            # rt_mapping is set; otherwise snapshots use the wrong (ROW) layout.
+            _metrics_level = args.metrics
+            _do_offline = _metrics_level in ("offline", "all")
+            _do_online = _metrics_level in ("online", "all")
+            _cat_tok = args.wandb_category or "uncategorized"
+            _recal_deltas = None
+            _snap_objs: list = []
+            _meta = None
+            if _do_offline or _do_online:
+                # Imports + meta build only when metrics are actually requested,
+                # so --metrics none stays zero-overhead.
+                from netdrift.metrics import snapshots as _snap
+                from netdrift.metrics.artifacts import (
+                    distribution_stats, write_rt_error_artifact, write_static_artifact,
+                )
+                from netdrift.metrics.online import OnlineCollector
+                _metrics_dir = run_dir / "metrics"
+                _meta = _metrics_meta(cfg, model, category=args.wandb_category,
+                                      subcategory=args.wandb_subcategory)
+            if _do_offline:
+                lbl = "before_encoder" if (encoder is not None and encoder_mode == "once") else "trained"
+                s0 = _snap.capture_snapshot(model, label=lbl, rt_size=cfg.storage.rt_size,
+                                            want_raw=(_metrics_level == "all"))
+                _snap_objs.append(s0)
 
             # Optional encoder application.
             baseline_endlen_acc: float | None = None
@@ -790,6 +994,14 @@ def main(argv: list[str] | None = None) -> int:
                     f"{baseline_endlen_acc - baseline_clean_acc:+.2f}%"
                 )
 
+                # rt_mapping restored by the re-attach above — safe to snapshot.
+                if _do_offline:
+                    s_after = _snap.capture_snapshot(
+                        model, label="after_encoder", rt_size=cfg.storage.rt_size,
+                        want_raw=(_metrics_level == "all"),
+                    )
+                    _snap_objs.append(s_after)
+
             elif encoder is not None and encoder_mode == "per_forward":
                 # Baseline 1 for per_forward: temporarily set rt_error=0 so
                 # the offset kernel produces no shifts; the encoder still
@@ -836,6 +1048,7 @@ def main(argv: list[str] | None = None) -> int:
                 # Detach faults for the recalibration forward passes; restore in
                 # a finally so a failure mid-recal doesn't leave the model with
                 # no fault model attached for the sweep.
+                _recal_before = _snap.capture_recal_params(model) if _do_offline else None
                 attach_fault_model(model, None)
                 try:
                     recalibrate(
@@ -854,6 +1067,16 @@ def main(argv: list[str] | None = None) -> int:
                     f"  ⇒ baseline_endlen_recal_accuracy = "
                     f"{baseline_endlen_recal_acc:.2f}%"
                 )
+                # rt_mapping is restored here (post-finally) — safe for COL configs.
+                if _do_offline:
+                    _recal_deltas = _snap.recal_deltas(
+                        _recal_before, _snap.capture_recal_params(model)
+                    )
+                    s_recal = _snap.capture_snapshot(
+                        model, label="after_recal", rt_size=cfg.storage.rt_size,
+                        want_raw=(_metrics_level == "all"),
+                    )
+                    _snap_objs.append(s_recal)
                 # Save the recalibrated model with a _recal marker. Next to the
                 # encoded checkpoint when one exists (parallel to the _endlen
                 # convention); otherwise (e.g. on=always with no encoder) fall
@@ -872,9 +1095,15 @@ def main(argv: list[str] | None = None) -> int:
             base_wandb_config = _wandb_config_with_category(
                 cfg, model, args.wandb_category, args.wandb_subcategory
             )
-            online = list(cfg.metrics.online)
+            online = metrics_online
             all_results = []
+            # Track where each rt_error's per-forward records begin in the raw
+            # LayerMetrics lists, so summary.json can nest the dump by rt_error
+            # instead of flattening all sweeps into one array (whose value
+            # "resets" at each rt_error boundary, which looks like a bug).
+            rt_metric_bounds: list[tuple[float, dict[str, dict[str, int]]]] = []
             for rt_error in rt_errors:
+                rt_metric_bounds.append((float(rt_error), _layer_metric_lengths(model)))
                 n_reset = _reset_fault_state(model)
                 # Re-seed RNGs so each rt_error realization is independent of
                 # which sweep values preceded it. The fault kernel re-seeds via
@@ -914,6 +1143,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 t0 = time.perf_counter()
                 accs: list[float] = []
+                _online = OnlineCollector() if _do_online else None
                 # Drive the loops here (loops=1 per call) so each inference
                 # iteration can be logged with its own fault-metric slice. State
                 # still accumulates across iterations — we do NOT reset between
@@ -927,6 +1157,8 @@ def main(argv: list[str] | None = None) -> int:
                     )[0]
                     accs.append(acc)
                     totals, per_layer = _loop_metric_delta(model, before, online)
+                    if _online is not None:
+                        _online.record_loop(loop_idx=loop_idx, totals=totals, per_layer=per_layer)
                     log_data: dict[str, float] = {
                         "loop_idx": loop_idx,
                         "accuracy": acc,
@@ -962,6 +1194,71 @@ def main(argv: list[str] | None = None) -> int:
                     "accuracies": accs,
                     "elapsed_s": round(elapsed, 2),
                 })
+
+                if _do_online:
+                    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+                    _layers = {n: m for n, m in model.named_modules()
+                               if isinstance(m, (QuantizedConv2d, QuantizedLinear))}
+                    _npz = _online.final_raw_arrays(_layers) if _metrics_level == "all" else None
+                    per_loop = _online.as_per_loop()
+                    # BER denominator = UNPROTECTED weights only. Protected
+                    # layers (e.g. conv1, fc2) can never flip — faults are only
+                    # injected into unprotected layers — so dividing by all
+                    # weights would dilute the rate with fault-immune params.
+                    # CAVEAT: this makes BER comparable across protection
+                    # policies only when the unprotected SET is the same; it is
+                    # the fraction of EXPOSED weights read wrong, not of all.
+                    # Reuse the count from _meta["weights"] so the BER denominator
+                    # and the meta block can never disagree.
+                    unprotected_weights = _meta["weights"]["unprotected"]
+                    # last_loop: per-metric END-OF-LOOP value from the FINAL
+                    # inference loop. For STOCK metrics (bitflips, wrong_bits_read,
+                    # affected_units) this is the standing-corruption snapshot
+                    # after all loops; for the FLOW metric (misalign_faults) it is
+                    # that final loop's new-event count. (_loop_metric_delta already
+                    # applied the per-loop flow/stock reduction; here we just take
+                    # the last loop's value.)
+                    last_loop = {k: (v["total"][-1] if v["total"] else 0)
+                                 for k, v in per_loop.items()}
+                    # sum_over_loops only for FLOW metrics — summing stock
+                    # snapshots across loops is physically meaningless (it would
+                    # re-sum the same standing corruption). See _FLOW_METRICS.
+                    sum_over_loops = {
+                        k: int(sum(v["total"]))
+                        for k, v in per_loop.items() if k in _FLOW_METRICS
+                    }
+                    # BER from the final-loop bitflips snapshot: fraction of
+                    # exposed weights standing wrong after all loops. Bounded [0,1].
+                    ber = (
+                        last_loop.get("bitflips", 0) / unprotected_weights
+                        if unprotected_weights else 0.0
+                    )
+                    outcome = {
+                        "baselines": {
+                            "clean": baseline_clean_acc,
+                            "endlen": baseline_endlen_acc,
+                            "endlen_recal": baseline_endlen_recal_acc,
+                        },
+                        "per_loop_accuracy": accs,
+                        "accuracy": distribution_stats(accs),
+                        "accuracy_drop_vs_clean": distribution_stats(
+                            [baseline_clean_acc - a for a in accs]
+                        ),
+                    }
+                    fault_incidence = {
+                        "last_loop": {**last_loop, "ber": ber,
+                                      "ber_denominator_unprotected_weights": unprotected_weights},
+                        "sum_over_loops": sum_over_loops,
+                        "per_loop": per_loop,
+                    }
+                    write_rt_error_artifact(
+                        _metrics_dir, model=cfg.model.name, category=_cat_tok,
+                        rt_error=float(rt_error), meta=dict(_meta),
+                        outcome=outcome, fault_incidence=fault_incidence,
+                        npz_arrays=_npz,
+                        static_ref=(f"{cfg.model.name}__{_cat_tok}__static.json"
+                                    if _do_offline else None),
+                    )
             print()
             with open(run_dir / "summary.json", "w") as f:
                 json.dump({
@@ -977,8 +1274,52 @@ def main(argv: list[str] | None = None) -> int:
                     "encoded_checkpoint": encoded_checkpoint_path,
                     "encoder_auto_disabled": encoder_auto_disabled,
                     "rt_error_sweep": all_results,
-                    "layer_metrics": _summarize_layer_metrics(model),
+                    # Raw per-forward metric dump, NESTED PER rt_error (each entry
+                    # is one forward pass / batch). Within an rt_error the stock
+                    # metrics accumulate as the offset drifts; the fault state is
+                    # reset + re-seeded between rt_errors, so grouping by rt_error
+                    # makes the boundary explicit instead of one flat array that
+                    # appears to "reset" mid-stream. For reduced/analysis-ready
+                    # numbers use the metrics/*.json artifacts, not this dump.
+                    "layer_metrics_by_rt_error": _summarize_layer_metrics_by_rt_error(
+                        model, rt_metric_bounds
+                    ),
                 }, f, indent=2)
+
+            if _do_offline and _snap_objs:
+                snapshots_json = [
+                    {"label": s.label, "total": s.totals,
+                     "per_layer": {n: {
+                         "block_count": m.block_count,
+                         "sign_transitions": m.sign_transitions,
+                         "run_length_histogram": m.run_length_histogram,
+                         "weight_magnitude": m.weight_magnitude,
+                         "dist_to_threshold": m.dist_to_threshold,
+                         "n_racetracks": list(m.n_racetracks),
+                     } for n, m in s.per_layer.items()}}
+                    for s in _snap_objs
+                ]
+                # Consecutive pairwise deltas so each boundary's effect is
+                # isolated. For cat4 (before_encoder, after_encoder, after_recal)
+                # this yields the pure-endlen delta AND the recal delta
+                # separately, instead of one combined first->last delta.
+                deltas = {}
+                for b, a in zip(_snap_objs, _snap_objs[1:]):
+                    deltas[f"{b.label}->{a.label}"] = _snap.compute_deltas(b, a)
+                static_npz = {}
+                if _metrics_level == "all":
+                    import numpy as _np
+                    for s in _snap_objs:
+                        for n, m in s.per_layer.items():
+                            if m.raw_sign_transitions is not None:
+                                static_npz[f"static__{s.label}__{n}__sign_transitions"] = \
+                                    _np.asarray(m.raw_sign_transitions)
+                write_static_artifact(
+                    _metrics_dir, model=cfg.model.name, category=_cat_tok,
+                    meta=dict(_meta), snapshots=snapshots_json,
+                    deltas=deltas or None, recal=_recal_deltas,
+                    npz_arrays=static_npz or None,
+                )
     else:
         raise ValueError(f"unknown training mode: {cfg.training.mode}")
 

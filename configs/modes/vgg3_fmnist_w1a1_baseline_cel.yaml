@@ -1,0 +1,21 @@
+# MODE: baseline (CEL) — vanilla BNN, no encoder, no recalibration, no fault-aware.
+# CEL variant: includes the cross-entropy base RTM config, so it loads the
+# CEL-trained baseline checkpoint and reports criterion=cross_entropy in W&B.
+# Only difference from vgg3_fmnist_w1a1_baseline.yaml is the included base.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg3_fmnist_w1a1_baseline_cel.yaml
+defaults:
+  - ../vgg3_fmnist/vgg3_fmnist_w1a1_rtm_cel.yaml
+
+experiment:
+  name: mode_vgg3_w1a1_baseline_cel
+
+fault:
+  weight_encoder: null            # NO endlen — pure quantized model under faults
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: false

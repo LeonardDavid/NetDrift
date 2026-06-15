@@ -15,10 +15,12 @@ experiments/
 data/
 models/
 results_comb/
-runs/
+runs*/
 wandb/
 docs/
 weekend_*.log
+*.log
+logs/
 
 nohup.out
 

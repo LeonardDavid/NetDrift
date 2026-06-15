@@ -80,7 +80,7 @@ def calc_index_offset_kernel(rng_states, index_offset, misalign_faults, rt_size,
 
 
 @cuda.jit
-def simulate_racetrack_kernel(rng_states, qweight_in, qweight_out, index_offset, rt_size):  # noqa: E501
+def simulate_racetrack_kernel(rng_states, qweight_in, qweight_out, index_offset, rt_size, wrong_read, track_wrong):  # noqa: E501
     """Read each racetrack at its (shifted) position.
 
     For every racetrack ``(i, j)`` and every position ``k`` in ``[0, rt_size)``,
@@ -95,6 +95,13 @@ def simulate_racetrack_kernel(rng_states, qweight_in, qweight_out, index_offset,
         qweight_out:  2D float output weights, same shape.
         index_offset: 2D int32 offset array, shape compatible with the racetrack grid.
         rt_size:      Bits per racetrack.
+        wrong_read:   2D int array, same shape as ``index_offset`` when tracking,
+                      else a ``(1, 1)`` dummy. Per-racetrack counts of non-identity
+                      reads (``q_in_index != q_out_index``) are accumulated when
+                      ``track_wrong`` is truthy.
+        track_wrong:  ``1`` to accumulate per-racetrack wrong-read counts, ``0`` to
+                      skip. Passed explicitly (not inferred from ``wrong_read``'s
+                      shape) so a genuine ``(1, 1)`` racetrack grid is still counted.
 
     Notes:
         Each thread uses its own rng-state index (``i*shape[1] + j``) for
@@ -110,6 +117,8 @@ def simulate_racetrack_kernel(rng_states, qweight_in, qweight_out, index_offset,
             q_in_index = q_out_index - index_offset[i, j]
 
             if q_out_index < qweight_out.shape[1]:
+                if track_wrong and q_in_index != q_out_index:
+                    wrong_read[i, j] += 1
                 if j * rt_size <= q_in_index <= (j + 1) * rt_size - 1 and q_in_index < qweight_in.shape[1]:  # noqa: E501
                     qweight_out[i, q_out_index] = qweight_in[i, q_in_index]
                 else:

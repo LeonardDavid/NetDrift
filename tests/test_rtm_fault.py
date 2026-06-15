@@ -355,3 +355,29 @@ def test_once_with_budget_no_warn() -> None:
         _maybe_warn_per_forward_budget(mode="once", global_budget=0.5, local_budget=1.0)
         # per_forward with unbounded budgets: no warning.
         _maybe_warn_per_forward_budget(mode="per_forward", global_budget=1.0, local_budget=1.0)
+
+
+@pytest.mark.cuda
+def test_inject_reports_wrong_bits_read_when_enabled() -> None:
+    cfg = RTMConfig(rt_size=8, rt_error=0.5, track_wrong_reads=True)
+    fm = RTMMisalignmentFault(cfg)
+    w = torch.sign(torch.randn(16, 32, device="cuda"))
+    ctx = _make_ctx(rt_mapping="ROW")
+    state = fm.init_state(tuple(w.shape), ctx)
+    _, new_state, stats = fm.inject(w, state, ctx)
+    assert stats.extra.get("wrong_bits_read") is not None
+    assert stats.extra["wrong_bits_read"] >= 0
+    # per-racetrack array stashed on the state for the .npz dump
+    assert new_state.last_wrong_read is not None
+
+
+@pytest.mark.cuda
+def test_wrong_bits_read_absent_when_disabled() -> None:
+    cfg = RTMConfig(rt_size=8, rt_error=0.5, track_wrong_reads=False)
+    fm = RTMMisalignmentFault(cfg)
+    w = torch.sign(torch.randn(16, 32, device="cuda"))
+    ctx = _make_ctx(rt_mapping="ROW")
+    state = fm.init_state(tuple(w.shape), ctx)
+    _, new_state, stats = fm.inject(w, state, ctx)
+    assert "wrong_bits_read" not in stats.extra
+    assert new_state.last_wrong_read is None
