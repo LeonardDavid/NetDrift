@@ -28,9 +28,11 @@ SRC = REPO_ROOT / "code" / "python"
 # as a list-valued fault.rt_error override so the runner sweeps it in one run.
 DEFAULT_RT_ERROR_CURVE = [1e-7, 3e-7, 1e-6, 3e-6, 1e-5]
 DEFAULT_LOOPS = 10
-# Protection: first+last layer protected (VGG3: conv1+fc2). The comparison DB
-# fixes this per the experiment design; drivers can override if needed.
-DEFAULT_PROTECTION_LAYERS = [2, 3]
+# Protection is NOT defaulted by the drivers. ``None`` means "use whatever the
+# config specifies" — drivers only override fault.protection.* when the user
+# passes it explicitly. (A hardcoded default here used to be the VGG3 value
+# [2,3], which silently clobbered VGG7's config [2,3,4,5,6,7].)
+DEFAULT_PROTECTION_LAYERS = None
 # One wandb project for the whole DB so runs are queryable together.
 DEFAULT_WANDB_PROJECT = "netdrift-comparison-db"
 
@@ -159,15 +161,33 @@ def base_overrides(
     *,
     curve: list[float],
     loops: int,
-    protection_layers: list[int],
+    protection_policy: Optional[str] = None,
+    protection_layers: Optional[list[int]] = None,
 ) -> list[str]:
-    """The override args every comparison-DB cell shares (curve, loops, protection)."""
-    return [
+    """The override args every comparison-DB cell shares (curve, loops, protection).
+
+    Protection is emitted ONLY when explicitly requested. When both
+    ``protection_policy`` and ``protection_layers`` are ``None``, no
+    ``fault.protection.*`` override is added and the runner uses the config's
+    own protection block (which the schema validates / halts on if a ``custom``
+    policy is missing layers). This prevents a driver default from silently
+    clobbering a model's config (e.g. VGG3's ``[2,3]`` overriding VGG7's
+    ``[2,3,4,5,6,7]``).
+
+    Passing ``protection_layers`` alone implies ``policy=custom`` (the common
+    escape-hatch case). Passing ``protection_policy`` alone (e.g. ``all``) emits
+    just the policy.
+    """
+    out = [
         "--override", f"fault.rt_error={rt_error_list_override(curve)}",
         "--override", f"training.loops={loops}",
-        "--override", "fault.protection.policy=custom",
-        "--override", f"fault.protection.layers={json_list(protection_layers)}",
     ]
+    if protection_policy is not None or protection_layers is not None:
+        policy = protection_policy or "custom"
+        out += ["--override", f"fault.protection.policy={policy}"]
+        if protection_layers is not None:
+            out += ["--override", f"fault.protection.layers={json_list(protection_layers)}"]
+    return out
 
 
 def json_list(xs: list[int]) -> str:

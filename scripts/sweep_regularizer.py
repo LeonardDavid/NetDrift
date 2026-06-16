@@ -136,12 +136,18 @@ def build_cells(
     seeds: list[int],
     include_ste: bool,
     inject_lambdas: list[float] | None = None,
+    categories: set[int] | None = None,
 ) -> list[dict]:
     """Return the full ordered list of cells.
 
     ``lambdas``        — λ values for the core (no-injection) regularizer sweep.
     ``inject_lambdas`` — λ values for the faults-in-the-loop variant (fresh
                          fault_state_mode only). Defaults to ``[0.05]``.
+    ``categories``     — subset of ``{5, 8}`` to emit; ``None`` = all built (the
+                         legacy behaviour, gated by ``include_ste`` for cat8).
+                         Lets a caller run ONLY cat5 or ONLY cat8 — e.g. one
+                         tmux pane per category sharing a ``--save-root`` without
+                         re-training cat5 in both.
 
     Each dict has keys:
         category, tag, config_key, seed, lam (None for cat8),
@@ -149,45 +155,47 @@ def build_cells(
     """
     if inject_lambdas is None:
         inject_lambdas = [0.05]
+    want = categories
     cells: list[dict] = []
 
     # Category 5
-    for seed in seeds:
-        # Core lambda sweep: no fault injection, state=fresh (irrelevant)
-        for lam in lambdas:
-            tag = _make_tag(category=5, lam=lam, inject=False, state="fresh", seed=seed)
-            cells.append({
-                "category": 5,
-                "tag": tag,
-                "config_key": _config_key(category=5, lam=lam, inject=False, state="fresh"),
-                "seed": seed,
-                "lam": lam,
-                "inject": False,
-                "state": "fresh",
-                "fault_aware": "regularization",
-            })
-        # Faults-in-the-loop: one cell per inject lambda. Only the 'fresh'
-        # fault_state_mode is run (accumulate dropped — fresh is the recommended
-        # augmentation mode; accumulate overfits a single realization).
-        for inj_lam in inject_lambdas:
-            tag = _make_tag(
-                category=5, lam=inj_lam, inject=True, state="fresh", seed=seed
-            )
-            cells.append({
-                "category": 5,
-                "tag": tag,
-                "config_key": _config_key(
-                    category=5, lam=inj_lam, inject=True, state="fresh"
-                ),
-                "seed": seed,
-                "lam": inj_lam,
-                "inject": True,
-                "state": "fresh",
-                "fault_aware": "regularization",
-            })
+    if want is None or 5 in want:
+        for seed in seeds:
+            # Core lambda sweep: no fault injection, state=fresh (irrelevant)
+            for lam in lambdas:
+                tag = _make_tag(category=5, lam=lam, inject=False, state="fresh", seed=seed)
+                cells.append({
+                    "category": 5,
+                    "tag": tag,
+                    "config_key": _config_key(category=5, lam=lam, inject=False, state="fresh"),
+                    "seed": seed,
+                    "lam": lam,
+                    "inject": False,
+                    "state": "fresh",
+                    "fault_aware": "regularization",
+                })
+            # Faults-in-the-loop: one cell per inject lambda. Only the 'fresh'
+            # fault_state_mode is run (accumulate dropped — fresh is the recommended
+            # augmentation mode; accumulate overfits a single realization).
+            for inj_lam in inject_lambdas:
+                tag = _make_tag(
+                    category=5, lam=inj_lam, inject=True, state="fresh", seed=seed
+                )
+                cells.append({
+                    "category": 5,
+                    "tag": tag,
+                    "config_key": _config_key(
+                        category=5, lam=inj_lam, inject=True, state="fresh"
+                    ),
+                    "seed": seed,
+                    "lam": inj_lam,
+                    "inject": True,
+                    "state": "fresh",
+                    "fault_aware": "regularization",
+                })
 
     # Category 8 — ste_inject (UNVALIDATED)
-    if include_ste:
+    if include_ste and (want is None or 8 in want):
         for seed in seeds:
             tag = _make_tag(category=8, lam=None, inject=False, state="fresh", seed=seed)
             cells.append({
@@ -217,7 +225,7 @@ def _train_argv(
     epochs: int,
     train_lr: float,
     beta: float,
-    protection_layers: list[int],
+    protection_layers: Optional[list[int]],
     wdb_args: list[str],
     crit_tok: str,
     fault_aware_criterion: str,
@@ -274,10 +282,14 @@ def _train_argv(
         # experiment identity
         "--override", f"experiment.seed={cell['seed']}",
         "--override", f"experiment.name={exp_name}",
-        # protection (must match the test phase)
-        "--override", "fault.protection.policy=custom",
-        "--override", f"fault.protection.layers={json_list(protection_layers)}",
     ]
+    # Protection (must match the test phase): only override when explicitly
+    # requested; otherwise the config's protection block is used as-is.
+    if protection_layers is not None:
+        argv += [
+            "--override", "fault.protection.policy=custom",
+            "--override", f"fault.protection.layers={json_list(protection_layers)}",
+        ]
     argv += wdb_args
     return argv
 
@@ -290,7 +302,7 @@ def _test_argv(
     save_root: Path,
     curve: list[float],
     loops: int,
-    protection_layers: list[int],
+    protection_layers: Optional[list[int]],
     wdb_args: list[str],
     crit_tok: str,
 ) -> list[str]:
@@ -532,11 +544,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="Regularizer lambda values for the core cat5 sweep "
                         "(no fault injection). lambda=0.0 is the CONTROL. "
                         "Default: 0.0 0.01 0.05 0.1")
-    p.add_argument("--inject-lambdas", nargs="+", type=float, dest="inject_lambdas",
+    p.add_argument("--inject-lambdas", nargs="*", type=float, dest="inject_lambdas",
                    default=[0.05],
                    help="Lambda values for the faults-in-the-loop cat5 variant "
                         "(inject_faults=true, fault_state_mode=fresh). One cell "
-                        "per value. Default: 0.05")
+                        "per value. Pass the flag with NO values "
+                        "(--inject-lambdas) to skip the inject variant entirely. "
+                        "Default: 0.05")
     p.add_argument("--beta", type=float, default=4.0,
                    help="Regularizer beta (tanh sharpness). Default: 4.0")
     p.add_argument("--fault-aware-criterion", dest="fault_aware_criterion",
@@ -568,10 +582,17 @@ def main(argv: list[str] | None = None) -> int:
                    dest="protection_layers",
                    default=DEFAULT_PROTECTION_LAYERS,
                    help="Unprotected layer indices (1-based, custom policy). "
-                        f"Default: {DEFAULT_PROTECTION_LAYERS}")
+                        "Default: None — use the config's fault.protection block "
+                        "(passing this overrides it for both train and test).")
     p.add_argument("--include-ste", action="store_true",
                    help="Also run category 8 (ste_inject). "
                         "UNVALIDATED — treat output as exploratory.")
+    p.add_argument("--categories", nargs="+", type=int, choices=[5, 8],
+                   default=None, metavar="CAT",
+                   help="Subset of {5,8} to run. Default: all (cat8 still gated "
+                        "by --include-ste). Use '--categories 8 --include-ste' to "
+                        "run ONLY cat8, or '--categories 5' for ONLY cat5 — so two "
+                        "panes can share a --save-root without re-training cat5.")
     p.add_argument(
         "--save-root", default="runs/sweeps/reg_checkpoints",
         help="Parent dir for per-cell save_dir (where model.pt lands). "
@@ -629,6 +650,7 @@ def main(argv: list[str] | None = None) -> int:
         seeds=args.seeds,
         include_ste=args.include_ste,
         inject_lambdas=args.inject_lambdas,
+        categories=set(args.categories) if args.categories else None,
     )
     total = len(cells)
     # Each cell is 2 phases (train + test).
@@ -649,7 +671,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  train_lr        : {args.train_lr}  (overrides rtm default 1.0)")
     print(f"  rt_curve        : {args.rt_curve}")
     print(f"  loops           : {args.loops}")
-    print(f"  protection      : custom, layers={args.protection_layers}")
+    print(f"  protection      : "
+          f"{'from config' if args.protection_layers is None else f'custom, layers={args.protection_layers}'}")
     print(f"  save_root       : {save_root}")
     print(f"  wandb           : {args.wandb_project or 'DISABLED'}")
     print(f"  cat5 cells      : {n_cat5}  ({len(args.lambdas)} lambdas + 2 inject) × {len(args.seeds)} seeds")

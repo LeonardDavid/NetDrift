@@ -134,7 +134,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  budgets       : {args.budgets}")
     print(f"  rt_curve      : {curve}")
     print(f"  loops         : {args.loops}")
-    print(f"  protection    : custom layers={args.protection_layers}")
+    print(f"  protection    : "
+          f"{'from config' if args.protection_layers is None else f'custom layers={args.protection_layers}'}")
     print(f"  wandb         : {args.wandb_project or 'DISABLED'}")
     print()
 

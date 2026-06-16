@@ -249,7 +249,7 @@ def _cell_argv(
     cfg_path: Path,
     curve: list[float],
     loops: int,
-    protection_layers: list[int],
+    protection_layers: Optional[list[int]],
     wandb_project: Optional[str],
     wandb_entity: Optional[str],
     baseline_criterion: str = "hinge",
@@ -636,7 +636,8 @@ def main(argv: list[str] | None = None) -> int:
         "--protection-layers", nargs="+", type=int,
         default=DEFAULT_PROTECTION_LAYERS,
         help="Layer indices kept UNPROTECTED (custom protection policy). "
-             f"Default: {DEFAULT_PROTECTION_LAYERS}",
+             "Default: None — use the config's fault.protection block "
+             "(passing this overrides it).",
     )
     p.add_argument(
         "--reg-checkpoint", default=None, metavar="PATH",
@@ -711,7 +712,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  seeds              : {seeds}")
     print(f"  rt_error curve     : {curve}")
     print(f"  loops              : {args.loops}")
-    print(f"  protection_layers  : {args.protection_layers}")
+    print(f"  protection_layers  : "
+          f"{'from config' if args.protection_layers is None else args.protection_layers}")
     print(f"  baseline criterion : {args.criterion} (b={args.hinge_b}) "
           f"[cat4a/4b; tag {baseline_crit_tok}]")
     print(f"  cat6 criterion     : inherited 1:1 from each cat5 checkpoint")

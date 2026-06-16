@@ -117,6 +117,33 @@ class ProtectionCfg:
     layers: Optional[list[int]] = None
     indiv_layer: Optional[int] = None
 
+    def __post_init__(self) -> None:
+        if self.policy not in ("all", "custom", "indiv"):
+            raise ValueError(
+                f"fault.protection.policy must be all|custom|indiv; got {self.policy!r}"
+            )
+        if self.policy == "custom":
+            if not self.layers:
+                raise ValueError(
+                    "fault.protection.policy='custom' requires a non-empty "
+                    "fault.protection.layers list (1-based unprotected layer ids)"
+                )
+            if any(int(x) < 1 for x in self.layers):
+                raise ValueError(
+                    "fault.protection.layers must be 1-based (all ids >= 1); "
+                    f"got {self.layers}"
+                )
+        if self.policy == "indiv":
+            if self.indiv_layer is None:
+                raise ValueError(
+                    "fault.protection.policy='indiv' requires "
+                    "fault.protection.indiv_layer=N (1-based)"
+                )
+            if int(self.indiv_layer) < 1:
+                raise ValueError(
+                    f"fault.protection.indiv_layer must be >= 1; got {self.indiv_layer}"
+                )
+
 
 @dataclass
 class FaultCfg:
