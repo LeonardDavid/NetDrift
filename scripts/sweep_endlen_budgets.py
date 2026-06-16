@@ -50,7 +50,13 @@ SRC = REPO_ROOT / "code" / "python"
 # Shared harvest helper so the rt_error curve is parsed the same way across all
 # comparison-DB drivers + the aggregator.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from comparison_common import harvest_summary, latest_summary, output_dir_from_cfg  # noqa: E402
+from comparison_common import (  # noqa: E402
+    harvest_summary,
+    latest_summary,
+    layout_from_cfg,
+    layout_token,
+    output_dir_from_cfg,
+)
 
 # --- sweep axes -------------------------------------------------------------
 SCOPES = ["layer", "racetrack", "channel"]
@@ -216,9 +222,14 @@ def main(argv: list[str] | None = None) -> int:
                 argv_cell += ["--wandb-entity", args.wandb_entity]
             cat = item["cell"]["category"]
             argv_cell += ["--wandb-category", cat]
-            # Subcategory = exact setting combo (the cell's name_tag).
+            # Layout token (per-config, from storage.layout) so row/col cat2/cat3
+            # group separately in the W&B UI. On disk + in the aggregator they
+            # are already distinct via the config stem (e.g. *_rtm_col); this
+            # keeps the W&B subcategory consistent with that separation.
+            lay_tok = layout_token(layout_from_cfg(Path(item["config"]).resolve()))
+            # Subcategory = layout + exact setting combo (the cell's name_tag).
             argv_cell += [
-                "--wandb-subcategory", f"{cat}_{item['cell']['name_tag']}"
+                "--wandb-subcategory", f"{cat}_{lay_tok}_{item['cell']['name_tag']}"
             ]
 
         bar = "=" * 72

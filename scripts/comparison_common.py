@@ -77,6 +77,53 @@ def parse_crit_token(tok: Optional[str]) -> tuple[str, float]:
     return "hinge", 128.0
 
 
+def layout_token(layout: str) -> str:
+    """Compact, parser-safe racetrack-layout tag for run/dir names.
+
+    ``row`` → ``lay-row``; ``col`` → ``lay-col``. Used exactly like
+    :func:`crit_token` — as a NAME PREFIX segment, a save_dir PATH-LEVEL
+    segment, and a wandb-subcategory suffix — so ROW and COL artifacts never
+    collide when a sweep is re-run with the only difference being the layout.
+
+    Case-insensitive (a ``COL`` config and a ``col`` config map to one tree;
+    the runner upper-cases ``storage.layout`` internally). Only the two
+    fault-wired layouts are accepted; ``mix``/``interleaved`` are schema
+    placeholders and raise rather than mint a token that would silently mix
+    incomparable runs.
+    """
+    norm = (layout or "row").lower()
+    if norm in ("row", "col"):
+        return f"lay-{norm}"
+    raise ValueError(
+        f"layout_token: unsupported layout {layout!r}; expected 'row' or 'col' "
+        f"(mix/interleaved are not wired into the fault model)"
+    )
+
+
+def layout_from_cfg(cfg_path: Path) -> str:
+    """Best-effort read of ``storage.layout`` from a YAML; default ``row``.
+
+    Mirrors :func:`output_dir_from_cfg`. The comparison drivers derive the
+    layout token from whichever ``--config`` they are given (e.g. a
+    ``*_rtm_col.yaml`` variant), so the token always matches the layout the run
+    actually uses — no separate ``--layout`` flag to keep in sync.
+    """
+    try:
+        import yaml  # type: ignore[import-not-found]
+        with open(cfg_path) as f:
+            raw = yaml.safe_load(f) or {}
+        return str(raw.get("storage", {}).get("layout", "row"))
+    except ModuleNotFoundError:
+        import re
+        text = cfg_path.read_text()
+        m = re.search(r"^storage:\s*\n((?:[ \t].*\n)+)", text, re.MULTILINE)
+        if m:
+            m2 = re.search(r"^\s+layout:\s*(\S+)", m.group(1), re.MULTILINE)
+            if m2:
+                return m2.group(1).strip("\"'")
+        return "row"
+
+
 def rt_error_list_override(curve: list[float]) -> str:
     """Render an rt_error curve as the JSON-list string the override parser wants.
 

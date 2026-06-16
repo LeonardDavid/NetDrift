@@ -75,6 +75,8 @@ from comparison_common import (  # noqa: E402
     import_runner_main,
     json_list,
     latest_summary,
+    layout_from_cfg,
+    layout_token,
     new_sweep_out_dir,
     output_dir_from_cfg,
     run_cell,
@@ -228,6 +230,7 @@ def _train_argv(
     protection_layers: Optional[list[int]],
     wdb_args: list[str],
     crit_tok: str,
+    layout_tok: str,
     fault_aware_criterion: str,
     fault_aware_hinge_b: float,
     base_checkpoint: str | None = None,
@@ -236,18 +239,22 @@ def _train_argv(
 
     We do NOT include base_overrides (rt_error curve + loops) here — those
     belong to the test/eval phase.  Protection is added explicitly. The
-    fault-aware criterion is embedded as a NAME PREFIX (``<crit_tok>__``) and a
-    save_dir PATH-LEVEL segment (``save_root/<crit_tok>/<tag>``) so the leaf tag
-    — which cat6 parses — stays criterion-free, while runs/checkpoints don't
-    collide across criteria that share a --save-root.
+    racetrack layout and fault-aware criterion are both embedded as NAME
+    PREFIXES (``<layout_tok>__<crit_tok>__``) and save_dir PATH-LEVEL segments
+    (``save_root/<layout_tok>/<crit_tok>/<tag>``) — layout outermost — so the
+    leaf tag (which cat6 parses) stays clean, while runs/checkpoints don't
+    collide across layouts or criteria that share a --save-root. The layout is
+    NOT overridden here: it comes from the ``--config`` YAML (e.g. a
+    ``*_rtm_col.yaml`` variant), and ``layout_tok`` is derived from that same
+    file so the token always matches the run.
 
     ``base_checkpoint`` overrides the pretrained BNN that fault-aware training
     warm-starts from (e.g. a CEL-trained baseline). ``None`` → the config's
     ``model.checkpoint`` (the default MHL baseline).
     """
     tag = cell["tag"]
-    exp_name = f"{base_stem}__{crit_tok}__{tag}_train"
-    save_dir = str(save_root / crit_tok / tag)
+    exp_name = f"{base_stem}__{layout_tok}__{crit_tok}__{tag}_train"
+    save_dir = str(save_root / layout_tok / crit_tok / tag)
 
     argv = [
         "--config", str(cfg_path),
@@ -305,16 +312,19 @@ def _test_argv(
     protection_layers: Optional[list[int]],
     wdb_args: list[str],
     crit_tok: str,
+    layout_tok: str,
 ) -> list[str]:
     """Build the argv list for the TEST phase of one cell.
 
-    Mirrors the train phase's criterion encoding: name prefix ``<crit_tok>__``
-    and the checkpoint loaded from the criterion path segment
-    ``save_root/<crit_tok>/<tag>/model.pt``.
+    Mirrors the train phase's encoding: name prefix
+    ``<layout_tok>__<crit_tok>__`` and the checkpoint loaded from the matching
+    path segments ``save_root/<layout_tok>/<crit_tok>/<tag>/model.pt`` — so the
+    test phase reads exactly the checkpoint its train phase wrote (the col test
+    loads the col-trained model, never the row one).
     """
     tag = cell["tag"]
-    exp_name = f"{base_stem}__{crit_tok}__{tag}_test"
-    checkpoint = str(save_root / crit_tok / tag / "model.pt")
+    exp_name = f"{base_stem}__{layout_tok}__{crit_tok}__{tag}_test"
+    checkpoint = str(save_root / layout_tok / crit_tok / tag / "model.pt")
 
     argv = [
         "--config", str(cfg_path),
@@ -637,12 +647,18 @@ def main(argv: list[str] | None = None) -> int:
 
     # Fault-aware criterion token (uniform across this invocation's cells).
     crit_tok = crit_token(args.fault_aware_criterion, args.fault_aware_hinge_b)
+    # Racetrack-layout token, derived from the --config YAML (e.g. a
+    # *_rtm_col.yaml variant sets storage.layout=col). Outermost segment in
+    # names/save_dirs/subcategories so a col sweep never collides with a row one.
+    layout_tok = layout_token(layout_from_cfg(cfg_path))
 
     def _wdb_for(cell: dict) -> list[str]:
         cat = _REG_CAT_LABEL.get(cell["category"])
-        # subcategory includes the criterion token so CE vs hinge runs group
-        # separately within a category in the W&B UI.
-        sub = f"{cat}_{cell['config_key']}_{crit_tok}" if cat else None
+        # subcategory includes the layout + criterion tokens so row/col and
+        # CE/hinge runs group separately within a category in the W&B UI.
+        sub = (
+            f"{cat}_{cell['config_key']}_{layout_tok}_{crit_tok}" if cat else None
+        )
         return wandb_args(args.wandb_project, args.wandb_entity, cat, sub)
 
     cells = build_cells(
@@ -673,6 +689,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  loops           : {args.loops}")
     print(f"  protection      : "
           f"{'from config' if args.protection_layers is None else f'custom, layers={args.protection_layers}'}")
+    print(f"  layout          : {layout_from_cfg(cfg_path)}  [token {layout_tok}]")
     print(f"  save_root       : {save_root}")
     print(f"  wandb           : {args.wandb_project or 'DISABLED'}")
     print(f"  cat5 cells      : {n_cat5}  ({len(args.lambdas)} lambdas + 2 inject) × {len(args.seeds)} seeds")
@@ -684,13 +701,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         for i, cell in enumerate(cells, 1):
             tag = cell["tag"]
-            save_dir = str(save_root / crit_tok / tag)
-            checkpoint = str(save_root / crit_tok / tag / "model.pt")
+            save_dir = str(save_root / layout_tok / crit_tok / tag)
+            checkpoint = str(save_root / layout_tok / crit_tok / tag / "model.pt")
             train_argv = _train_argv(
                 cfg_path=cfg_path, cell=cell, base_stem=base_stem,
                 save_root=save_root, epochs=args.epochs, train_lr=args.train_lr,
                 beta=args.beta, protection_layers=args.protection_layers,
-                wdb_args=_wdb_for(cell), crit_tok=crit_tok,
+                wdb_args=_wdb_for(cell), crit_tok=crit_tok, layout_tok=layout_tok,
                 fault_aware_criterion=args.fault_aware_criterion,
                 fault_aware_hinge_b=args.fault_aware_hinge_b,
                 base_checkpoint=args.base_checkpoint,
@@ -699,7 +716,7 @@ def main(argv: list[str] | None = None) -> int:
                 cfg_path=cfg_path, cell=cell, base_stem=base_stem,
                 save_root=save_root, curve=args.rt_curve, loops=args.loops,
                 protection_layers=args.protection_layers, wdb_args=_wdb_for(cell),
-                crit_tok=crit_tok,
+                crit_tok=crit_tok, layout_tok=layout_tok,
             )
             cat_label = f"cat{cell['category']}"
             unvalidated = "  [UNVALIDATED]" if cell["category"] == 8 else ""
@@ -737,14 +754,14 @@ def main(argv: list[str] | None = None) -> int:
             cfg_path=cfg_path, cell=cell, base_stem=base_stem,
             save_root=save_root, epochs=args.epochs, train_lr=args.train_lr,
             beta=args.beta, protection_layers=args.protection_layers,
-            wdb_args=_wdb_for(cell), crit_tok=crit_tok,
+            wdb_args=_wdb_for(cell), crit_tok=crit_tok, layout_tok=layout_tok,
             fault_aware_criterion=args.fault_aware_criterion,
             fault_aware_hinge_b=args.fault_aware_hinge_b,
             base_checkpoint=args.base_checkpoint,
         )
         print(f"  Phase 1 (train): fault_aware={cell['fault_aware']}  "
               f"criterion={args.fault_aware_criterion}  lr={args.train_lr}  "
-              f"epochs={args.epochs}  save_dir={save_root / crit_tok / tag}")
+              f"epochs={args.epochs}  save_dir={save_root / layout_tok / crit_tok / tag}")
         t_train = time.perf_counter()
         train_status, train_err = run_cell(runner_main, train_argv)
         train_elapsed = time.perf_counter() - t_train
@@ -757,9 +774,9 @@ def main(argv: list[str] | None = None) -> int:
             cfg_path=cfg_path, cell=cell, base_stem=base_stem,
             save_root=save_root, curve=args.rt_curve, loops=args.loops,
             protection_layers=args.protection_layers, wdb_args=_wdb_for(cell),
-            crit_tok=crit_tok,
+            crit_tok=crit_tok, layout_tok=layout_tok,
         )
-        test_exp_name = f"{base_stem}__{crit_tok}__{tag}_test"
+        test_exp_name = f"{base_stem}__{layout_tok}__{crit_tok}__{tag}_test"
         print(f"  Phase 2 (test):  encoder=null  rt_curve={args.rt_curve}  "
               f"exp_name={test_exp_name}")
         t_test = time.perf_counter()

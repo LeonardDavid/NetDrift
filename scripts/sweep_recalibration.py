@@ -54,6 +54,8 @@ from comparison_common import (  # noqa: E402
     harvest_summary,
     import_runner_main,
     json_list,
+    layout_from_cfg,
+    layout_token,
     parse_crit_token,
     latest_summary,
     new_sweep_out_dir,
@@ -89,33 +91,47 @@ _CAT5_DIR_RE = re.compile(r"^cat5_(.+)_seed(\d+)$")
 
 
 def _discover_cat5_checkpoints(
-    reg_save_root: Path, base_stem: str, crit_filter: Optional[str] = None,
+    reg_save_root: Path,
+    base_stem: str,
+    crit_filter: Optional[str] = None,
+    layout_filter: Optional[str] = None,
 ) -> list[dict]:
     """Find cat5 checkpoints under ``<reg_save_root>/<base_stem>/``.
 
     sweep_regularizer writes checkpoints at
-    ``<base_stem>/<crit_tok>/cat5_<config_key>_seed<N>/model.pt`` — the criterion
-    is a PATH-LEVEL segment, the leaf dir stays criterion-free. (Older runs
-    without the segment are at ``<base_stem>/cat5_*/model.pt``.) We glob both
-    depths and recover the criterion token from the parent-of-parent dir when it
-    is a ``crit-…`` segment.
+    ``<base_stem>/<lay_tok>/<crit_tok>/cat5_<config_key>_seed<N>/model.pt`` —
+    layout and criterion are PATH-LEVEL segments (layout outermost), the leaf
+    dir stays clean. We glob a few depths (0–2 segments between ``<base_stem>``
+    and the ``cat5_*`` leaf) and recover each token by its ``lay-`` / ``crit-``
+    PREFIX from the segments above the leaf, so the recovery is robust to
+    ordering and to legacy layouts that predate one or both segments:
 
-    ``crit_filter`` (a ``crit-…`` token) restricts discovery to checkpoints whose
-    path segment matches — so an all-CEL cat6 run only recalibrates the CEL cat5
-    checkpoints even when the save-root also holds MHL ones. ``None`` = all
-    (every criterion + the segment-less legacy layout).
+    * ``<crit>/cat5_*``           — pre-layout (crit only)        → layout_tok=None
+    * ``cat5_*``                  — oldest (no segments)          → both None
+    * ``<lay>/<crit>/cat5_*``     — current                      → both recovered
 
-    Returns ``{"config_key", "seed", "path", "crit_tok"}`` per checkpoint
-    (``crit_tok`` is ``None`` for the old layout). cat8 (ste) checkpoints are
-    skipped; missing model.pt (a failed/partial cat5 cell) is skipped silently.
+    ``crit_filter`` / ``layout_filter`` (``crit-…`` / ``lay-…`` tokens) restrict
+    discovery to matching checkpoints — so a col cat6 run recalibrates ONLY the
+    col-trained cat5 checkpoints (and only the requested criterion) even when the
+    save-root also holds the row / other-criterion ones. ``None`` = no restriction
+    on that axis.
+
+    Returns ``{"config_key", "seed", "path", "crit_tok", "layout_tok"}`` per
+    checkpoint (``crit_tok`` / ``layout_tok`` are ``None`` when that segment is
+    absent). cat8 (ste) checkpoints are skipped; missing model.pt (a failed /
+    partial cat5 cell) is skipped silently.
     """
     search_dir = reg_save_root / base_stem
     out: list[dict] = []
     if not search_dir.is_dir():
         return out
     seen: set[str] = set()
-    # Match both <stem>/cat5_*/model.pt and <stem>/<crit>/cat5_*/model.pt.
-    for pattern in ("cat5_*/model.pt", "*/cat5_*/model.pt"):
+    # Glob 0, 1, and 2 path segments between <base_stem> and the cat5_* leaf.
+    for pattern in (
+        "cat5_*/model.pt",
+        "*/cat5_*/model.pt",
+        "*/*/cat5_*/model.pt",
+    ):
         for ckpt in sorted(search_dir.glob(pattern)):
             key = str(ckpt)
             if key in seen:
@@ -123,12 +139,15 @@ def _discover_cat5_checkpoints(
             m = _CAT5_DIR_RE.match(ckpt.parent.name)
             if not m:
                 continue
-            # criterion segment = the dir between <stem> and the cat5_* leaf,
-            # when it looks like a crit token.
-            grandparent = ckpt.parent.parent.name
-            crit_tok = grandparent if grandparent.startswith("crit-") else None
-            # Scope to a single criterion when requested.
+            # Recover tokens by prefix from the segments ABOVE the cat5_* leaf
+            # (between <base_stem> and the leaf), order-independent.
+            rel_parts = ckpt.parent.relative_to(search_dir).parts[:-1]
+            crit_tok = next((p for p in rel_parts if p.startswith("crit-")), None)
+            layout_tok = next((p for p in rel_parts if p.startswith("lay-")), None)
+            # Scope to a single criterion / layout when requested.
             if crit_filter is not None and crit_tok != crit_filter:
+                continue
+            if layout_filter is not None and layout_tok != layout_filter:
                 continue
             seen.add(key)
             out.append({
@@ -136,6 +155,7 @@ def _discover_cat5_checkpoints(
                 "seed": int(m.group(2)),
                 "path": str(ckpt),
                 "crit_tok": crit_tok,
+                "layout_tok": layout_tok,
             })
     return out
 
@@ -152,6 +172,7 @@ def _build_cells(
     reg_save_root: Optional[Path] = None,
     baseline_crit_tok: Optional[str] = None,
     source_crit_filter: Optional[str] = None,
+    layout_tok: Optional[str] = None,
 ) -> list[dict]:
     """Return the ordered list of cell descriptors (no argv yet).
 
@@ -163,17 +184,26 @@ def _build_cells(
     ``crit-ce``) prefixes the cat4b name so its criterion variants don't collide;
     cat4a is left unprefixed
     (epochs=0, no backprop → criterion inert).
+
+    ``layout_tok`` (a ``lay-…`` token derived from the config's ``storage.layout``)
+    is the OUTERMOST name prefix for every cell, so a col recalibration sweep
+    never collides with a row one and ALSO scopes cat6 discovery to the matching
+    layout — cat6 recalibrates only the col-trained cat5 checkpoints. cat4a is
+    layout-prefixed too (its endlen+recal evaluates under the config's layout,
+    so the artifacts differ even though the criterion is inert).
     """
     base_stem = cfg_path.stem
     want = categories if categories is not None else {"4a", "4b", "6"}
     cells: list[dict] = []
-    b_prefix = f"{baseline_crit_tok}__" if baseline_crit_tok else ""
+    # Layout is the outermost segment; criterion nests under it (cat4b).
+    lay_prefix = f"{layout_tok}__" if layout_tok else ""
+    b_prefix = f"{lay_prefix}{baseline_crit_tok}__" if baseline_crit_tok else lay_prefix
 
     # ---- Category 4a — BN-only, deterministic, 1 seed -------------------
     if "4a" in want:
         cells.append({
             "category": "4a",
-            "exp_name": _experiment_name(base_stem, "cat4_recal-bn"),
+            "exp_name": _experiment_name(base_stem, f"{lay_prefix}cat4_recal-bn"),
             "seed": None,        # deterministic; no seed override
             "reg_ckpt": None,
         })
@@ -198,25 +228,30 @@ def _build_cells(
     if "6" in want:
         if reg_save_root is not None:
             for ck in _discover_cat5_checkpoints(
-                reg_save_root, base_stem, crit_filter=source_crit_filter
+                reg_save_root, base_stem,
+                crit_filter=source_crit_filter, layout_filter=layout_tok,
             ):
                 ckey = ck["config_key"]          # e.g. lam0p01, lam0p05_inj-fresh
                 seed = ck["seed"]
                 tok = ck["crit_tok"]             # crit-… of the SOURCE cat5 ckpt
+                lay = ck["layout_tok"]           # lay-… of the SOURCE cat5 ckpt
                 # 1:1 inherit — cat6 recalibrates with the SAME criterion that
                 # trained this cat5 checkpoint (recovered from its path segment).
                 recal_crit, recal_b = parse_crit_token(tok)
-                # Name/subcategory carry the criterion as a prefix segment when
-                # present, so cat6 runs across criteria don't collide.
-                prefix = f"{tok}__" if tok else ""
+                # Name/subcategory carry layout (outermost) then criterion as
+                # prefix segments when present, so cat6 runs across layouts/criteria
+                # don't collide. The layout comes from the discovered checkpoint's
+                # own path (== the config's layout, since discovery is scoped to it).
+                seg = "".join(f"{t}__" for t in (lay, tok) if t)
+                sub_suffix = "_".join(t for t in (lay, tok) if t)
                 cells.append({
                     "category": "6",
                     "config_key": ckey,
                     "exp_name": _experiment_name(
-                        base_stem, f"{prefix}cat6_{ckey}_seed{seed}"
+                        base_stem, f"{seg}cat6_{ckey}_seed{seed}"
                     ),
                     "subcategory": (
-                        f"cat6_reg-recal_{ckey}_{tok}" if tok
+                        f"cat6_reg-recal_{ckey}_{sub_suffix}" if sub_suffix
                         else f"cat6_reg-recal_{ckey}"
                     ),
                     "seed": seed,
@@ -226,15 +261,20 @@ def _build_cells(
                 })
         elif reg_checkpoint is not None:
             # Legacy single-checkpoint mode (kept for back-compat). Uses the
-            # baseline criterion passed by the caller (default hinge/128).
+            # baseline criterion passed by the caller (default hinge/128). The
+            # layout still prefixes the name/subcategory (from the config) so a
+            # col legacy-cat6 run doesn't collide with a row one.
             for seed in seeds:
                 cells.append({
                     "category": "6",
                     "config_key": None,
                     "exp_name": _experiment_name(
-                        base_stem, f"cat6_reg-recal_seed{seed}"
+                        base_stem, f"{lay_prefix}cat6_reg-recal_seed{seed}"
                     ),
-                    "subcategory": "cat6_reg-recal",
+                    "subcategory": (
+                        f"cat6_reg-recal_{layout_tok}" if layout_tok
+                        else "cat6_reg-recal"
+                    ),
                     "seed": seed,
                     "reg_ckpt": reg_checkpoint,
                     "criterion": None,   # caller's baseline criterion
@@ -255,6 +295,7 @@ def _cell_argv(
     baseline_criterion: str = "hinge",
     baseline_hinge_b: float = 128.0,
     base_checkpoint: Optional[str] = None,
+    layout_tok: Optional[str] = None,
 ) -> list[str]:
     """Assemble the full argv list for one cell.
 
@@ -267,6 +308,12 @@ def _cell_argv(
     ``base_checkpoint`` overrides the model loaded for cat4a/4b (e.g. a
     CEL-trained baseline). cat6 IGNORES it — cat6 loads each discovered cat5
     checkpoint (``cell['reg_ckpt']``).
+
+    ``layout_tok`` (a ``lay-…`` token from the config's ``storage.layout``) is
+    appended to the cat4a/4b wandb subcategory so row/col group separately.
+    Layout is NOT overridden here — it comes from the ``--config`` YAML (a
+    ``*_rtm_col.yaml`` variant); the token only labels artifacts. (cat6 already
+    carries layout in its per-cell subcategory set at discovery.)
     """
     argv = ["--config", str(cfg_path)]
 
@@ -353,9 +400,11 @@ def _cell_argv(
     # so CE vs hinge group separately (matches the backfill convention); cat4a
     # has no backprop so its criterion is inert (left untagged).
     _b_tok = crit_token(baseline_criterion, baseline_hinge_b)
+    # Layout suffix for the cat4a/4b subcategories (row/col group separately).
+    _lay_sfx = f"_{layout_tok}" if layout_tok else ""
     _SUBCAT_LABEL = {
-        "4a": "cat4_recal-bn",                       # BN-stats only (no criterion)
-        "4b": f"cat4_recal-bn-affine_{_b_tok}",      # BN + affine/Scale backprop
+        "4a": f"cat4_recal-bn{_lay_sfx}",                       # BN-stats only (no criterion)
+        "4b": f"cat4_recal-bn-affine_{_b_tok}{_lay_sfx}",       # BN + affine/Scale backprop
         "6": "cat6_reg-recal",
     }
     subcat = cell.get("subcategory") or _SUBCAT_LABEL.get(cat)
@@ -691,6 +740,11 @@ def main(argv: list[str] | None = None) -> int:
 
     categories = set(args.categories) if args.categories else None
     baseline_crit_tok = crit_token(args.criterion, args.hinge_b)
+    # Layout token derived from the --config YAML (a *_rtm_col.yaml sets
+    # storage.layout=col). Outermost name/dir segment; also scopes cat6
+    # discovery so a col run recalibrates only the col-trained cat5 checkpoints.
+    layout = layout_from_cfg(cfg_path)
+    layout_tok = layout_token(layout)
     # cat6 source filter: None (all) unless --source-criterion was given.
     source_crit_filter = (
         crit_token(args.source_criterion, args.source_hinge_b)
@@ -700,6 +754,7 @@ def main(argv: list[str] | None = None) -> int:
         cfg_path, seeds, reg_checkpoint, categories, reg_save_root,
         baseline_crit_tok=baseline_crit_tok,
         source_crit_filter=source_crit_filter,
+        layout_tok=layout_tok,
     )
     total = len(cells)
     n_cat6 = sum(1 for c in cells if c["category"] == "6")
@@ -714,6 +769,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  loops              : {args.loops}")
     print(f"  protection_layers  : "
           f"{'from config' if args.protection_layers is None else args.protection_layers}")
+    print(f"  layout             : {layout}  [token {layout_tok}; from config]")
     print(f"  baseline criterion : {args.criterion} (b={args.hinge_b}) "
           f"[cat4a/4b; tag {baseline_crit_tok}]")
     print(f"  cat6 criterion     : inherited 1:1 from each cat5 checkpoint")
@@ -762,6 +818,7 @@ def main(argv: list[str] | None = None) -> int:
                 baseline_criterion=args.criterion,
                 baseline_hinge_b=args.hinge_b,
                 base_checkpoint=args.base_checkpoint,
+                layout_tok=layout_tok,
             )
             seed_str = f"seed={cell['seed']}" if cell["seed"] is not None else "seed=<deterministic>"
             print(f"[{i:3d}/{total}] cat={cell['category']}  {seed_str}")
@@ -788,6 +845,7 @@ def main(argv: list[str] | None = None) -> int:
             baseline_criterion=args.criterion,
             baseline_hinge_b=args.hinge_b,
             base_checkpoint=args.base_checkpoint,
+            layout_tok=layout_tok,
         )
 
         bar = "=" * 72

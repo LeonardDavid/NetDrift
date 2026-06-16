@@ -1,0 +1,21 @@
+# MODE: baseline (cat1) — COLUMN-WISE layout variant.
+# Identical to vgg7_cifar10_w1a1_baseline.yaml except it inherits from the COL
+# base config (storage.layout=col) and carries a _col experiment.name so a bare
+# cat1 col run never collides with the row one in runs/ or the aggregator.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_baseline_col.yaml
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm_col.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_baseline_col
+
+fault:
+  weight_encoder: null            # NO endlen — pure quantized model under faults
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: false

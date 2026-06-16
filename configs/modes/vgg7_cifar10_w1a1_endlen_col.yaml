@@ -1,0 +1,29 @@
+# MODE: vanilla endlen (cat2) — COLUMN-WISE layout variant.
+# Identical to vgg7_cifar10_w1a1_endlen.yaml except it inherits from the COL
+# base config (storage.layout=col) and carries a _col experiment.name so a bare
+# cat2 col run never collides with the row one in runs/ or the aggregator.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_endlen_col.yaml
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm_col.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_endlen_col
+
+fault:
+  weight_encoder: endlen
+  weight_encoder_mode: once
+  global_bitflip_budget: 1.0      # unbounded — vanilla endlen
+  local_bitflip_budget: 1.0
+  # Distinct endlen-checkpoint path so the COL encoded weights never overwrite
+  # the ROW ones (default would be model_best_endlen.pt, shared with row). The
+  # col endlen pattern differs from row, so they must not share a file — matters
+  # only if row+col cat2 run concurrently or the _endlen.pt is later reloaded.
+  encoded_checkpoint_save: models/w1a1/vgg7_cifar10/model_best_col_endlen.pt
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: false
