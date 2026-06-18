@@ -1,0 +1,33 @@
+# MODE: endlen + recalibration (BN stats + affine/Scale backprop) — COLUMN-WISE.
+# Identical to vgg7_cifar10_w1a1_endlen_recal_affine.yaml except it inherits from
+# the COL base config (storage.layout=col) and carries a _col experiment.name so
+# cat4 col never collides with cat4 row in runs/ or the aggregator. = cat 4b.
+#
+# A distinct encoded_checkpoint_save mirrors the cat2-col footgun fix so a
+# parallel col endlen write never clobbers the row model_best_endlen.pt.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_endlen_recal_affine_col.yaml
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm_col.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_endlen_recal_affine_col
+
+fault:
+  weight_encoder: endlen
+  weight_encoder_mode: once
+  global_bitflip_budget: 1.0
+  local_bitflip_budget: 1.0
+  encoded_checkpoint_save: models/w1a1/vgg7_cifar10/model_best_col_endlen_recal.pt
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: true
+    bn_stats: true
+    tune_affine: true             # backprop-tune BN gamma/beta + Scale
+    epochs: 2
+    lr: 0.001
+    on: endlen

@@ -1293,6 +1293,7 @@ def main(argv: list[str] | None = None) -> int:
                          "block_count": m.block_count,
                          "sign_transitions": m.sign_transitions,
                          "run_length_histogram": m.run_length_histogram,
+                         "alternating_seq_histogram": m.alternating_seq_histogram,
                          "weight_magnitude": m.weight_magnitude,
                          "dist_to_threshold": m.dist_to_threshold,
                          "n_racetracks": list(m.n_racetracks),
@@ -1314,6 +1315,9 @@ def main(argv: list[str] | None = None) -> int:
                             if m.raw_sign_transitions is not None:
                                 static_npz[f"static__{s.label}__{n}__sign_transitions"] = \
                                     _np.asarray(m.raw_sign_transitions)
+                            if m.raw_alternating_lengths is not None:
+                                static_npz[f"static__{s.label}__{n}__alternating_lengths"] = \
+                                    _np.asarray(m.raw_alternating_lengths)
                 write_static_artifact(
                     _metrics_dir, model=cfg.model.name, category=_cat_tok,
                     meta=dict(_meta), snapshots=snapshots_json,

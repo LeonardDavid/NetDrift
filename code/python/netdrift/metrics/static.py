@@ -20,23 +20,62 @@ from netdrift.faults.layout import (
 )
 
 
+def _count_alternating_sequences(seg_signs: list[int]) -> int:
+    """Number of alternating sequences in one segment (list of +1/-1 ints).
+
+    An alternating sequence is a maximal group of >=2 consecutive length-1
+    sign-runs. Mirrors the streak logic in :func:`_block_runlength_for_rows`;
+    used to build the per-segment raw array under ``want_raw``.
+    """
+    if not seg_signs:
+        return 0
+    count = 0
+    run_len = 1
+    cur = seg_signs[0]
+    alt_streak = 0
+    for s in seg_signs[1:]:
+        if s == cur:
+            run_len += 1
+        else:
+            if run_len == 1:
+                alt_streak += 1
+            else:
+                if alt_streak >= 2:
+                    count += 1
+                alt_streak = 0
+            cur = s
+            run_len = 1
+    if run_len == 1:
+        alt_streak += 1
+    elif alt_streak >= 2:
+        count += 1
+        alt_streak = 0
+    if alt_streak >= 2:
+        count += 1
+    return count
+
+
 def _block_runlength_for_rows(
     rows: torch.Tensor, rt_size: int
-) -> tuple[int, int, int, dict[int, int]]:
+) -> tuple[int, int, int, dict[int, int], dict[int, int]]:
     """Count sign blocks / runs along each physical racetrack segment.
 
     ``rows`` is the laid-out 2D view (each row is one racetrack lane). Each row
     is split into contiguous ``rt_size``-wide segments (the physical racetracks);
     runs are counted within a segment and never span the boundary.
 
-    Returns ``(pos_blocks, neg_blocks, sign_transitions, run_length_histogram)``
-    aggregated over all segments. Sign uses ``w > 0 -> +1`` so exactly-zero
-    weights map to -1, matching ``BinaryScheme`` (``_binarize_pure``).
+    Returns ``(pos_blocks, neg_blocks, sign_transitions, run_length_histogram,
+    alternating_seq_histogram)`` aggregated over all segments. An alternating
+    sequence is a maximal group of >=2 consecutive length-1 sign-runs; its
+    length is the number of those runs (overlay: length-1 runs are still counted
+    as blocks/runs too). Sign uses ``w > 0 -> +1`` so exactly-zero weights map to
+    -1, matching ``BinaryScheme`` (``_binarize_pure``).
     """
     pos_blocks = 0
     neg_blocks = 0
     transitions = 0
     runlen = Counter()
+    alt_hist = Counter()  # alternating-sequence length -> count
 
     # Match the binary quantizer EXACTLY: BinaryScheme uses ``w > 0 -> +1`` so
     # exactly-zero weights binarize to -1. "Metrics see what the sim sees."
@@ -53,6 +92,9 @@ def _block_runlength_for_rows(
                 continue
             run_len = 1
             cur = seg[0]
+            # Streak of consecutive length-1 runs. A run of length 1 extends it;
+            # any run of length >=2 ends it (flushing a >=2 streak to alt_hist).
+            alt_streak = 0
             for s in seg[1:]:
                 if s == cur:
                     run_len += 1
@@ -63,6 +105,13 @@ def _block_runlength_for_rows(
                         pos_blocks += 1
                     else:
                         neg_blocks += 1
+                    # A run just closed: update the alternating streak.
+                    if run_len == 1:
+                        alt_streak += 1
+                    else:
+                        if alt_streak >= 2:
+                            alt_hist[alt_streak] += 1
+                        alt_streak = 0
                     cur = s
                     run_len = 1
             # close the final run of this segment
@@ -71,8 +120,17 @@ def _block_runlength_for_rows(
                 pos_blocks += 1
             else:
                 neg_blocks += 1
+            # Account the final run in the streak, then flush at segment end.
+            if run_len == 1:
+                alt_streak += 1
+            else:
+                if alt_streak >= 2:
+                    alt_hist[alt_streak] += 1
+                alt_streak = 0
+            if alt_streak >= 2:
+                alt_hist[alt_streak] += 1
 
-    return pos_blocks, neg_blocks, transitions, dict(runlen)
+    return pos_blocks, neg_blocks, transitions, dict(runlen), dict(alt_hist)
 
 
 def _histogram(values: torch.Tensor, n_bins: int, hist_max: float) -> dict[int, int]:
@@ -124,6 +182,7 @@ class StaticLayerMetrics:
     block_count: dict[str, int]
     sign_transitions: int
     run_length_histogram: dict[int, int]
+    alternating_seq_histogram: dict[int, int]
     weight_magnitude: dict
     dist_to_threshold: dict
     n_racetracks: tuple[int, int]
@@ -131,6 +190,7 @@ class StaticLayerMetrics:
     # Typed as Any to avoid importing numpy at module scope (kept lazy in the
     # one code path that builds it); it is an ``np.ndarray`` when present.
     raw_sign_transitions: Optional[Any] = None
+    raw_alternating_lengths: Optional[Any] = None
 
 
 def compute_static_metrics(
@@ -149,9 +209,10 @@ def compute_static_metrics(
     laid-out, binarized racetrack view.
     """
     w_2d, _ = _layout_weight_for_racetrack(weight, rt_mapping, kernel_mapping)
-    pos, neg, transitions, runlen = _block_runlength_for_rows(w_2d, rt_size)
+    pos, neg, transitions, runlen, alt_hist = _block_runlength_for_rows(w_2d, rt_size)
 
     raw_st = None
+    raw_alt = None
     if want_raw:
         import numpy as np
         # Per-segment transition counts as a 2D array (n_rows, n_segments).
@@ -159,11 +220,18 @@ def compute_static_metrics(
         n_cols = signs.shape[1]
         n_seg = (n_cols + rt_size - 1) // rt_size
         st = np.zeros((signs.shape[0], n_seg), dtype=np.int32)
+        alt = np.zeros((signs.shape[0], n_seg), dtype=np.int32)
+        signs_rows = signs.cpu().tolist()
         for si, start in enumerate(range(0, n_cols, rt_size)):
             seg = signs[:, start:start + rt_size]
             if seg.shape[1] > 1:
                 st[:, si] = (seg[:, 1:] != seg[:, :-1]).sum(dim=1).cpu().numpy()
+            # Per-row count of alternating sequences in this segment.
+            for ri, row in enumerate(signs_rows):
+                sub = row[start:start + rt_size]
+                alt[ri, si] = _count_alternating_sequences(sub)
         raw_st = st
+        raw_alt = alt
 
     # n_racetracks is the RACETRACK GRID (compute_index_offset_shape), NOT the
     # laid-out matrix shape — this is what the spec §4 schema, the runner's
@@ -176,8 +244,10 @@ def compute_static_metrics(
         block_count={"pos": pos, "neg": neg, "total": pos + neg},
         sign_transitions=transitions,
         run_length_histogram=runlen,
+        alternating_seq_histogram=alt_hist,
         weight_magnitude=_magnitude_stats(weight, None),  # |w| latent magnitude
         dist_to_threshold=_magnitude_stats(weight, per_channel_scale),
         n_racetracks=n_rt,
         raw_sign_transitions=raw_st,
+        raw_alternating_lengths=raw_alt,
     )

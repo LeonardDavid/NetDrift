@@ -97,3 +97,48 @@ def test_recal_param_deltas():
     assert abs(d["bn"]["bn.weight"]["abs_mean_change"] - 1.0) < 1e-6
     assert abs(d["bn"]["bn.running_mean"]["abs_mean_change"] - 0.5) < 1e-6
     assert abs(d["scale"]["scale.scale"]["abs_mean_change"] - 3.0) < 1e-6
+
+
+def test_snapshot_totals_include_alternating_sequences():
+    from collections import Counter
+    from netdrift.metrics.snapshots import capture_snapshot
+
+    model = _tiny_quant_model()
+    snap = capture_snapshot(model, label="trained", rt_size=4)
+    assert "alternating_seq_histogram" in snap.totals
+    assert "total_alternating_sequences" in snap.totals
+    hist = snap.totals["alternating_seq_histogram"]
+    # total count == sum of histogram bucket counts
+    assert snap.totals["total_alternating_sequences"] == sum(hist.values())
+    # totals equal the sum of per-layer histograms
+    expected = Counter()
+    for m in snap.per_layer.values():
+        for k, v in m.alternating_seq_histogram.items():
+            expected[k] += v
+    assert hist == dict(expected)
+
+
+def test_compute_deltas_reports_alternating_seq_count_change():
+    from netdrift.metrics.snapshots import capture_snapshot, compute_deltas
+
+    model = _tiny_quant_model()
+    before = capture_snapshot(model, label="before", rt_size=4)
+    # Flip a single linear weight's sign to perturb the sign pattern, then
+    # re-snapshot. The delta must expose an alternating_seq_count_change key
+    # (value may be any int; we assert the contract + arithmetic, not a magnitude).
+    with torch.no_grad():
+        model.lin.weight[0, 0] *= -1.0
+    after = capture_snapshot(model, label="after", rt_size=4)
+    d = compute_deltas(before, after)
+    assert "alternating_seq_count_change" in d["total"]
+    # total change == sum of per-layer changes
+    per_layer_sum = sum(
+        v["alternating_seq_count_change"] for v in d["per_layer"].values()
+    )
+    assert d["total"]["alternating_seq_count_change"] == per_layer_sum
+    # and matches the difference of the two snapshots' totals
+    expected = (
+        after.totals["total_alternating_sequences"]
+        - before.totals["total_alternating_sequences"]
+    )
+    assert d["total"]["alternating_seq_count_change"] == expected

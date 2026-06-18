@@ -44,6 +44,7 @@ def capture_snapshot(
     signed_dist: dict[str, torch.Tensor] = {}
     tot_pos = tot_neg = tot_transitions = 0
     tot_runlen: Counter = Counter()
+    tot_alt: Counter = Counter()
     for name, mod in _quant_layers(model):
         scale = getattr(mod, "scale_per_channel", None)
         m = compute_static_metrics(
@@ -68,10 +69,14 @@ def capture_snapshot(
         tot_transitions += m.sign_transitions
         for k, v in m.run_length_histogram.items():
             tot_runlen[k] += v
+        for k, v in m.alternating_seq_histogram.items():
+            tot_alt[k] += v
     totals = {
         "block_count": {"pos": tot_pos, "neg": tot_neg, "total": tot_pos + tot_neg},
         "sign_transitions": tot_transitions,
         "run_length_histogram": dict(tot_runlen),
+        "alternating_seq_histogram": dict(tot_alt),
+        "total_alternating_sequences": int(sum(tot_alt.values())),
     }
     return Snapshot(label=label, per_layer=per_layer, totals=totals,
                     _signs=signs, _signed_dist=signed_dist)
@@ -89,7 +94,7 @@ def compute_deltas(before: Snapshot, after: Snapshot) -> dict:
       ``|w|``, which is sign-flip-invariant and ~0 for endlen.
     """
     per_layer: dict[str, dict] = {}
-    tot_bitflips = tot_block_change = 0
+    tot_bitflips = tot_block_change = tot_alt_change = 0
     tot_abs_change_sum = 0.0
     tot_count = 0
     for name, m_after in after.per_layer.items():
@@ -98,21 +103,27 @@ def compute_deltas(before: Snapshot, after: Snapshot) -> dict:
             continue
         bitflips = int((before._signs[name] != after._signs[name]).sum().item())
         block_change = m_after.block_count["total"] - m_before.block_count["total"]
+        before_alt = sum(m_before.alternating_seq_histogram.values())
+        after_alt = sum(m_after.alternating_seq_histogram.values())
+        alt_change = after_alt - before_alt
         abs_change = (after._signed_dist[name] - before._signed_dist[name]).abs()
         mean_abs_change = float(abs_change.mean().item())
         per_layer[name] = {
             "bitflips": bitflips,
             "block_count_change": block_change,
+            "alternating_seq_count_change": alt_change,
             "abs_dist_to_threshold_change_mean": mean_abs_change,
         }
         tot_bitflips += bitflips
         tot_block_change += block_change
+        tot_alt_change += alt_change
         tot_abs_change_sum += float(abs_change.sum().item())
         tot_count += abs_change.numel()
     return {
         "total": {
             "bitflips": tot_bitflips,
             "block_count_change": tot_block_change,
+            "alternating_seq_count_change": tot_alt_change,
             "abs_dist_to_threshold_change_mean": (
                 tot_abs_change_sum / tot_count if tot_count else 0.0
             ),
