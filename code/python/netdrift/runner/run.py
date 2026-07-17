@@ -111,10 +111,45 @@ def _rt_mapping_fn_for_layout(layout: str):
         return lambda _layer: "ROW"
     if norm == "col":
         return lambda _layer: "COL"
+    if norm == "block":
+        return lambda _layer: "BLOCK"
     raise NotImplementedError(
         f"storage.layout={layout!r} is not wired into the fault model yet; "
-        f"supported: row, col. (mix/interleaved are schema placeholders.)"
+        f"supported: row, col, block. (mix/interleaved are schema placeholders.)"
     )
+
+
+def _validate_block_layout_combo(cfg: ExperimentConfig) -> None:
+    """Fail fast on unsupported BLOCK-mapping combinations.
+
+    BLOCK has no rectangular racetrack view, so the run-length regularizer and
+    the endlen weight-encoder — both of which lay the weight out with
+    ``_layout_weight_for_racetrack`` on the raw mapping string — cannot operate
+    on it. Raise a clear message at config time instead of a cryptic
+    ``invalid rt_mapping: BLOCK`` deep inside training / encoding.
+    """
+    if (cfg.storage.layout or "").lower() != "block":
+        return
+    if cfg.fault.weight_encoder is not None:
+        raise ValueError(
+            "storage.layout='block' is not supported with a weight encoder "
+            f"(fault.weight_encoder={cfg.fault.weight_encoder!r}); the endlen "
+            "encoder has no BLOCK layout. Set fault.weight_encoder: null."
+        )
+    if (cfg.training.fault_aware or "none") != "none":
+        # No fault-aware training mode is designed/tested for BLOCK. The
+        # regularizer has no BLOCK layout; ste_inject/kd mutate weight signs
+        # across batches while _run_block_path caches the block structure +
+        # guard bands from the first forward (in fault_state_mode='accumulate'
+        # the cache is never rebuilt), so the simulation would go silently
+        # stale — the same staleness RTMConfig rejects for the per_forward
+        # encoder. Fail fast with a clear message instead.
+        raise ValueError(
+            "storage.layout='block' is not supported with fault-aware training "
+            f"(training.fault_aware={cfg.training.fault_aware!r}); BLOCK caches "
+            "its block structure from the first forward and cannot track "
+            "sign-mutating training. Use fault_aware: none."
+        )
 
 
 def _warn_checkpoint_mismatch(cfg: ExperimentConfig) -> None:
@@ -177,6 +212,7 @@ def _build_fault_model(
             track_wrong_reads="wrong_bits_read" in metrics_online,
             weight_encoder=weight_encoder,
             weight_encoder_mode=weight_encoder_mode,
+            block_mapping=(cfg.storage.layout == "block"),
         )
         return RTMMisalignmentFault(rtm_cfg)
     raise NotImplementedError(f"fault model {cfg.fault.model!r} not yet implemented")
@@ -543,10 +579,24 @@ def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
             continue
         ks = mod._kernel_size_for_state()
         shape = tuple(mod.weight.shape)
-        n_rt = compute_index_offset_shape(
-            shape, rt_size=cfg.storage.rt_size,
-            rt_mapping=(mod.rt_mapping or "ROW"), kernel_size=ks,
-        )
+        mapping = mod.rt_mapping or "ROW"
+        if mapping == "BLOCK":
+            # BLOCK has no single rectangular racetrack shape; the racetrack
+            # count is the number of sign-blocks (data-dependent). Report it as
+            # (n_blocks, 1) so the meta geometry stays a 2-tuple like ROW/COL.
+            from netdrift.faults.layout import build_block_buckets, _layout_weight_for_racetrack
+            base_mapping = (mod.base_layout or "ROW")
+            w_2d, _ = _layout_weight_for_racetrack(
+                mod.weight, rt_mapping=base_mapping, kernel_mapping=mod.kernel_mapping,
+            )
+            buckets = build_block_buckets(w_2d, cfg.storage.rt_size)
+            n_blocks = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
+            n_rt = (n_blocks, 1)
+        else:
+            n_rt = compute_index_offset_shape(
+                shape, rt_size=cfg.storage.rt_size,
+                rt_mapping=mapping, kernel_size=ks,
+            )
         nweights = int(mod.weight.numel())
         is_protected = bool(getattr(mod, "protected", False))
         if is_protected:
@@ -647,6 +697,7 @@ def main(argv: list[str] | None = None) -> int:
 
     overrides = parse_overrides(args.override)
     cfg = load_config(args.config, overrides=overrides)
+    _validate_block_layout_combo(cfg)
 
     # Union the requested metrics level into the online metric list so the
     # fault model enables the matching track_* flags. Computed once and passed
@@ -754,6 +805,7 @@ def main(argv: list[str] | None = None) -> int:
             model, fault_model,
             rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
             kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
+            base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
         )
 
     # 6) Train or test
@@ -851,6 +903,7 @@ def main(argv: list[str] | None = None) -> int:
                 model, fault_model,
                 rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                 kernel_mapping=kernel_mapping_str,
+                base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
             )
             print(f"  ⇒ baseline_clean_accuracy = {baseline_clean_acc:.2f}%")
 
@@ -987,6 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
                     model, fault_model,
                     rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                     kernel_mapping=kernel_mapping_str,
+                    base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
                 )
                 print(f"  ⇒ baseline_endlen_accuracy = {baseline_endlen_acc:.2f}%")
                 print(
@@ -1062,6 +1116,7 @@ def main(argv: list[str] | None = None) -> int:
                         model, fault_model,
                         rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                         kernel_mapping=kernel_mapping_str,
+                        base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
                     )
                 print(
                     f"  ⇒ baseline_endlen_recal_accuracy = "

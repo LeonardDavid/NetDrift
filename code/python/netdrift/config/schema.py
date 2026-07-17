@@ -92,15 +92,25 @@ class StorageCfg:
     Attributes:
         layout:         Phase 1 supports ``row`` / ``col`` / ``mix``. Phase 3
                         adds ``interleaved``, ``gray``, ``importance_sorted``,
-                        ``ecc``, ``replicated``.
+                        ``ecc``, ``replicated``. ``block`` is the BLOCK
+                        weight-storage mapping, segmented per ``base_layout``.
         rt_size:        Bits per racetrack.
         kernel_mapping: Conv kernel layout: ``row`` / ``col`` / ``clw`` / ``acw``.
                         Ignored for linear layers.
+        base_layout:    For ``layout=="block"``: the ROW/COL base segmentation
+                        used underneath the BLOCK mapping. Ignored otherwise.
     """
 
     layout: str = "row"
     rt_size: int = 64
     kernel_mapping: str = "row"
+    base_layout: str = "row"
+
+    def __post_init__(self) -> None:
+        if self.base_layout.lower() not in ("row", "col"):
+            raise ValueError(
+                f"storage.base_layout must be row|col; got {self.base_layout!r}"
+            )
 
 
 @dataclass

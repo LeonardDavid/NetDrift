@@ -50,6 +50,7 @@ def capture_snapshot(
         m = compute_static_metrics(
             mod.weight, rt_mapping=mod.rt_mapping or "ROW",
             kernel_mapping=mod.kernel_mapping, rt_size=rt_size,
+            base_layout=getattr(mod, "base_layout", None),
             per_channel_scale=scale, want_raw=want_raw,
         )
         per_layer[name] = m

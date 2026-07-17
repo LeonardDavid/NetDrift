@@ -82,6 +82,7 @@ class _QuantizedMixin:
     nr_run: int = 0
     rt_mapping: Optional[str] = None
     kernel_mapping: Optional[str] = None
+    base_layout: Optional[str] = None
 
     def _init_quant(self, scheme: Optional[QuantScheme] = None) -> None:
         self.scheme = scheme
@@ -95,6 +96,7 @@ class _QuantizedMixin:
         self.layer_name = ""
         self.rt_mapping = None
         self.kernel_mapping = None
+        self.base_layout = None
         # Per-channel scale parameter is created on demand by attach_scheme()
         # so that binary schemes (which don't need it) leave the state_dict
         # unchanged.
@@ -129,6 +131,7 @@ class _QuantizedMixin:
                 "rt_mapping": self.rt_mapping,
                 "kernel_mapping": self.kernel_mapping,
                 "kernel_size": self._kernel_size_for_state(),
+                "base_layout": self.base_layout,
             },
         )
         self.fault_state = self.fault_model.init_state(tuple(self.weight.shape), ctx)  # type: ignore[attr-defined]
@@ -149,6 +152,7 @@ class _QuantizedMixin:
                 "rt_mapping": self.rt_mapping,
                 "kernel_mapping": self.kernel_mapping,
                 "kernel_size": self._kernel_size_for_state(),
+                "base_layout": self.base_layout,
             },
         )
 

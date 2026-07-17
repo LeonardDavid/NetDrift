@@ -9,7 +9,7 @@ mapping, and conv kernel mapping).
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import torch
@@ -17,6 +17,7 @@ import torch
 from netdrift.faults.layout import (
     _layout_weight_for_racetrack,
     compute_index_offset_shape,
+    next_pow2,
 )
 
 
@@ -148,6 +149,32 @@ def _histogram(values: torch.Tensor, n_bins: int, hist_max: float) -> dict[int, 
     return {int(i): int(c) for i, c in enumerate(counts.tolist())}
 
 
+def block_size_histogram_from_runs(run_length_histogram: dict) -> dict:
+    """Map a run-length histogram to a padded-racetrack-size histogram.
+
+    Each run of length L becomes a racetrack of padded length next_pow2(L)
+    (cap 64). Runs of length > 64 split into ceil(L/64) racetracks; approximate
+    that here as: a run L>64 contributes ceil(L/64) racetracks of size 64 for
+    all-but-last plus next_pow2(L - 64*(chunks-1)) for the last. Since blocks are
+    found within rt_size<=64 segments, L<=64 in practice and this is a straight
+    next_pow2 map.
+    """
+    out: dict[int, int] = {}
+    for length, count in run_length_histogram.items():
+        L = int(length)
+        if L <= 64:
+            p = next_pow2(L)
+            out[p] = out.get(p, 0) + count
+        else:
+            chunks = (L + 63) // 64
+            for _ in range(chunks - 1):
+                out[64] = out.get(64, 0) + count
+            last = L - 64 * (chunks - 1)
+            p = next_pow2(last)
+            out[p] = out.get(p, 0) + count
+    return out
+
+
 def _magnitude_stats(
     weight: torch.Tensor,
     per_channel_scale=None,
@@ -191,6 +218,9 @@ class StaticLayerMetrics:
     # one code path that builds it); it is an ``np.ndarray`` when present.
     raw_sign_transitions: Optional[Any] = None
     raw_alternating_lengths: Optional[Any] = None
+    block_racetrack_count: int = 0
+    block_size_histogram: dict = field(default_factory=dict)
+    block_padding_overhead: int = 0
 
 
 def compute_static_metrics(
@@ -199,6 +229,7 @@ def compute_static_metrics(
     kernel_mapping: Optional[str],
     rt_size: int,
     *,
+    base_layout: Optional[str] = None,
     per_channel_scale=None,
     want_raw: bool = False,
 ) -> StaticLayerMetrics:
@@ -207,9 +238,26 @@ def compute_static_metrics(
     Magnitude/threshold stats use the RAW weight (latent FP values), since
     binarization discards magnitude. Block/run/transition metrics use the
     laid-out, binarized racetrack view.
+
+    For ``rt_mapping == "BLOCK"`` the metrics are computed on the BLOCK's
+    underlying base segmentation (``base_layout``, ROW or COL) — blocks are
+    extracted from that view, so the block/run/size metrics must match it.
     """
-    w_2d, _ = _layout_weight_for_racetrack(weight, rt_mapping, kernel_mapping)
+    # BLOCK has no rectangular layout of its own; segment on its base layout.
+    layout_mapping = rt_mapping
+    if rt_mapping == "BLOCK":
+        layout_mapping = (base_layout or "ROW").upper()
+    w_2d, _ = _layout_weight_for_racetrack(weight, layout_mapping, kernel_mapping)
     pos, neg, transitions, runlen, alt_hist = _block_runlength_for_rows(w_2d, rt_size)
+
+    # Block size histogram and padding overhead from run-length histogram
+    size_hist = block_size_histogram_from_runs(runlen)
+    block_rt_count = sum(size_hist.values())
+    # padding overhead: sum over racetracks of (padded_len - actual run length)
+    padding_overhead = 0
+    for length, count in runlen.items():
+        L = int(length)
+        padding_overhead += count * (next_pow2(L) - L) if L <= 64 else 0
 
     raw_st = None
     raw_alt = None
@@ -237,9 +285,14 @@ def compute_static_metrics(
     # laid-out matrix shape — this is what the spec §4 schema, the runner's
     # _metrics_meta builder, and the RTM fault state all mean by "racetracks".
     # kernel_size=None lets it derive from the 4D shape for conv (ignored for linear).
-    n_rt = compute_index_offset_shape(
-        tuple(weight.shape), rt_size=rt_size, rt_mapping=rt_mapping, kernel_size=None
-    )
+    # BLOCK has no rectangular grid; its racetrack count is the number of
+    # sign-blocks, reported as (n_blocks, 1) to keep the 2-tuple contract.
+    if rt_mapping == "BLOCK":
+        n_rt = (block_rt_count, 1)
+    else:
+        n_rt = compute_index_offset_shape(
+            tuple(weight.shape), rt_size=rt_size, rt_mapping=rt_mapping, kernel_size=None
+        )
     return StaticLayerMetrics(
         block_count={"pos": pos, "neg": neg, "total": pos + neg},
         sign_transitions=transitions,
@@ -250,4 +303,7 @@ def compute_static_metrics(
         n_racetracks=n_rt,
         raw_sign_transitions=raw_st,
         raw_alternating_lengths=raw_alt,
+        block_racetrack_count=block_rt_count,
+        block_size_histogram=size_hist,
+        block_padding_overhead=padding_overhead,
     )

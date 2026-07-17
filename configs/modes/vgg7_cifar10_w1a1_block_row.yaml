@@ -1,0 +1,37 @@
+# MODE: BLOCK mapping (row base) — block-packed racetrack layout variant.
+#
+# Each contiguous sign-block of the (ROW-segmented) weight matrix is stored on
+# its own racetrack, padded to the next power of two (cap 64). Padding cells
+# hold the block's own sign (guard band); each racetrack pays ap_reads = its
+# padded length. This is the "maximize racetrack count" end of the spectrum,
+# vs ROW/COL which pack near the ~203k-racetrack floor.
+#
+# Layout-only diff of the row baseline config: inherits the row RTM base and
+# only flips storage.layout to `block` + adds storage.base_layout: row. Keep it
+# a clean diff so the block-vs-row/col comparison stays valid.
+#
+# NOTE: BLOCK is incompatible with weight_encoder_mode=per_forward (block
+# structure is cached from the post-encoder sign pattern). endlen 'once' is
+# fine; this config disables endlen entirely for a pure comparison.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_block_row.yaml
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_block_row
+
+storage:
+  layout: block                 # BLOCK mapping (the change vs the row config)
+  base_layout: row              # ROW/COL segmentation underneath BLOCK
+  rt_size: 64
+
+fault:
+  weight_encoder: null          # NO endlen — pure quantized model under faults
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  recalibrate:
+    enabled: false

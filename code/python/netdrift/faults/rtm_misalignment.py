@@ -89,6 +89,9 @@ class RTMConfig:
     """``"once"`` (encoder fires once in the runner) or ``"per_forward"``
     (encoder fires inside :meth:`RTMMisalignmentFault.inject` on every call).
     Ignored when ``weight_encoder is None``."""
+    block_mapping: bool = False
+    """Set True when storage.layout == 'block'. Used only to reject the
+    per_forward encoder combination at config-construction time."""
 
     def __post_init__(self) -> None:
         if self.weight_encoder_mode not in ("once", "per_forward"):
@@ -103,6 +106,14 @@ class RTMConfig:
             raise ValueError(
                 f"weight_encoder requires rt_size <= 64 (legacy kernel "
                 f"uses a fixed-size local buffer); got rt_size={self.rt_size}"
+            )
+        if self.block_mapping and self.weight_encoder_mode == "per_forward" \
+                and self.weight_encoder is not None:
+            raise ValueError(
+                "BLOCK mapping is incompatible with weight_encoder_mode="
+                "'per_forward' (block structure is derived from the "
+                "post-encoder sign pattern and would go stale). Use "
+                "weight_encoder_mode='once' or disable the encoder."
             )
 
 
@@ -123,6 +134,15 @@ class RTMState(FaultState):
 
     kernel_mapping: Optional[str] = None
     """For conv layers: ``"ROW"``, ``"COL"``, ``"CLW"``, or ``"ACW"``. ``None`` for linear."""
+
+    base_mapping: Optional[str] = None
+    """For BLOCK: the ROW/COL base layout used to segment before block extraction."""
+
+    block_buckets: Optional[dict] = None
+    """For BLOCK: cached {P: BlockBucket} immutable structure (positions/lengths)."""
+
+    block_offsets: Optional[dict] = None
+    """For BLOCK: {P: np.ndarray (n_P, 1) int32} persistent misalignment state."""
 
     last_wrong_read: Optional[np.ndarray] = None
     """Most-recent per-racetrack wrong-read counts (2D int array) or ``None``.
@@ -147,6 +167,18 @@ class RTMMisalignmentFault(FaultModel):
             raise ValueError("RTMMisalignmentFault requires ctx.extra['rt_mapping']")
         kernel_mapping = ctx.extra.get("kernel_mapping")  # may be None for linear
         kernel_size = ctx.extra.get("kernel_size")
+
+        if rt_mapping == "BLOCK":
+            base_mapping = ctx.extra.get("base_layout")
+            if base_mapping is None:
+                raise ValueError("BLOCK mapping requires ctx.extra['base_layout']")
+            # Structure is built lazily on first inject (needs the weight tensor).
+            return RTMState(
+                index_offset=np.zeros((1, 1), dtype=np.int32),  # unused for BLOCK
+                rt_mapping="BLOCK",
+                kernel_mapping=kernel_mapping,
+                base_mapping=base_mapping.upper(),
+            )
 
         shape = compute_index_offset_shape(
             weight_shape=weight_shape,
@@ -173,6 +205,9 @@ class RTMMisalignmentFault(FaultModel):
         pre_fault: Optional[torch.Tensor] = None
         if self.cfg.track_bitflips:
             pre_fault = weight.detach().clone()
+
+        if state.rt_mapping == "BLOCK":
+            return self._run_block_path(weight, state, ctx, pre_fault)
 
         # 1+2) Reshape into the racetrack-aligned 2D view.
         w_2d, undo_layout = _layout_weight_for_racetrack(
@@ -208,19 +243,114 @@ class RTMMisalignmentFault(FaultModel):
         )
         return new_w, new_state, stats
 
+    def _run_block_path(self, weight, state, ctx, pre_fault):
+        """BLOCK-mapping fault injection: run kernels per bucket, scatter back.
+
+        Segments the weight into a ROW/COL base view (``state.base_mapping``),
+        splits it into contiguous same-sign blocks (padded to a power of two
+        <= 64), groups blocks by padded length ``P`` into dense per-bucket
+        grids, and runs the existing RTM kernels once per bucket (with
+        ``rt_size=P``). Results are scattered back to their original
+        ``(row, col)`` positions in the base-2D view; padding cells are
+        discarded. The block structure (positions/lengths) is cached on
+        ``state.block_buckets`` across calls since it is only a function of
+        the weight's sign pattern (fixed after training in ``once`` encoder
+        mode); only the per-bucket ``index_offset`` (``block_offsets``)
+        evolves across calls.
+        """
+        from netdrift.faults.layout import (
+            _layout_weight_for_racetrack, build_block_buckets,
+        )
+        # 1) base layout (ROW/COL), kernel-permuted for convs
+        w_2d, undo_base = _layout_weight_for_racetrack(
+            weight, rt_mapping=state.base_mapping, kernel_mapping=state.kernel_mapping,
+        )
+        # 2) build (or reuse) the immutable block structure
+        buckets = state.block_buckets
+        if buckets is None:
+            buckets = build_block_buckets(w_2d, self.cfg.rt_size)
+            offsets = {p: np.zeros((b.weight_grid.shape[0], 1), dtype=np.int32)
+                       for p, b in buckets.items()}
+        else:
+            offsets = state.block_offsets
+
+        w_out_2d = w_2d.detach().cpu().float().numpy().copy()
+
+        total_misalign = 0
+        total_wrong = 0
+        affected = 0
+        cuda.select_device(int(os.environ.get("NUMBA_CUDA_DEFAULT_DEVICE", "0")))
+
+        for p in sorted(buckets):
+            bucket = buckets[p]
+            off = offsets[p]
+            # Re-read current real-cell values from w_2d each call (values change,
+            # positions do not). Padding keeps the cached block-sign guard band.
+            grid = bucket.weight_grid.copy()
+            rmask = bucket.scatter_cols >= 0
+            # scatter/gather uses cached (row,col); safe because structure is fixed
+            gr = bucket.scatter_rows[rmask]
+            gc = bucket.scatter_cols[rmask]
+            grid[rmask] = w_2d.detach().cpu().float().numpy()[gr, gc]
+
+            new_grid, new_off, tm, wrong = self._run_rtm_kernels(
+                torch.from_numpy(grid), off, ap_reads=p, nr_run=ctx.nr_run, rt_size=p,
+            )
+            offsets[p] = new_off
+            total_misalign += int(tm)
+            total_wrong += int(wrong.sum())
+            affected += int(np.count_nonzero(new_off))
+
+            # scatter real cells back; discard padding
+            w_out_2d[gr, gc] = new_grid[rmask]
+
+        new_w_2d = torch.from_numpy(w_out_2d).to(weight.device, dtype=weight.dtype)
+        new_w = undo_base(new_w_2d)
+
+        stats = FaultStats()
+        if self.cfg.track_misalign_faults:
+            stats.misalign_faults = total_misalign
+        if self.cfg.track_affected_units:
+            stats.affected_units = affected
+        if self.cfg.track_bitflips and pre_fault is not None:
+            stats.bitflips = int((pre_fault != new_w).sum().item())
+        if self.cfg.track_wrong_reads:
+            stats.extra["wrong_bits_read"] = total_wrong
+
+        new_state = RTMState(
+            index_offset=np.zeros((1, 1), dtype=np.int32),
+            rt_mapping="BLOCK",
+            kernel_mapping=state.kernel_mapping,
+            base_mapping=state.base_mapping,
+            block_buckets=buckets,
+            block_offsets=offsets,
+        )
+        return new_w, new_state, stats
+
     def _run_rtm_kernels(
         self,
         weight_2d: torch.Tensor,
         index_offset: np.ndarray,
         ap_reads: int,
         nr_run: int,
+        rt_size: Optional[int] = None,
     ) -> tuple[np.ndarray, np.ndarray, int, np.ndarray]:
         """Drive the two CUDA kernels and apply mitigations between them.
+
+        Args:
+            rt_size: Racetrack length used for the two kernel launches. Defaults
+                to ``self.cfg.rt_size`` (the ROW/COL case, one shared racetrack
+                length for the whole layer). BLOCK callers pass the per-bucket
+                padded length ``P`` instead, since each bucket is itself a batch
+                of same-length racetracks that generally differ from the
+                config's nominal ``rt_size``.
 
         Returns ``(new_weight_2d_np, new_index_offset, total_misalign_count, wrong_read)``.
         ``wrong_read`` is the per-racetrack non-identity-read count array when
         ``track_wrong_reads`` is on, else a ``(1, 1)`` zero array.
         """
+        rt_size = self.cfg.rt_size if rt_size is None else rt_size
+
         # Match the legacy ``racetrack_sim`` initialization sequence: select
         # device 0 (or the value of NUMBA_CUDA_DEFAULT_DEVICE if set) before
         # any kernel launch. This avoids ``cuda.get_current_device()``, which
@@ -246,7 +376,7 @@ class RTMMisalignmentFault(FaultModel):
         misalign_gpu = cuda.to_device(misalign_faults)
 
         calc_index_offset_kernel[blocks, threads](
-            rng, offset_gpu, misalign_gpu, self.cfg.rt_size, ap_reads, self.cfg.rt_error,
+            rng, offset_gpu, misalign_gpu, rt_size, ap_reads, self.cfg.rt_error,
         )
         cuda.synchronize()
         index_offset = offset_gpu.copy_to_host()
@@ -285,7 +415,7 @@ class RTMMisalignmentFault(FaultModel):
             cuda.synchronize()
 
         simulate_racetrack_kernel[blocks, threads](
-            rng, weight_in_gpu, weight_out_gpu, offset_gpu, self.cfg.rt_size,
+            rng, weight_in_gpu, weight_out_gpu, offset_gpu, rt_size,
             wrong_gpu, track_wrong,
         )
         cuda.synchronize()

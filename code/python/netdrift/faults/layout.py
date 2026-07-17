@@ -19,9 +19,79 @@ Coordinate conventions (matching legacy):
 from __future__ import annotations
 
 import math
-from typing import Optional, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Optional, Sequence
 
 import torch
+
+
+def next_pow2(n: int) -> int:
+    """Smallest power of two >= n (n >= 1). next_pow2(1) == 1."""
+    if n < 1:
+        raise ValueError(f"next_pow2 requires n >= 1, got {n}")
+    p = 1
+    while p < n:
+        p <<= 1
+    return p
+
+
+@dataclass
+class BlockRecord:
+    """One contiguous sign-block => one padded racetrack.
+
+    ``rows``/``cols`` are parallel lists of length ``length`` giving the
+    (row, col) of each real cell in the base-2D view, ordered along the
+    racetrack. Padding cells (``length..padded_len-1``) have no entry.
+    """
+    sign: int
+    length: int
+    padded_len: int
+    rows: list = field(default_factory=list)
+    cols: list = field(default_factory=list)
+
+
+def extract_blocks(w_2d: "torch.Tensor", rt_size: int) -> list:
+    """Split each rt_size-wide segment of ``w_2d`` into maximal sign-runs.
+
+    Returns one :class:`BlockRecord` per block. Runs never span a segment
+    boundary. A run longer than 64 splits into ceil(length/64) racetracks
+    (each <= 64, last padded to a power of two), partitioning cells in order.
+    Sign convention: ``w > 0 -> +1`` (so exactly-zero -> -1), matching
+    ``BinaryScheme`` and ``_block_runlength_for_rows``.
+    """
+    signs_rows = torch.where(w_2d > 0, 1, -1).cpu().tolist()
+    n_cols = len(signs_rows[0]) if signs_rows else 0
+    out: list = []
+
+    def _emit(sign, r, run_cols):
+        # run_cols: list of column indices for one same-sign run (within a segment).
+        # Split into <=64 chunks; pad each to next power of two.
+        for start in range(0, len(run_cols), 64):
+            chunk = run_cols[start:start + 64]
+            out.append(BlockRecord(
+                sign=sign,
+                length=len(chunk),
+                padded_len=next_pow2(len(chunk)),
+                rows=[r] * len(chunk),
+                cols=list(chunk),
+            ))
+
+    for r, row in enumerate(signs_rows):
+        for seg_start in range(0, n_cols, rt_size):
+            seg = row[seg_start:seg_start + rt_size]
+            if not seg:
+                continue
+            cur = seg[0]
+            run_cols = [seg_start]
+            for k in range(1, len(seg)):
+                if seg[k] == cur:
+                    run_cols.append(seg_start + k)
+                else:
+                    _emit(cur, r, run_cols)
+                    cur = seg[k]
+                    run_cols = [seg_start + k]
+            _emit(cur, r, run_cols)
+    return out
 
 
 def compute_index_offset_shape(
@@ -58,6 +128,12 @@ def compute_index_offset_shape(
         return out_dim, math.ceil(in_dim / rt_size)
     elif rt_mapping == "COL":
         return in_dim, math.ceil(out_dim / rt_size)
+    elif rt_mapping == "BLOCK":
+        raise ValueError(
+            "compute_index_offset_shape does not apply to rt_mapping='BLOCK'; "
+            "BLOCK uses per-bucket grids (build_block_buckets), not a single "
+            "rectangular racetrack shape."
+        )
     else:
         raise ValueError(f"invalid rt_mapping: {rt_mapping}")
 
@@ -157,4 +233,56 @@ def _ap_reads_for_mapping(rt_size: int, rt_mapping: str) -> int:
         return rt_size * rt_size
     if rt_mapping == "COL":
         return rt_size
+    if rt_mapping == "BLOCK":
+        raise ValueError(
+            "_ap_reads_for_mapping does not apply to rt_mapping='BLOCK'; "
+            "ap_reads is per-bucket (= padded length P)."
+        )
     raise ValueError(f"invalid rt_mapping: {rt_mapping}")
+
+
+@dataclass
+class BlockBucket:
+    """All racetracks of one padded length P, as dense arrays.
+
+    Arrays are numpy (host); the fault path moves them to device. ``weight_grid``
+    real cells hold the block's values, padding cells hold the block's sign.
+    ``scatter_rows``/``scatter_cols`` map each real cell to its (row, col) in the
+    base-2D view; padding cells are -1.
+    """
+    weight_grid: "Any"     # (n_P, P) float32
+    scatter_rows: "Any"    # (n_P, P) int64
+    scatter_cols: "Any"    # (n_P, P) int64
+    length: "Any"          # (n_P,) int32
+
+
+def build_block_buckets(w_2d: "torch.Tensor", rt_size: int) -> dict:
+    """Group blocks by padded length into dense per-bucket arrays."""
+    import numpy as np
+
+    blocks = extract_blocks(w_2d, rt_size)
+    w_host = w_2d.detach().cpu().float().numpy()
+
+    by_p: dict[int, list] = {}
+    for b in blocks:
+        by_p.setdefault(b.padded_len, []).append(b)
+
+    buckets: dict[int, BlockBucket] = {}
+    for p, blist in by_p.items():
+        n = len(blist)
+        grid = np.zeros((n, p), dtype=np.float32)
+        srows = np.full((n, p), -1, dtype=np.int64)
+        scols = np.full((n, p), -1, dtype=np.int64)
+        lengths = np.zeros((n,), dtype=np.int32)
+        for i, b in enumerate(blist):
+            L = b.length
+            lengths[i] = L
+            # real cells: exact values from the base-2D view
+            grid[i, :L] = w_host[b.rows, b.cols]
+            srows[i, :L] = b.rows
+            scols[i, :L] = b.cols
+            # padding guard band: block sign
+            if p > L:
+                grid[i, L:] = float(b.sign)
+        buckets[p] = BlockBucket(grid, srows, scols, lengths)
+    return buckets
