@@ -53,6 +53,16 @@ fault:
   weight_encoder: endlen          # "endlen" or null
   weight_encoder_mode: once       # "once" | "per_forward"
   encoded_checkpoint_save: null   # override save path; null → next to model.checkpoint
+  edge_mode: saturate             # saturate | random — racetrack edge/access-port model.
+                                  #   saturate (default): access port fixed at ap_position;
+                                  #     reads clamp to the nearest real cell (NO random ±1);
+                                  #     a partial racetrack replicates its edge value into the tail.
+                                  #   random: legacy — a read shifted off the racetrack returns a
+                                  #     random ±1. Use for A/B comparison against the old model.
+                                  #   NB: storage.layout=block under saturate is fault-immune
+                                  #       (same-sign blocks) — use random for a non-trivial BLOCK curve.
+  ap_position: null               # fixed access-port index in [0, rt_size-1] (saturate only);
+                                  #   null → rt_size//2 - 1 (first middle position). Leave null for block.
 
 training:
   mode: test

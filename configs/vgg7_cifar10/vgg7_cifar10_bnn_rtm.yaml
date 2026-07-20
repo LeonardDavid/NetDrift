@@ -47,6 +47,14 @@ fault:
   mitigations: []
   protection:
     policy: all                 # every Conv/Linear weight on nanowires
+  edge_mode: saturate           # saturate | random — racetrack edge/access-port model.
+                                #   saturate (default): access port fixed at ap_position; reads clamp
+                                #     to the nearest real cell (NO random ±1); a partial racetrack
+                                #     replicates its edge value into the tail.
+                                #   random: legacy — a read shifted off the racetrack returns random ±1.
+                                #   NB: storage.layout=block under saturate is fault-immune.
+  ap_position: null             # fixed access-port index in [0, rt_size-1] (saturate only);
+                                #   null → rt_size//2 - 1 (first middle position). Leave null for block.
 
 training:
   mode: test

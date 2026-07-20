@@ -213,6 +213,8 @@ def _build_fault_model(
             weight_encoder=weight_encoder,
             weight_encoder_mode=weight_encoder_mode,
             block_mapping=(cfg.storage.layout == "block"),
+            edge_mode=cfg.fault.edge_mode,
+            ap_position=cfg.fault.ap_position,
         )
         return RTMMisalignmentFault(rtm_cfg)
     raise NotImplementedError(f"fault model {cfg.fault.model!r} not yet implemented")

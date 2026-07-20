@@ -220,6 +220,42 @@ def test_bad_selection_rejected(tmp_path: Path) -> None:
         load(cfg_path)
 
 
+def test_edge_mode_defaults_to_saturate(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "experiment:\n  name: ok\n")
+    cfg = load(cfg_path)
+    assert cfg.fault.edge_mode == "saturate"
+    assert cfg.fault.ap_position is None
+
+
+def test_edge_mode_and_ap_position_parse(tmp_path: Path) -> None:
+    cfg_path = _write(
+        tmp_path, "exp.yaml",
+        "fault:\n  edge_mode: random\n  ap_position: 8\n",
+    )
+    cfg = load(cfg_path)
+    assert cfg.fault.edge_mode == "random"
+    assert cfg.fault.ap_position == 8
+
+
+def test_edge_mode_override_via_cli(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "experiment:\n  name: ok\n")
+    cfg = load(cfg_path, overrides=["fault.edge_mode=random", "fault.ap_position=4"])
+    assert cfg.fault.edge_mode == "random"
+    assert cfg.fault.ap_position == 4  # json.loads gives int, not str
+
+
+def test_bad_edge_mode_rejected(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "fault:\n  edge_mode: nonsense\n")
+    with pytest.raises(ValueError, match="edge_mode"):
+        load(cfg_path)
+
+
+def test_negative_ap_position_rejected(tmp_path: Path) -> None:
+    cfg_path = _write(tmp_path, "exp.yaml", "fault:\n  ap_position: -3\n")
+    with pytest.raises(ValueError, match="ap_position"):
+        load(cfg_path)
+
+
 def test_recalibrate_and_reg_defaults():
     from netdrift.config.schema import ExperimentConfig
 

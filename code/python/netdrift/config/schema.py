@@ -180,6 +180,10 @@ class FaultCfg:
                                is ``[]`` — a single step max is the
                                recommended convention.
         protection:            Layer-protection policy.
+        edge_mode:             ``saturate`` (fixed access port, no random reads)
+                               or ``random`` (legacy out-of-bounds ±1).
+        ap_position:           Fixed access-port index for ``edge_mode=saturate``;
+                               ``None`` -> ``rt_size//2 - 1``.
     """
 
     model: str = "rtm_misalignment"
@@ -199,12 +203,32 @@ class FaultCfg:
     encoded_checkpoint_save: Optional[str] = None
     """Override path for the post-encoder checkpoint (mode=once). Default:
     ``<run_dir>/model_endlen.pt``."""
+    edge_mode: str = "saturate"
+    """Racetrack edge model. ``"saturate"`` (default): the access port is fixed
+    at ``ap_position`` and every read saturates to the nearest real cell — no
+    random values reach the network, and a partially-filled racetrack replicates
+    its edge value into the unfilled tail. ``"random"``: legacy behaviour where a
+    read shifted off the racetrack returns a random ±1 (kept for A/B comparison).
+    Note ``block`` layout under ``"saturate"`` is fault-immune (same-sign blocks)
+    — use ``"random"`` to obtain a non-trivial BLOCK robustness curve."""
+    ap_position: Optional[int] = None
+    """Fixed access-port index in ``[0, rt_size-1]`` for ``edge_mode="saturate"``.
+    ``None`` (default) resolves to ``rt_size//2 - 1`` (the first middle position).
+    Must be left unset for ``storage.layout=="block"``."""
 
     def __post_init__(self) -> None:
         for n in ("global_bitflip_budget", "local_bitflip_budget"):
             v = float(getattr(self, n))
             if not (0.0 <= v <= 1.0):
                 raise ValueError(f"{n} must be a fraction in [0, 1]; got {v}")
+        if self.edge_mode not in ("saturate", "random"):
+            raise ValueError(
+                f"fault.edge_mode must be saturate|random; got {self.edge_mode!r}"
+            )
+        if self.ap_position is not None and int(self.ap_position) < 0:
+            raise ValueError(
+                f"fault.ap_position must be >= 0; got {self.ap_position}"
+            )
         if self.local_budget_scope not in ("layer", "racetrack", "channel"):
             raise ValueError(
                 "local_budget_scope must be layer|racetrack|channel; "

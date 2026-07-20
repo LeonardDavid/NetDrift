@@ -49,9 +49,19 @@ fault:
     # Everything not listed is protected. VGG7 has 8 quantized layers
     # (conv1..conv6 → id 1..6, fc1 → 7, fc2 → 8). Listing 2..7 leaves the first
     # conv (conv1) and last linear (fc2) protected — a common BNN/QNN recipe.
-  weight_encoder: endlen          # "endlen" or null
+  weight_encoder: null          # "endlen" or null
   weight_encoder_mode: once       # "once" | "per_forward"
   encoded_checkpoint_save: null   # override save path; null → next to model.checkpoint
+  edge_mode: saturate             # saturate | random — racetrack edge/access-port model.
+                                  #   saturate (default): access port fixed at ap_position;
+                                  #     reads clamp to the nearest real cell (NO random ±1);
+                                  #     a partial racetrack replicates its edge value into the tail.
+                                  #   random: legacy — a read shifted off the racetrack returns a
+                                  #     random ±1. Use for A/B comparison against the old model.
+                                  #   NB: storage.layout=block under saturate is fault-immune
+                                  #       (same-sign blocks) — use random for a non-trivial BLOCK curve.
+  ap_position: null               # fixed access-port index in [0, rt_size-1] (saturate only);
+                                  #   null → rt_size//2 - 1 (first middle position). Leave null for block.
 
 
 training:

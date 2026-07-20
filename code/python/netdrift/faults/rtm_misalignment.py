@@ -92,6 +92,16 @@ class RTMConfig:
     block_mapping: bool = False
     """Set True when storage.layout == 'block'. Used only to reject the
     per_forward encoder combination at config-construction time."""
+    edge_mode: str = "saturate"
+    """Racetrack edge model. ``"saturate"`` (default): the access port is fixed
+    at ``ap_position`` and reads saturate to the nearest real cell — no random
+    values reach the network. ``"random"``: legacy behaviour, out-of-bounds
+    reads return a random ±1 (kept for A/B comparison)."""
+    ap_position: Optional[int] = None
+    """Fixed access-port index in ``[0, rt_size-1]`` for ``edge_mode="saturate"``.
+    ``None`` resolves per (effective) racetrack length to ``rt_size//2 - 1`` (the
+    first middle position). Must be ``None`` for BLOCK mapping, where each bucket
+    has its own padded length ``P`` and the port is resolved per bucket."""
 
     def __post_init__(self) -> None:
         if self.weight_encoder_mode not in ("once", "per_forward"):
@@ -99,6 +109,23 @@ class RTMConfig:
                 f"weight_encoder_mode must be 'once' or 'per_forward', "
                 f"got {self.weight_encoder_mode!r}"
             )
+        if self.edge_mode not in ("saturate", "random"):
+            raise ValueError(
+                f"edge_mode must be 'saturate' or 'random', got {self.edge_mode!r}"
+            )
+        if self.ap_position is not None:
+            if int(self.ap_position) < 0:
+                raise ValueError(
+                    f"ap_position must be >= 0, got {self.ap_position}"
+                )
+            if self.block_mapping:
+                # A single absolute AP index is meaningless across heterogeneous
+                # per-bucket racetrack lengths; BLOCK resolves the AP per bucket.
+                raise ValueError(
+                    "ap_position is not supported with BLOCK mapping (each bucket "
+                    "has its own padded length P; the access port is resolved per "
+                    "bucket as P//2 - 1). Leave ap_position unset for BLOCK."
+                )
         if self.weight_encoder is not None and self.rt_size > 64:
             # The endlen kernel uses a hardcoded 64-element local buffer.
             # If we ever add an encoder without this limit, gate this check
@@ -351,6 +378,17 @@ class RTMMisalignmentFault(FaultModel):
         """
         rt_size = self.cfg.rt_size if rt_size is None else rt_size
 
+        # Resolve the edge model and fixed access-port position for this launch.
+        # ``ap`` is resolved against the *effective* rt_size (which is the
+        # per-bucket padded length ``P`` on the BLOCK path), so a P=1 bucket
+        # yields ap=0 (lo==hi==0 -> offset frozen -> length-1 blocks are safe).
+        edge_mode = 1 if self.cfg.edge_mode == "saturate" else 0
+        ap = self.cfg.ap_position if self.cfg.ap_position is not None else rt_size // 2 - 1
+        if ap < 0:
+            ap = 0
+        if ap > rt_size - 1:
+            ap = rt_size - 1
+
         # Match the legacy ``racetrack_sim`` initialization sequence: select
         # device 0 (or the value of NUMBA_CUDA_DEFAULT_DEVICE if set) before
         # any kernel launch. This avoids ``cuda.get_current_device()``, which
@@ -377,6 +415,7 @@ class RTMMisalignmentFault(FaultModel):
 
         calc_index_offset_kernel[blocks, threads](
             rng, offset_gpu, misalign_gpu, rt_size, ap_reads, self.cfg.rt_error,
+            ap, edge_mode,
         )
         cuda.synchronize()
         index_offset = offset_gpu.copy_to_host()
@@ -416,7 +455,7 @@ class RTMMisalignmentFault(FaultModel):
 
         simulate_racetrack_kernel[blocks, threads](
             rng, weight_in_gpu, weight_out_gpu, offset_gpu, rt_size,
-            wrong_gpu, track_wrong,
+            wrong_gpu, track_wrong, edge_mode,
         )
         cuda.synchronize()
         weight_out_np = weight_out_gpu.copy_to_host()

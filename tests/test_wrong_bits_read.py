@@ -24,11 +24,12 @@ def test_wrong_read_counts_nonidentity_reads():
     d_wrong = cuda.to_device(wrong_full)
     simulate_racetrack_kernel[(1, 1), (1, 1)](
         rng, cuda.to_device(qin), cuda.to_device(qout),
-        cuda.to_device(offset), rt_size, d_wrong, 1,  # track_wrong=1
+        cuda.to_device(offset), rt_size, d_wrong, 1, 0,  # track_wrong=1, edge_mode=0 (random)
     )
     cuda.synchronize()
     # With offset=+1, positions k=0..3 map to in_index k-1: k=0 reads OOB (left),
     # k=1,2,3 read neighbours — all 4 reads are non-identity (q_in_index != q_out_index).
+    # Asserted under edge_mode=0 (legacy random): the OOB k=0 read still counts.
     assert d_wrong.copy_to_host().sum() == 4
 
 
@@ -48,7 +49,7 @@ def test_track_wrong_flag_off_skips_counting():
     d_wrong = cuda.to_device(wrong)
     simulate_racetrack_kernel[(1, 1), (1, 1)](
         rng, cuda.to_device(qin), cuda.to_device(qout),
-        cuda.to_device(offset), rt_size, d_wrong, 0,  # track_wrong=0
+        cuda.to_device(offset), rt_size, d_wrong, 0, 0,  # track_wrong=0, edge_mode=0
     )
     cuda.synchronize()
     assert d_wrong.copy_to_host().sum() == 0  # disabled despite non-zero offset
@@ -71,7 +72,7 @@ def test_zero_offset_yields_zero_wrong_reads_and_identity_output():
     d_wrong = cuda.to_device(wrong_full)
     simulate_racetrack_kernel[(1, 1), (1, 1)](
         rng, cuda.to_device(qin), d_out, cuda.to_device(offset), rt_size,
-        d_wrong, 1,  # track_wrong=1 -> genuinely zero because offset is 0
+        d_wrong, 1, 0,  # track_wrong=1, edge_mode=0 -> genuinely zero because offset is 0
     )
     cuda.synchronize()
     assert d_wrong.copy_to_host().sum() == 0
