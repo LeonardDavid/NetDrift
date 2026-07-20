@@ -46,6 +46,9 @@ quant:
 
 storage:
   layout: col                   # COLUMN-WISE (the only change vs the row config)
+  base_layout: row              # row | col — ONLY used when layout=block: the base
+                                # segmentation the blocks are extracted from. Ignored
+                                # for layout=row/col.
   rt_size: 64
   kernel_mapping: row           # row | col | clw | acw
 

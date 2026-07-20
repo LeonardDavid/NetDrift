@@ -42,7 +42,10 @@ quant:
   activation_bits: 2            # 4 levels: -1, -1/3, +1/3, +1
 
 storage:
-  layout: row
+  layout: row                   # row | col | block
+  base_layout: row              # row | col — ONLY used when layout=block: the base
+                                # segmentation the blocks are extracted from. Ignored
+                                # for layout=row/col.
   rt_size: 64
   kernel_mapping: row
 
