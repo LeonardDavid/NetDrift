@@ -25,8 +25,12 @@ def test_metrics_all_writes_artifacts(tmp_path):
     ])
     assert rc == 0
 
-    metrics_dirs = list(Path(tmp_path).rglob("metrics"))
-    assert metrics_dirs, "no metrics/ dir produced"
+    # run.py writes metrics artifacts under "metrics_artifacts" (renamed from
+    # "metrics" so mutagen sync can target run artifacts separately from the
+    # code/python/netdrift/metrics/ source package). This is a fresh tmp_path
+    # run against the current runner, so only the new name is expected here.
+    metrics_dirs = list(Path(tmp_path).rglob("metrics_artifacts"))
+    assert metrics_dirs, "no metrics_artifacts/ dir produced"
     md = metrics_dirs[0]
     static = list(md.glob("*__static.json"))
     rt = list(md.glob("*__rt0.1.json"))
@@ -86,4 +90,6 @@ def test_metrics_none_writes_no_artifacts(tmp_path):
         "--override", f"experiment.output_dir={tmp_path}",
     ])
     assert rc == 0
-    assert not list(Path(tmp_path).rglob("metrics")), "metrics dir created at level none"
+    assert not list(Path(tmp_path).rglob("metrics_artifacts")), (
+        "metrics_artifacts dir created at level none"
+    )

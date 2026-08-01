@@ -24,6 +24,8 @@ logs/
 
 nohup.out
 
+cluster-ids*
+
 Dockerfile
 .dockerignore
 

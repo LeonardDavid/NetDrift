@@ -47,10 +47,27 @@ def capture_snapshot(
     tot_alt: Counter = Counter()
     for name, mod in _quant_layers(model):
         scale = getattr(mod, "scale_per_channel", None)
+        # units_params (threshold, max_period, pool_guard) lives on the
+        # layer's fault model's RTMConfig, not on the layer itself — the
+        # layer-attribute path deliberately avoids the (mount-absent)
+        # models/ package. The fault model may be absent entirely (e.g. a
+        # clean model with nothing attached yet), so degrade to None rather
+        # than raising here; compute_static_metrics decides what None means
+        # for the current rt_mapping.
+        fault_model = getattr(mod, "fault_model", None)
+        fm_cfg = getattr(fault_model, "cfg", None) if fault_model is not None else None
+        units_params = None
+        if fm_cfg is not None:
+            units_params = (
+                int(fm_cfg.units_threshold),
+                int(fm_cfg.units_max_period),
+                int(fm_cfg.units_pool_guard),
+            )
         m = compute_static_metrics(
             mod.weight, rt_mapping=mod.rt_mapping or "ROW",
             kernel_mapping=mod.kernel_mapping, rt_size=rt_size,
             base_layout=getattr(mod, "base_layout", None),
+            units_params=units_params,
             per_channel_scale=scale, want_raw=want_raw,
         )
         per_layer[name] = m

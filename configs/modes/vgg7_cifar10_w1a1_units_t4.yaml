@@ -1,0 +1,15 @@
+# UNITS layout, threshold=4: isolate runs of length >= 4, pool the rest.
+# max_period must be 1 here: a pool containing length-2 runs is not period-2.
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: vgg7_cifar10_units_t4
+
+storage:
+  layout: units
+  base_layout: row
+  units:
+    threshold: 4
+    max_period: 1
+    pool_guard: 0

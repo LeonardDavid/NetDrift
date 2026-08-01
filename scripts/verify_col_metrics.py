@@ -16,8 +16,11 @@ This reads the metrics artifacts written by a `--metrics all` col run and checks
      racetracks over unprotected layers, and BER ≤ 1.0.
 
 Usage:
-    python scripts/verify_col_metrics.py <run_dir>/metrics
+    python scripts/verify_col_metrics.py <run_dir>/metrics_artifacts
     # <run_dir> is the timestamped dir the col cat1 run wrote under runs/.
+    # Runs from before the 2026-07-31 rename wrote this as <run_dir>/metrics
+    # instead — pass that path for older runs; this script takes the
+    # directory explicitly so either name works unmodified.
 """
 from __future__ import annotations
 

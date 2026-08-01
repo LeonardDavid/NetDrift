@@ -1,0 +1,37 @@
+# VGG7 / CIFAR-10 RTM base, re-pathed for the Lamarr Slurm cluster.
+#
+# WHY THIS FILE EXISTS: the base config uses paths relative to the repo root
+# (`data`, `models/w1a1/...`, `runs/`), which is correct on daes-ws-gpu03 but
+# wrong on Lamarr, where the storage is split into two tiers with very
+# different persistence guarantees (see cluster_setup.md):
+#   /home/{user}  CephFS, shared across all nodes, survives job termination
+#   /raid/{user}  node-local SSD, much faster, NOT shared, eventually purged
+#
+# No code change is needed to use this: `scripts/sweep_design_space.py --config`
+# accepts any YAML, and `comparison_common.output_dir_from_cfg` reads
+# `experiment.output_dir` straight out of it, so the live run and the
+# `--collect-only` harvest both follow these paths automatically.
+#
+# Inherits via `defaults:` (a LIST). An `inherit:` key is SILENTLY IGNORED by
+# this loader, which would leave the config with no model/checkpoint/dataset at
+# all -- a mistake already made once in this repo.
+defaults:
+  - ./vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  # PERSISTENT. Run artifacts are the experiment's output -- they must survive
+  # job termination and node failure, so they go to CephFS, never /raid.
+  output_dir: /home/bereholschi/NetDrift/runs
+
+model:
+  # PERSISTENT. The checkpoint is an input the sweep cannot regenerate.
+  # NB this lives under the repo's `models/` tree, which is excluded from the
+  # Mac mutagen mount -- copy it from daes-ws-gpu03, not from the Mac.
+  checkpoint: /home/bereholschi/NetDrift/models/w1a1/vgg7_cifar10/model_best.pt
+
+data:
+  # NODE-LOCAL and fast. CIFAR-10 is read every loop of every cell (30 loops x
+  # 5 rt_error x 79 cells), so dataset I/O is on the hot path -- this is exactly
+  # what /raid is for. rsync it from /home before the run; if the node purges
+  # it, re-copy rather than repointing at /home.
+  data_dir: /raid/bereholschi/datasets/cifar10

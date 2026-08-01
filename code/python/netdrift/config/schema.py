@@ -86,6 +86,50 @@ class QuantCfg:
 
 
 @dataclass
+class UnitsCfg:
+    """Parameters for ``storage.layout == "units"``.
+
+    Attributes:
+        threshold:  Isolate runs of length >= this onto their own guard-banded
+                    wire; pool everything shorter. ``1`` isolates every run and
+                    reproduces BLOCK. This is the design space's knob.
+        max_period: ``1`` -- period-1 guard bands only. ``2`` -- additionally
+                    guard pooled fragment junctions so the pool is period-2.
+                    Only meaningful at ``threshold == 2``.
+        pool_guard: Enable flag, not a cell count. ``1`` enables phase-aware
+                    junction guards -- 0 or 1 cell per pooled *fragment
+                    junction*, inserted only where the period-2 phase would
+                    otherwise break (about 67% of junctions). ``0`` disables
+                    them and is the ablation arm.
+    """
+
+    threshold: int = 4
+    max_period: int = 1
+    pool_guard: int = 0
+
+    def __post_init__(self) -> None:
+        if int(self.threshold) < 1:
+            raise ValueError(
+                f"storage.units.threshold must be >= 1, got {self.threshold}"
+            )
+        if int(self.max_period) not in (1, 2):
+            raise ValueError(
+                f"storage.units.max_period must be 1 or 2, got {self.max_period}"
+            )
+        if int(self.pool_guard) not in (0, 1):
+            raise ValueError(
+                f"storage.units.pool_guard must be 0 or 1, got {self.pool_guard}"
+            )
+        if int(self.max_period) == 2 and int(self.threshold) != 2:
+            raise ValueError(
+                "storage.units.max_period=2 (guarded period-2 pooling) requires "
+                f"threshold=2, got threshold={self.threshold}. At threshold>2 the "
+                "pool contains runs of length >= 2 and is not period-2, so the "
+                "guard cells would buy nothing. Set max_period=1."
+            )
+
+
+@dataclass
 class StorageCfg:
     """Racetrack storage layout (Phase 1: row/col/mix only).
 
@@ -94,22 +138,34 @@ class StorageCfg:
                         adds ``interleaved``, ``gray``, ``importance_sorted``,
                         ``ecc``, ``replicated``. ``block`` is the BLOCK
                         weight-storage mapping, segmented per ``base_layout``.
+                        ``units`` is the bucketed racetrack-units mapping
+                        parameterised by ``units``.
         rt_size:        Bits per racetrack.
         kernel_mapping: Conv kernel layout: ``row`` / ``col`` / ``clw`` / ``acw``.
                         Ignored for linear layers.
         base_layout:    For ``layout=="block"``: the ROW/COL base segmentation
                         used underneath the BLOCK mapping. Ignored otherwise.
+        units:          For ``layout=="units"``: threshold/max_period/pool_guard
+                        parameters. Ignored otherwise.
     """
 
     layout: str = "row"
     rt_size: int = 64
     kernel_mapping: str = "row"
     base_layout: str = "row"
+    units: UnitsCfg = field(default_factory=UnitsCfg)
 
     def __post_init__(self) -> None:
         if self.base_layout.lower() not in ("row", "col"):
             raise ValueError(
                 f"storage.base_layout must be row|col; got {self.base_layout!r}"
+            )
+        if self.layout.lower() == "units" and int(self.rt_size) > 64:
+            raise ValueError(
+                "storage.layout='units' requires rt_size <= 64: pooled wires have "
+                f"physical length exactly rt_size, so rt_size={self.rt_size} would "
+                "produce buckets longer than the 64-cell cap that extract_blocks' "
+                "run chunking enforces for isolated wires."
             )
 
 

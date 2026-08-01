@@ -100,11 +100,12 @@ def _reset_fault_state(model: torch.nn.Module) -> int:
 def _rt_mapping_fn_for_layout(layout: str):
     """Return a ``(layer)->str`` rt_mapping callable for ``storage.layout``.
 
-    ``row``/``col`` are wired into the fault model. ``mix``/``interleaved`` are
-    declared in the schema but not implemented for faults yet — raise rather
-    than silently fall back to ROW (which is the latent bug this fixes:
-    previously the runner attached the fault model with no rt_mapping_fn, so
-    every layer defaulted to ROW regardless of ``storage.layout``).
+    ``row``/``col``/``block``/``units`` are wired into the fault model.
+    ``mix``/``interleaved`` are declared in the schema but not implemented for
+    faults yet — raise rather than silently fall back to ROW (which is the
+    latent bug this fixes: previously the runner attached the fault model
+    with no rt_mapping_fn, so every layer defaulted to ROW regardless of
+    ``storage.layout``).
     """
     norm = (layout or "row").lower()
     if norm == "row":
@@ -113,43 +114,52 @@ def _rt_mapping_fn_for_layout(layout: str):
         return lambda _layer: "COL"
     if norm == "block":
         return lambda _layer: "BLOCK"
+    if norm == "units":
+        return lambda _layer: "UNITS"
     raise NotImplementedError(
         f"storage.layout={layout!r} is not wired into the fault model yet; "
-        f"supported: row, col, block. (mix/interleaved are schema placeholders.)"
+        f"supported: row, col, block, units. (mix/interleaved are schema placeholders.)"
     )
 
 
 def _validate_block_layout_combo(cfg: ExperimentConfig) -> None:
-    """Fail fast on unsupported BLOCK-mapping combinations.
+    """Fail fast on unsupported BLOCK/UNITS-mapping combinations.
 
-    BLOCK has no rectangular racetrack view, so the run-length regularizer and
-    the endlen weight-encoder — both of which lay the weight out with
-    ``_layout_weight_for_racetrack`` on the raw mapping string — cannot operate
-    on it. Raise a clear message at config time instead of a cryptic
-    ``invalid rt_mapping: BLOCK`` deep inside training / encoding.
+    Neither BLOCK nor UNITS has a rectangular racetrack view, so the
+    run-length regularizer and the endlen weight-encoder — both of which lay
+    the weight out with ``_layout_weight_for_racetrack`` on the raw mapping
+    string — cannot operate on them. Raise a clear message at config time
+    instead of a cryptic ``invalid rt_mapping: BLOCK``/``UNITS`` deep inside
+    training / encoding.
     """
-    if (cfg.storage.layout or "").lower() != "block":
+    layout = (cfg.storage.layout or "").lower()
+    if layout not in ("block", "units"):
         return
     if cfg.fault.weight_encoder is not None:
         raise ValueError(
-            "storage.layout='block' is not supported with a weight encoder "
+            f"storage.layout={layout!r} is not supported with a weight encoder "
             f"(fault.weight_encoder={cfg.fault.weight_encoder!r}); the endlen "
-            "encoder has no BLOCK layout. Set fault.weight_encoder: null."
+            "encoder has no BLOCK/UNITS layout. Set fault.weight_encoder: null."
         )
     if (cfg.training.fault_aware or "none") != "none":
-        # No fault-aware training mode is designed/tested for BLOCK. The
-        # regularizer has no BLOCK layout; ste_inject/kd mutate weight signs
-        # across batches while _run_block_path caches the block structure +
-        # guard bands from the first forward (in fault_state_mode='accumulate'
-        # the cache is never rebuilt), so the simulation would go silently
-        # stale — the same staleness RTMConfig rejects for the per_forward
-        # encoder. Fail fast with a clear message instead.
+        # No fault-aware training mode is designed/tested for BLOCK/UNITS. The
+        # regularizer has no BLOCK/UNITS layout; ste_inject/kd mutate weight
+        # signs across batches while _run_block_path/_run_units_path cache the
+        # block/unit structure + guard bands from the first forward (in
+        # fault_state_mode='accumulate' the cache is never rebuilt), so the
+        # simulation would go silently stale — the same staleness RTMConfig
+        # rejects for the per_forward encoder. Fail fast with a clear message
+        # instead.
         raise ValueError(
-            "storage.layout='block' is not supported with fault-aware training "
-            f"(training.fault_aware={cfg.training.fault_aware!r}); BLOCK caches "
-            "its block structure from the first forward and cannot track "
-            "sign-mutating training. Use fault_aware: none."
+            f"storage.layout={layout!r} is not supported with fault-aware "
+            f"training (training.fault_aware={cfg.training.fault_aware!r}); "
+            "BLOCK/UNITS caches its structure from the first forward and "
+            "cannot track sign-mutating training. Use fault_aware: none."
         )
+    if layout == "units":
+        # Re-validate here so a hand-edited config fails at load time rather
+        # than deep inside the first forward.
+        cfg.storage.units.__post_init__()
 
 
 def _warn_checkpoint_mismatch(cfg: ExperimentConfig) -> None:
@@ -213,6 +223,10 @@ def _build_fault_model(
             weight_encoder=weight_encoder,
             weight_encoder_mode=weight_encoder_mode,
             block_mapping=(cfg.storage.layout == "block"),
+            units_mapping=(cfg.storage.layout == "units"),
+            units_threshold=cfg.storage.units.threshold,
+            units_max_period=cfg.storage.units.max_period,
+            units_pool_guard=cfg.storage.units.pool_guard,
             edge_mode=cfg.fault.edge_mode,
             ap_position=cfg.fault.ap_position,
         )
@@ -492,7 +506,11 @@ def _loop_metric_delta(
     return totals, per_layer
 
 
-def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
+def _wandb_config(
+    cfg: ExperimentConfig,
+    model: torch.nn.Module,
+    n_racetracks: int | None = None,
+) -> dict:
     """Assemble the wandb ``config`` dict: full resolved cfg + flat conveniences.
 
     The flattened keys (``model``, ``dataset``, ``rt_size`` ...) make the W&B
@@ -501,7 +519,7 @@ def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
     overrides it per run since each rt_error is its own run.
     """
     protected, unprotected = _resolved_protection(model)
-    return {
+    out = {
         "config": _dataclass_to_dict(cfg),
         "model": cfg.model.name,
         "dataset": cfg.data.name,
@@ -511,6 +529,7 @@ def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
         "rt_size": cfg.storage.rt_size,
         "layout": cfg.storage.layout,
         "kernel_mapping": cfg.storage.kernel_mapping,
+        "base_layout": cfg.storage.base_layout,
         "seed": cfg.experiment.seed,
         "loops": cfg.training.loops,
         "mitigations": list(cfg.fault.mitigations),
@@ -529,7 +548,31 @@ def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
         "hinge_b": cfg.training.hinge_b,
         "fault_aware_criterion": cfg.training.fault_aware_criterion,
         "fault_aware_hinge_b": cfg.training.fault_aware_hinge_b,
+        # Edge model — always logged (see FaultCfg docstring): "saturate" (fixed
+        # access port, no random reads) vs legacy "random". ``ap_position``
+        # stays ``None`` (auto = rt_size//2 - 1) on every arm of the design-space
+        # sweep, so logging it makes the resolved value visible rather than
+        # implicit.
+        "edge_mode": cfg.fault.edge_mode,
+        "ap_position": cfg.fault.ap_position,
     }
+    # units_* describe storage.units, which is ignored by the schema unless
+    # storage.layout == "units" (see StorageCfg docstring). Logging them
+    # unconditionally would put schema defaults (e.g. units_threshold=4) on
+    # every dense run's config, which is actively misleading in the runs
+    # table — the same reasoning that keeps category/subcategory omitted
+    # below when unset.
+    if cfg.storage.layout == "units":
+        out["units_threshold"] = cfg.storage.units.threshold
+        out["units_max_period"] = cfg.storage.units.max_period
+        out["units_pool_guard"] = cfg.storage.units.pool_guard
+    # n_racetracks is the design-space sweep's cost x-axis (total racetracks
+    # over all quantized layers — see _total_racetracks). It is expensive to
+    # compute for BLOCK/UNITS, so callers compute it once in main() and pass
+    # it in; omit rather than log a stale/wrong 0 when it wasn't supplied.
+    if n_racetracks is not None:
+        out["n_racetracks"] = n_racetracks
+    return out
 
 
 def _wandb_config_with_category(
@@ -537,6 +580,7 @@ def _wandb_config_with_category(
     model: torch.nn.Module,
     category: str | None,
     subcategory: str | None = None,
+    n_racetracks: int | None = None,
 ) -> dict:
     """``_wandb_config`` plus ``category``/``subcategory`` keys when set.
 
@@ -545,12 +589,89 @@ def _wandb_config_with_category(
     post-hoc backfill. Keys are omitted entirely when unset so ad-hoc runs stay
     clean.
     """
-    base = _wandb_config(cfg, model)
+    base = _wandb_config(cfg, model, n_racetracks=n_racetracks)
     if category:
         base["category"] = category
     if subcategory:
         base["subcategory"] = subcategory
     return base
+
+
+def _total_racetracks(cfg: ExperimentConfig, model: torch.nn.Module) -> int:
+    """Total racetrack (wire) count over every quantized layer.
+
+    This is the design-space sweep's cost x-axis (see
+    ``docs/superpowers/specs/2026-07-31-design-space-weekend-sweep.md`` §1):
+    "you pay for every racetrack whether or not its layer is exposed" — the
+    count must be identical for ``prot-2to7`` and ``prot-1to8`` under the same
+    layout, i.e. protection-invariant.
+
+    That is exactly why the mapping is derived from ``cfg.storage`` here
+    instead of reading ``mod.rt_mapping`` / ``mod.base_layout`` /
+    ``mod.kernel_mapping`` off the layer, unlike ``_metrics_meta`` below (whose
+    per-layer geometry listing is purely descriptive, not a cost total).
+    ``_QuantizedMixin._init_quant`` (quant/layers.py) defaults all three of
+    those attributes to ``None``, and the top-level ``attach_fault_model`` is
+    not guaranteed to overwrite them on a *protected* layer. ``_metrics_meta``
+    papers over exactly this with ``mod.rt_mapping or "ROW"`` /
+    ``mod.base_layout or "ROW"`` — fine for a display-only field, but silently
+    wrong here: a protected layer would count under the ROW/ROW formula
+    regardless of the run's actual layout, so two runs that differ only in
+    which layers are protected would report two different totals for the same
+    layout. Reading straight from ``cfg`` sidesteps protection entirely, so the
+    total is correct by construction no matter which layers end up protected.
+    """
+    from netdrift.faults.layout import compute_index_offset_shape
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+
+    mapping = _rt_mapping_fn_for_layout(cfg.storage.layout)(None)
+    base_mapping = cfg.storage.base_layout.upper()
+    km = cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW"
+
+    total = 0
+    for _name, mod in model.named_modules():
+        if not isinstance(mod, (QuantizedConv2d, QuantizedLinear)):
+            continue
+        if mapping == "BLOCK":
+            from netdrift.faults.layout import _layout_weight_for_racetrack, build_block_buckets
+            w_2d, _ = _layout_weight_for_racetrack(
+                mod.weight, rt_mapping=base_mapping, kernel_mapping=km,
+            )
+            buckets = build_block_buckets(w_2d, cfg.storage.rt_size)
+            total += int(sum(b.weight_grid.shape[0] for b in buckets.values()))
+        elif mapping == "UNITS":
+            from netdrift.faults.layout import _layout_weight_for_racetrack
+            from netdrift.faults.packing import build_unit_buckets
+            w_2d, _ = _layout_weight_for_racetrack(
+                mod.weight, rt_mapping=base_mapping, kernel_mapping=km,
+            )
+            buckets = build_unit_buckets(
+                w_2d, cfg.storage.rt_size,
+                threshold=cfg.storage.units.threshold,
+                max_period=cfg.storage.units.max_period,
+                pool_guard=cfg.storage.units.pool_guard,
+            )
+            total += int(sum(b.weight_grid.shape[0] for b in buckets.values()))
+        else:
+            ks = mod._kernel_size_for_state()
+            n_rt = compute_index_offset_shape(
+                tuple(mod.weight.shape), rt_size=cfg.storage.rt_size,
+                rt_mapping=mapping, kernel_size=ks,
+            )
+            # compute_index_offset_shape returns a 2-tuple grid shape, e.g.
+            # (out_dim, ceil(in_dim/rt_size)) for ROW — the racetrack COUNT is
+            # the grid's cell count, i.e. the product of both elements (one
+            # entry per racetrack: out_dim independent lanes, each split into
+            # ceil(in_dim/rt_size) racetracks of length rt_size). Confirmed
+            # against analyze_layout_design_space.py's
+            # ``dense_wires = rows * ceil(cols / rt_size)`` and
+            # test_run_units_wiring.py's ``dense_total = dense_shape[0] *
+            # dense_shape[1]``. This is a wire count, matching what the
+            # BLOCK/UNITS branches above sum — multiplying by rt_size on top
+            # would give a cell count instead, which is a different (larger)
+            # quantity this x-axis does not want.
+            total += int(n_rt[0]) * int(n_rt[1])
+    return total
 
 
 _METRICS_ONLINE_KEYS = ("bitflips", "misalign_faults", "affected_units", "wrong_bits_read")
@@ -594,6 +715,24 @@ def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
             buckets = build_block_buckets(w_2d, cfg.storage.rt_size)
             n_blocks = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
             n_rt = (n_blocks, 1)
+        elif mapping == "UNITS":
+            # Like BLOCK, units has no single rectangular racetrack shape: the
+            # count is the number of packed wires (data-dependent). Report it as
+            # (n_wires, 1) so the meta geometry stays a 2-tuple like ROW/COL.
+            from netdrift.faults.layout import _layout_weight_for_racetrack
+            from netdrift.faults.packing import build_unit_buckets
+            base_mapping = (mod.base_layout or "ROW")
+            w_2d, _ = _layout_weight_for_racetrack(
+                mod.weight, rt_mapping=base_mapping, kernel_mapping=mod.kernel_mapping,
+            )
+            buckets = build_unit_buckets(
+                w_2d, cfg.storage.rt_size,
+                threshold=cfg.storage.units.threshold,
+                max_period=cfg.storage.units.max_period,
+                pool_guard=cfg.storage.units.pool_guard,
+            )
+            n_wires = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
+            n_rt = (n_wires, 1)
         else:
             n_rt = compute_index_offset_shape(
                 shape, rt_size=cfg.storage.rt_size,
@@ -807,7 +946,28 @@ def main(argv: list[str] | None = None) -> int:
             model, fault_model,
             rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
             kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
-            base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
+            base_layout=(cfg.storage.base_layout.upper()
+                         if cfg.storage.layout in ("block", "units") else None),
+        )
+
+    # n_racetracks (the design-space sweep's cost x-axis) is computed ONCE
+    # here rather than inside _wandb_config_with_category, because for
+    # BLOCK/UNITS it runs the real packer over every layer's actual weight
+    # signs — real CPU work (measured in the millions of runs at low
+    # threshold), not something to redo per W&B run. The test-mode
+    # base_wandb_config build below is already hoisted outside the rt_error
+    # loop, so this single value covers every W&B run of a sweep (train
+    # mode's one run plus every rt_error run in test mode). Guarded so a
+    # packer bug/regression can never take down an experiment over a
+    # convenience metric — worst case the key is omitted.
+    n_racetracks: int | None = None
+    try:
+        n_racetracks = _total_racetracks(cfg, model)
+    except Exception as exc:  # noqa: BLE001 - cost metric must never be fatal
+        warnings.warn(
+            f"_total_racetracks failed ({exc!r}); omitting n_racetracks from "
+            "the W&B config for this run",
+            stacklevel=2,
         )
 
     # 6) Train or test
@@ -832,7 +992,8 @@ def main(argv: list[str] | None = None) -> int:
             group=wandb_group,
             name=f"{cfg.experiment.name}-train",
             config=_wandb_config_with_category(
-                cfg, model, args.wandb_category, args.wandb_subcategory
+                cfg, model, args.wandb_category, args.wandb_subcategory,
+                n_racetracks=n_racetracks,
             ),
             tags=_wandb_tags(args.wandb_category, args.wandb_subcategory),
         )
@@ -905,7 +1066,8 @@ def main(argv: list[str] | None = None) -> int:
                 model, fault_model,
                 rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                 kernel_mapping=kernel_mapping_str,
-                base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
+                base_layout=(cfg.storage.base_layout.upper()
+                             if cfg.storage.layout in ("block", "units") else None),
             )
             print(f"  ⇒ baseline_clean_accuracy = {baseline_clean_acc:.2f}%")
 
@@ -927,7 +1089,12 @@ def main(argv: list[str] | None = None) -> int:
                     distribution_stats, write_rt_error_artifact, write_static_artifact,
                 )
                 from netdrift.metrics.online import OnlineCollector
-                _metrics_dir = run_dir / "metrics"
+                # Named distinctly from the "metrics" source package
+                # (code/python/netdrift/metrics/) so mutagen sync rules can
+                # target run artifacts and the source package independently —
+                # both were called "metrics" before, which made them
+                # impossible to tell apart by bare directory name.
+                _metrics_dir = run_dir / "metrics_artifacts"
                 _meta = _metrics_meta(cfg, model, category=args.wandb_category,
                                       subcategory=args.wandb_subcategory)
             if _do_offline:
@@ -1042,7 +1209,8 @@ def main(argv: list[str] | None = None) -> int:
                     model, fault_model,
                     rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                     kernel_mapping=kernel_mapping_str,
-                    base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
+                    base_layout=(cfg.storage.base_layout.upper()
+                                 if cfg.storage.layout in ("block", "units") else None),
                 )
                 print(f"  ⇒ baseline_endlen_accuracy = {baseline_endlen_acc:.2f}%")
                 print(
@@ -1118,7 +1286,8 @@ def main(argv: list[str] | None = None) -> int:
                         model, fault_model,
                         rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                         kernel_mapping=kernel_mapping_str,
-                        base_layout=cfg.storage.base_layout.upper() if cfg.storage.layout == "block" else None,
+                        base_layout=(cfg.storage.base_layout.upper()
+                                     if cfg.storage.layout in ("block", "units") else None),
                     )
                 print(
                     f"  ⇒ baseline_endlen_recal_accuracy = "
@@ -1150,7 +1319,8 @@ def main(argv: list[str] | None = None) -> int:
                 cfg.fault.rt_error if isinstance(cfg.fault.rt_error, list) else [cfg.fault.rt_error]
             )
             base_wandb_config = _wandb_config_with_category(
-                cfg, model, args.wandb_category, args.wandb_subcategory
+                cfg, model, args.wandb_category, args.wandb_subcategory,
+                n_racetracks=n_racetracks,
             )
             online = metrics_online
             all_results = []
@@ -1330,6 +1500,16 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     "encoded_checkpoint": encoded_checkpoint_path,
                     "encoder_auto_disabled": encoder_auto_disabled,
+                    # Total racetracks over ALL quantized layers under
+                    # cfg.storage.layout — the design-space cost x-axis, and
+                    # protection-invariant by construction (see
+                    # _total_racetracks). Persisted here, not just logged to
+                    # W&B, so an offline harvester can validate the analytic
+                    # cost table against the simulator without rebuilding the
+                    # model: scripts/sweep_design_space.py's preflight compares
+                    # this against its ARMS wire counts. None if the
+                    # computation was skipped or failed (never fatal).
+                    "n_racetracks": n_racetracks,
                     "rt_error_sweep": all_results,
                     # Raw per-forward metric dump, NESTED PER rt_error (each entry
                     # is one forward pass / batch). Within an rt_error the stock
@@ -1337,7 +1517,7 @@ def main(argv: list[str] | None = None) -> int:
                     # reset + re-seeded between rt_errors, so grouping by rt_error
                     # makes the boundary explicit instead of one flat array that
                     # appears to "reset" mid-stream. For reduced/analysis-ready
-                    # numbers use the metrics/*.json artifacts, not this dump.
+                    # numbers use the metrics_artifacts/*.json artifacts, not this dump.
                     "layer_metrics_by_rt_error": _summarize_layer_metrics_by_rt_error(
                         model, rt_metric_bounds
                     ),

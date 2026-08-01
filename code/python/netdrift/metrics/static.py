@@ -212,6 +212,9 @@ class StaticLayerMetrics:
     alternating_seq_histogram: dict[int, int]
     weight_magnitude: dict
     dist_to_threshold: dict
+    # (n_racetracks, 1) for BLOCK/UNITS (data-dependent block/wire counts);
+    # a real rectangular grid otherwise. UNITS requires ``units_params`` to be
+    # passed to compute_static_metrics — see that function's docstring.
     n_racetracks: tuple[int, int]
     # Optional raw per-racetrack arrays (only when want_raw=True), for .npz.
     # Typed as Any to avoid importing numpy at module scope (kept lazy in the
@@ -230,6 +233,7 @@ def compute_static_metrics(
     rt_size: int,
     *,
     base_layout: Optional[str] = None,
+    units_params: Optional[tuple[int, int, int]] = None,
     per_channel_scale=None,
     want_raw: bool = False,
 ) -> StaticLayerMetrics:
@@ -239,13 +243,21 @@ def compute_static_metrics(
     binarization discards magnitude. Block/run/transition metrics use the
     laid-out, binarized racetrack view.
 
-    For ``rt_mapping == "BLOCK"`` the metrics are computed on the BLOCK's
-    underlying base segmentation (``base_layout``, ROW or COL) — blocks are
-    extracted from that view, so the block/run/size metrics must match it.
+    For ``rt_mapping in ("BLOCK", "UNITS")`` the metrics are computed on that
+    mapping's underlying base segmentation (``base_layout``, ROW or COL) —
+    BLOCK's blocks / UNITS's wires are extracted from that view, so the
+    block/run/size metrics must match it.
+
+    ``units_params`` is ``(threshold, max_period, pool_guard)`` and is required
+    (non-``None``) when ``rt_mapping == "UNITS"``, to pack wires via
+    ``build_unit_buckets`` for the racetrack count. It has no effect for any
+    other mapping. See ``n_racetracks`` below for what happens when it is
+    missing.
     """
-    # BLOCK has no rectangular layout of its own; segment on its base layout.
+    # BLOCK/UNITS have no rectangular layout of their own; segment on the base
+    # layout instead (both are data-dependent packings on top of ROW/COL).
     layout_mapping = rt_mapping
-    if rt_mapping == "BLOCK":
+    if rt_mapping in ("BLOCK", "UNITS"):
         layout_mapping = (base_layout or "ROW").upper()
     w_2d, _ = _layout_weight_for_racetrack(weight, layout_mapping, kernel_mapping)
     pos, neg, transitions, runlen, alt_hist = _block_runlength_for_rows(w_2d, rt_size)
@@ -289,6 +301,34 @@ def compute_static_metrics(
     # sign-blocks, reported as (n_blocks, 1) to keep the 2-tuple contract.
     if rt_mapping == "BLOCK":
         n_rt = (block_rt_count, 1)
+    elif rt_mapping == "UNITS":
+        # UNITS has no rectangular grid either; its racetrack count is the
+        # number of packed wires (data-dependent — a wire can pool several
+        # short runs), reported as (n_wires, 1) to keep the 2-tuple contract.
+        # Mirrors runner/run.py::_metrics_meta's UNITS branch exactly.
+        if units_params is None:
+            # Do NOT fall back to compute_index_offset_shape here: that would
+            # silently report a dense ROW/COL racetrack count for a units
+            # layer, which is wrong data, not missing data. Fail loudly
+            # instead so the caller notices and supplies units_params (or
+            # attaches a fault model first — see snapshots.py::capture_snapshot).
+            raise ValueError(
+                "compute_static_metrics: rt_mapping='UNITS' requires "
+                "units_params=(threshold, max_period, pool_guard) to count "
+                "racetracks (packed wires), but none were supplied. Pass "
+                "units_params explicitly, or ensure the layer's fault_model "
+                "(RTMConfig) is attached first so the caller can read "
+                "mod.fault_model.cfg.units_threshold/units_max_period/"
+                "units_pool_guard."
+            )
+        from netdrift.faults.packing import build_unit_buckets
+        threshold, max_period, pool_guard = units_params
+        buckets = build_unit_buckets(
+            w_2d, rt_size, threshold=threshold, max_period=max_period,
+            pool_guard=pool_guard,
+        )
+        n_wires = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
+        n_rt = (n_wires, 1)
     else:
         n_rt = compute_index_offset_shape(
             tuple(weight.shape), rt_size=rt_size, rt_mapping=rt_mapping, kernel_size=None

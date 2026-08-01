@@ -42,7 +42,13 @@ Usage:
     # restrict to the layers a sweep leaves unprotected
     python scripts-python/analyze_layout_design_space.py ... --unprotected 2 3 4 5 6 7
 
-CPU-only; no CUDA, no fault model, no dataset.
+    # fidelity gate: cross-check the units design points against the real packer
+    python scripts-python/analyze_layout_design_space.py ... --verify-packer
+
+CPU-only; no CUDA, no fault model, no dataset. ``--verify-packer`` additionally
+imports ``netdrift.faults.packing`` (numba-transitive via the package's
+``__init__``, same as the ``netdrift.faults.layout`` import this script already
+does unconditionally) but still runs no CUDA kernel and no fault model.
 """
 from __future__ import annotations
 
@@ -327,6 +333,35 @@ def derive_designs(
                 unmerged_cells + pooled * rt_size,
                 unmerged, contiguous=False)
 
+    # -- isolate L>=2 + phase-aware guarded pooling ---------------------------
+    # The pooled bits at T=2 are exactly the length-1 runs, so each pooled
+    # fragment alternates internally and the pool can be made period-2. A
+    # junction needs a guard cell only when the next fragment would land on the
+    # wrong parity, which happens iff an ODD number of isolated runs separates
+    # the two fragments:  P = 1 / (1 + P(run is isolated)).  A fixed
+    # one-guard-per-junction rule is wrong -- it breaks the already-aligned
+    # junctions. The guard decision depends on the pooled signs, which the
+    # decoder cannot know in advance, so it costs one table bit per junction.
+    n_frag = sum(alt_hist.values())
+    if n_frag:
+        len1 = run_hist.get(1, 0)
+        p_iso = 1.0 - (len1 / n_runs) if n_runs else 0.0
+        guards = int(round(n_frag / (1.0 + p_iso)))
+        iso2 = {L: c for L, c in run_hist.items() if L >= 2}
+        iso2_cells = sum(next_pow2(L) * c for L, c in iso2.items())
+        pooled = math.ceil((len1 + guards) / rt_size)
+        t_ent, t_fix = _table_bits(iso2, bits=bits, contiguous=False, kind_bits=0)
+        out.append({
+            "design": "isolate L>=2 + phase-aware guarded pooling",
+            "wires": int(sum(iso2.values()) + pooled),
+            "cells": int(iso2_cells + pooled * rt_size),
+            "iso_units": int(sum(iso2.values())),
+            # +1 bit per junction records whether a guard cell was inserted
+            "table_bits_entropy": int(t_ent + n_frag),
+            "table_bits_fixed": int(t_fix + n_frag),
+            "note": f"period-2 pool; {guards:,}/{n_frag:,} junctions guarded",
+        })
+
     # -- isolate long runs (L >= T), pool the rest ---------------------------
     for T in (2, 3, 4, 8, 16, 32):
         iso_hist = {L: c for L, c in run_hist.items() if L >= T}
@@ -345,6 +380,112 @@ def derive_designs(
         d["bits_per_wire"] = round(bits / d["wires"], 3) if d["wires"] else 0.0
         d["table_bits_per_weight_bit"] = round(d["table_bits_entropy"] / bits, 3)
     return out
+
+
+# Design points this script's analytic formulas claim to model exactly, paired
+# with the real packer config that implements them. Each analytic count is a
+# GLOBAL division (e.g. ``ceil((pooled_bits + g) / rt_size)``), but
+# ``netdrift.faults.packing.build_unit_wires`` never splits a fragment across
+# two wires -- it flushes and starts a new wire whenever the next whole
+# fragment would not fit -- so the real count is provably >= the analytic one
+# (spec section 6's "Cell count can rise while wires fall" is the same
+# whole-unit-packing effect). Extend this list if more design points gain a
+# real packer config; the two below are what section 6's arm matrix actually
+# implements today (units at T=2 with guarded pooling, and T>=3 unguarded).
+VERIFY_PACKER_CHECKS: list[tuple[int, int, int, str]] = [
+    # (threshold, max_period, pool_guard, matching `design` name in `out`)
+    (2, 2, 1, "isolate L>=2 + phase-aware guarded pooling"),
+    (4, 1, 0, "isolate L>=4, pool rest G=0"),
+]
+
+
+def verify_packer_fidelity(
+    designs: list[dict],
+    layers: list[tuple[str, int, "torch.Tensor"]],
+    *,
+    rt_size: int,
+    layout: str,
+    kernel_mapping: str,
+    ratio_threshold: float,
+) -> bool:
+    """Fidelity gate: analytic wire count (this script) vs the REAL packer's.
+
+    This is the ``--verify-packer`` implementation. It is the same kind of
+    check as spec section 7 gate 1 ("the analysis script reproduces
+    5,610,139/6,527,245 BLOCK wires exactly, which is its fidelity check
+    against the simulator") but for the units design points that section 6's
+    arm matrix actually runs -- BLOCK's own gate does not cover units, and
+    without this one there is no gate proving the paper's cost-axis numbers
+    (this script's ``wires``/``cells`` columns) match what
+    ``netdrift.faults.rtm_misalignment._run_units_path`` actually built and
+    fault-injected.
+
+    For each ``(threshold, max_period, pool_guard)`` in VERIFY_PACKER_CHECKS,
+    calls the real ``build_unit_wires`` on every layer's actual (already
+    quantized) weight -- the same per-layer 2D view ``analyze_layer`` derives
+    via ``_layout_weight_for_racetrack`` -- and sums the real wire count
+    across layers. Compares against this script's analytic count for the
+    matching design point (looked up by name in ``designs``).
+
+    The packer's whole-fragment-flush invariant means actual wires are always
+    >= analytic; a ratio below 1.0 would mean this check itself disagrees with
+    that invariant (a bug in the check, not evidence the packer is cheaper
+    than modelled) and is flagged just as loudly as excess divergence.
+
+    NOTE a second, smaller source of the same-direction gap that is NOT a
+    packer bug: the analytic side's ``ceil((pooled_bits + guards) / rt_size)``
+    in ``derive_designs`` is applied ONCE to bits pooled across every layer,
+    while the real packer flushes per layer (a fragment never crosses a layer
+    boundary any more than it crosses an ``rt_size`` segment). That is up to
+    ``n_layers - 1`` extra real wires from independent per-layer ceiling
+    rounding alone, on top of the whole-fragment-flush waste this check is
+    meant to catch. Negligible next to the wire counts involved, but do not
+    misread a small, layer-count-sized excess as fragment-packing divergence.
+
+    Returns True iff every checked design point is within ``ratio_threshold``.
+    """
+    from netdrift.faults.packing import build_unit_wires  # lazy: only this path needs it
+
+    by_name = {d["design"]: d for d in designs}
+    print("\nPacker fidelity check (--verify-packer): analytic (this script) vs "
+          "the real netdrift.faults.packing.build_unit_wires")
+    print(f"  {'design':44s} {'analytic':>12} {'actual':>12} {'ratio':>8}  flag")
+    all_ok = True
+    for threshold, max_period, pool_guard, name in VERIFY_PACKER_CHECKS:
+        design = by_name.get(name)
+        if design is None:
+            print(f"  {name!r} not found among derived designs for this layout "
+                  f"-- skipped (analytic side unavailable)")
+            all_ok = False
+            continue
+        actual = 0
+        for _layer_name, _layer_id, qw in layers:
+            km = kernel_mapping.upper() if qw.dim() == 4 else None
+            w_2d, _undo = _layout_weight_for_racetrack(
+                qw, rt_mapping=layout.upper(), kernel_mapping=km,
+            )
+            wires = build_unit_wires(
+                w_2d, rt_size, threshold=threshold, max_period=max_period,
+                pool_guard=pool_guard,
+            )
+            actual += len(wires)
+        analytic = design["wires"]
+        ratio = actual / analytic if analytic else float("inf")
+        divergent = ratio > ratio_threshold or ratio < 1.0
+        all_ok = all_ok and not divergent
+        flag = "<<< DIVERGENT" if divergent else "ok"
+        print(f"  {name[:44]:44s} {analytic:>12,} {actual:>12,} {ratio:8.4f}  {flag}")
+        if ratio < 1.0:
+            print("    NOTE: actual < analytic is impossible under the packer's "
+                  "whole-fragment-flush invariant -- this points at a bug in this "
+                  "check (e.g. a config/name mismatch), not the packer being "
+                  "cheaper than modelled.")
+    if not all_ok:
+        print("  WARNING: divergence beyond the tolerance -- this script's cost "
+              "numbers for the flagged design point(s) do NOT match what the "
+              "simulator actually built. Do not report those numbers in the "
+              "paper until reconciled.")
+    return all_ok
 
 
 def period_summary(pair_hist: np.ndarray) -> dict:
@@ -464,6 +605,41 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--zero-sign", choices=("neg", "pos"), default="neg",
                    help="sign of an exactly-zero weight; 'neg' matches extract_blocks")
     p.add_argument("--json", default=None, help="write the full raw dump here")
+    p.add_argument("--verify-packer", action="store_true",
+                   help="Fidelity gate proving the paper's cost axis matches the "
+                        "simulator: for the design points that correspond to "
+                        "implemented units configs (currently threshold=2/"
+                        "max_period=2/pool_guard=1 and threshold=4/max_period=1/"
+                        "pool_guard=0 -- see VERIFY_PACKER_CHECKS), calls the REAL "
+                        "netdrift.faults.packing.build_unit_wires on each layer's "
+                        "actual weight and reports the analytic wire count (this "
+                        "script's closed-form histogram estimate) vs the packer's "
+                        "actual count and their ratio, flagging any divergence "
+                        "beyond --verify-packer-threshold. This script's wire counts "
+                        "are derived analytically (e.g. a GLOBAL "
+                        "ceil((pooled_bits+guards)/rt_size) for pooled wires), but "
+                        "the packer flushes a wire whenever the next whole fragment "
+                        "would not fit -- it never splits a fragment across two "
+                        "wires -- so the real count is provably >= the analytic one "
+                        "and the two must be reconciled before a design point's cost "
+                        "number is reported in the paper. Off by default: importing "
+                        "netdrift.faults.packing requires numba (transitively, via "
+                        "netdrift.faults.__init__), so this flag is opt-in and the "
+                        "normal analytic-only path is unaffected when it is off.")
+    p.add_argument("--verify-packer-threshold", type=float, default=1.02,
+                   help="Max tolerated (actual/analytic) wire-count ratio before "
+                        "--verify-packer flags a design point as divergent. "
+                        "Default: 1.02 (2%% slack) is an UNCALIBRATED starting "
+                        "point, not a measured bound -- at threshold=2 pooled "
+                        "wires are a small share of the total so 2%% is generous, "
+                        "but at threshold=4 (unguarded, longer fragments, larger "
+                        "pooled share) the whole-fragment-flush overhead may "
+                        "plausibly approach or exceed it on real VGG7 layers; "
+                        "re-set this from the first real --verify-packer run's "
+                        "reported ratios rather than trusting the default. A "
+                        "ratio < 1.0 is always flagged regardless of this value, "
+                        "since the packer cannot pack fewer wires than the "
+                        "analytic estimate by construction.")
     args = p.parse_args(argv)
 
     if args.rt_size > 64:
@@ -495,6 +671,7 @@ def main(argv: list[str] | None = None) -> int:
                   "zero_sign": args.zero_sign,
                   "layer_ids": [lid for _, lid, _ in layers], "layouts": {}}
 
+    packer_fidelity_ok = True
     for layout in args.layouts:
         per_layer, rows_cols = [], []
         agg = {"bits": 0, "n_segments": 0, "run_hist": Counter(),
@@ -530,12 +707,23 @@ def main(argv: list[str] | None = None) -> int:
         dump["layouts"][layout] = {"aggregate": agg, "per_layer": per_layer,
                                    "designs": designs,
                                    "periods": period_summary(np.array(agg["pair_hist"]))}
+        if args.verify_packer:
+            ok = verify_packer_fidelity(
+                designs, layers, rt_size=args.rt_size, layout=layout,
+                kernel_mapping=args.kernel_mapping,
+                ratio_threshold=args.verify_packer_threshold,
+            )
+            packer_fidelity_ok = packer_fidelity_ok and ok
 
     if args.json:
         out = Path(args.json)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(dump, indent=2))
         print(f"\nraw dump -> {out}")
+    if args.verify_packer and not packer_fidelity_ok:
+        print("\n--verify-packer: at least one design point diverged beyond "
+              "tolerance -- see WARNING lines above. Exiting non-zero.")
+        return 1
     return 0
 
 

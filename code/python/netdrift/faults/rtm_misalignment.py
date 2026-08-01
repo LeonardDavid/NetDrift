@@ -92,6 +92,19 @@ class RTMConfig:
     block_mapping: bool = False
     """Set True when storage.layout == 'block'. Used only to reject the
     per_forward encoder combination at config-construction time."""
+    units_mapping: bool = False
+    """Set True when storage.layout == 'units'. Selects the bucketed units path."""
+    units_threshold: int = 4
+    """Isolate runs of length >= this onto their own guard-banded wire; pool
+    everything shorter. 1 isolates every run and reproduces BLOCK."""
+    units_max_period: int = 1
+    """1 = period-1 guard bands only. 2 = additionally guard pooled fragment
+    junctions so the pool is period-2. Only meaningful at units_threshold == 2."""
+    units_pool_guard: int = 0
+    """Enable flag, not a cell count. 1 enables phase-aware junction guards --
+    0 or 1 cell per pooled fragment junction, inserted only where the
+    period-2 phase would otherwise break (about 67% of junctions). 0 disables
+    them and is the ablation arm."""
     edge_mode: str = "saturate"
     """Racetrack edge model. ``"saturate"`` (default): the access port is fixed
     at ``ap_position`` and reads saturate to the nearest real cell — no random
@@ -100,8 +113,9 @@ class RTMConfig:
     ap_position: Optional[int] = None
     """Fixed access-port index in ``[0, rt_size-1]`` for ``edge_mode="saturate"``.
     ``None`` resolves per (effective) racetrack length to ``rt_size//2 - 1`` (the
-    first middle position). Must be ``None`` for BLOCK mapping, where each bucket
-    has its own padded length ``P`` and the port is resolved per bucket."""
+    first middle position). Must be ``None`` for BLOCK or units mapping, where
+    each bucket has its own padded length ``P`` and the port is resolved per
+    bucket."""
 
     def __post_init__(self) -> None:
         if self.weight_encoder_mode not in ("once", "per_forward"):
@@ -118,13 +132,14 @@ class RTMConfig:
                 raise ValueError(
                     f"ap_position must be >= 0, got {self.ap_position}"
                 )
-            if self.block_mapping:
+            if self.block_mapping or self.units_mapping:
                 # A single absolute AP index is meaningless across heterogeneous
-                # per-bucket racetrack lengths; BLOCK resolves the AP per bucket.
+                # per-bucket racetrack lengths; BLOCK/units resolve the AP per bucket.
                 raise ValueError(
-                    "ap_position is not supported with BLOCK mapping (each bucket "
-                    "has its own padded length P; the access port is resolved per "
-                    "bucket as P//2 - 1). Leave ap_position unset for BLOCK."
+                    "ap_position is not supported with BLOCK or units mapping "
+                    "(each bucket has its own padded length P; the access port is "
+                    "resolved per bucket as P//2 - 1). Leave ap_position unset for "
+                    "BLOCK/units."
                 )
         if self.weight_encoder is not None and self.rt_size > 64:
             # The endlen kernel uses a hardcoded 64-element local buffer.
@@ -134,14 +149,33 @@ class RTMConfig:
                 f"weight_encoder requires rt_size <= 64 (legacy kernel "
                 f"uses a fixed-size local buffer); got rt_size={self.rt_size}"
             )
-        if self.block_mapping and self.weight_encoder_mode == "per_forward" \
+        if (self.block_mapping or self.units_mapping) \
+                and self.weight_encoder_mode == "per_forward" \
                 and self.weight_encoder is not None:
             raise ValueError(
-                "BLOCK mapping is incompatible with weight_encoder_mode="
-                "'per_forward' (block structure is derived from the "
+                "BLOCK/units mapping is incompatible with weight_encoder_mode="
+                "'per_forward' (block/unit structure is derived from the "
                 "post-encoder sign pattern and would go stale). Use "
                 "weight_encoder_mode='once' or disable the encoder."
             )
+        if self.units_mapping:
+            if int(self.units_threshold) < 1:
+                raise ValueError(
+                    f"units_threshold must be >= 1, got {self.units_threshold}"
+                )
+            if int(self.units_max_period) not in (1, 2):
+                raise ValueError(
+                    f"units_max_period must be 1 or 2, got {self.units_max_period}"
+                )
+            if int(self.units_pool_guard) not in (0, 1):
+                raise ValueError(
+                    f"units_pool_guard must be 0 or 1, got {self.units_pool_guard}"
+                )
+            if int(self.units_max_period) == 2 and int(self.units_threshold) != 2:
+                raise ValueError(
+                    "units_max_period=2 requires threshold=2; at threshold>2 the "
+                    "pool is not period-2. See spec section 3.2."
+                )
 
 
 @dataclass
@@ -170,6 +204,12 @@ class RTMState(FaultState):
 
     block_offsets: Optional[dict] = None
     """For BLOCK: {P: np.ndarray (n_P, 1) int32} persistent misalignment state."""
+
+    unit_buckets: Optional[dict] = None
+    """For UNITS: cached {P: BlockBucket} immutable structure (positions/lengths)."""
+
+    unit_offsets: Optional[dict] = None
+    """For UNITS: {P: np.ndarray (n_P, 1) int32} persistent misalignment state."""
 
     last_wrong_read: Optional[np.ndarray] = None
     """Most-recent per-racetrack wrong-read counts (2D int array) or ``None``.
@@ -207,6 +247,18 @@ class RTMMisalignmentFault(FaultModel):
                 base_mapping=base_mapping.upper(),
             )
 
+        if rt_mapping == "UNITS":
+            base_mapping = ctx.extra.get("base_layout")
+            if base_mapping is None:
+                raise ValueError("UNITS mapping requires ctx.extra['base_layout']")
+            # Structure is built lazily on first inject (needs the weight tensor).
+            return RTMState(
+                index_offset=np.zeros((1, 1), dtype=np.int32),  # unused for UNITS
+                rt_mapping="UNITS",
+                kernel_mapping=kernel_mapping,
+                base_mapping=base_mapping.upper(),
+            )
+
         shape = compute_index_offset_shape(
             weight_shape=weight_shape,
             rt_size=self.cfg.rt_size,
@@ -235,6 +287,9 @@ class RTMMisalignmentFault(FaultModel):
 
         if state.rt_mapping == "BLOCK":
             return self._run_block_path(weight, state, ctx, pre_fault)
+
+        if state.rt_mapping == "UNITS":
+            return self._run_units_path(weight, state, ctx, pre_fault)
 
         # 1+2) Reshape into the racetrack-aligned 2D view.
         w_2d, undo_layout = _layout_weight_for_racetrack(
@@ -351,6 +406,91 @@ class RTMMisalignmentFault(FaultModel):
             base_mapping=state.base_mapping,
             block_buckets=buckets,
             block_offsets=offsets,
+        )
+        return new_w, new_state, stats
+
+    def _run_units_path(self, weight, state, ctx, pre_fault):
+        """UNITS-mapping fault injection: run kernels per bucket, scatter back.
+
+        Identical in shape to :meth:`_run_block_path` -- deliberately duplicated
+        rather than factored out, so the GPU-verified BLOCK path is untouched
+        (see the spec's "additive path" decision). The only difference is the
+        bucket builder: units isolate runs of length >= ``units_threshold`` and
+        pool the remainder, optionally guarding pooled fragment junctions.
+        """
+        from netdrift.faults.layout import _layout_weight_for_racetrack
+        from netdrift.faults.packing import build_unit_buckets
+
+        # 1) base layout (ROW/COL), kernel-permuted for convs
+        w_2d, undo_base = _layout_weight_for_racetrack(
+            weight, rt_mapping=state.base_mapping,
+            kernel_mapping=state.kernel_mapping,
+        )
+        # 2) build (or reuse) the immutable unit structure
+        buckets = state.unit_buckets
+        if buckets is None:
+            buckets = build_unit_buckets(
+                w_2d, self.cfg.rt_size,
+                threshold=int(self.cfg.units_threshold),
+                max_period=int(self.cfg.units_max_period),
+                pool_guard=int(self.cfg.units_pool_guard),
+            )
+            offsets = {p: np.zeros((b.weight_grid.shape[0], 1), dtype=np.int32)
+                       for p, b in buckets.items()}
+        else:
+            offsets = state.unit_offsets
+
+        w_out_2d = w_2d.detach().cpu().float().numpy().copy()
+        w_host = w_2d.detach().cpu().float().numpy()
+
+        total_misalign = 0
+        total_wrong = 0
+        affected = 0
+        cuda.select_device(int(os.environ.get("NUMBA_CUDA_DEFAULT_DEVICE", "0")))
+
+        for p in sorted(buckets):
+            bucket = buckets[p]
+            off = offsets[p]
+            # Re-read current real-cell values (values change, positions do not).
+            # Filler slots keep their cached guard values.
+            grid = bucket.weight_grid.copy()
+            rmask = bucket.scatter_cols >= 0
+            gr = bucket.scatter_rows[rmask]
+            gc = bucket.scatter_cols[rmask]
+            grid[rmask] = w_host[gr, gc]
+
+            new_grid, new_off, tm, wrong = self._run_rtm_kernels(
+                torch.from_numpy(grid), off, ap_reads=p, nr_run=ctx.nr_run,
+                rt_size=p,
+            )
+            offsets[p] = new_off
+            total_misalign += int(tm)
+            total_wrong += int(wrong.sum())
+            affected += int(np.count_nonzero(new_off))
+
+            # scatter real cells back; discard fillers
+            w_out_2d[gr, gc] = new_grid[rmask]
+
+        new_w_2d = torch.from_numpy(w_out_2d).to(weight.device, dtype=weight.dtype)
+        new_w = undo_base(new_w_2d)
+
+        stats = FaultStats()
+        if self.cfg.track_misalign_faults:
+            stats.misalign_faults = total_misalign
+        if self.cfg.track_affected_units:
+            stats.affected_units = affected
+        if self.cfg.track_bitflips and pre_fault is not None:
+            stats.bitflips = int((pre_fault != new_w).sum().item())
+        if self.cfg.track_wrong_reads:
+            stats.extra["wrong_bits_read"] = total_wrong
+
+        new_state = RTMState(
+            index_offset=np.zeros((1, 1), dtype=np.int32),
+            rt_mapping="UNITS",
+            kernel_mapping=state.kernel_mapping,
+            base_mapping=state.base_mapping,
+            unit_buckets=buckets,
+            unit_offsets=offsets,
         )
         return new_w, new_state, stats
 

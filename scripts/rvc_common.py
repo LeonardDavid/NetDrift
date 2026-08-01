@@ -12,6 +12,13 @@ Data layout (see docs/superpowers/specs/2026-06-19-row-v-col-metrics-plots-desig
         <model>__<category>__static.json      # mechanism (snapshots + deltas)
         ... (.npz siblings with raw per-racetrack arrays)
 
+  NOTE: runner/run.py writes this directory as ``metrics_artifacts/`` as of
+  2026-07-31 (renamed so mutagen sync can target run artifacts separately from
+  the ``code/python/netdrift/metrics/`` source package, which shared the bare
+  name ``metrics``). Older runs on disk still have ``metrics/``. The discovery
+  helpers below search BOTH names so already-collected artifacts stay
+  readable — do not assume only one exists.
+
 Parsing rules that bite (load-bearing):
   * ``rt_error`` may sit at ``d["rt_error"]`` OR ``d["meta"]["rt_error"]``.
   * lambda is NOT recoverable from config (test-phase ``reg.lambda_`` is 0.0);
@@ -131,23 +138,39 @@ def cell_key(category: str, layout: str, lam: Optional[float]) -> str:
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
+#: Directory names the per-run metrics artifacts may live under. Runs from
+#: before the 2026-07-31 rename used "metrics"; runs after use
+#: "metrics_artifacts" (see module docstring). Search both so already-
+#: collected artifacts on the host stay discoverable — a reader that only
+#: recognizes the new name would silently find nothing for old runs while
+#: still exiting 0, which is exactly the "reports success but aggregated
+#: nothing" failure mode this project has already hit once
+#: (comparison_common.latest_summary, see the 2026-07-30 SDD ledger).
+_METRICS_DIRNAMES = ("metrics", "metrics_artifacts")
+
+
 def discover_rt_files(runs_dir: Path, include: Optional[list[str]] = None) -> list[Path]:
     """All per-rt_error outcome/fault JSONs (excludes ``__static``)."""
-    files = [
+    files = {
         p
-        for p in runs_dir.rglob("metrics/*.json")
+        for dirname in _METRICS_DIRNAMES
+        for p in runs_dir.rglob(f"{dirname}/*.json")
         if "__rt" in p.name and "__static" not in p.name
-    ]
+    }
     if include:
-        files = [p for p in files if any(tok in str(p) for tok in include)]
+        files = {p for p in files if any(tok in str(p) for tok in include)}
     return sorted(files)
 
 
 def discover_static_files(runs_dir: Path, include: Optional[list[str]] = None) -> list[Path]:
     """All static (mechanism) JSONs."""
-    files = list(runs_dir.rglob("metrics/*__static.json"))
+    files = {
+        p
+        for dirname in _METRICS_DIRNAMES
+        for p in runs_dir.rglob(f"{dirname}/*__static.json")
+    }
     if include:
-        files = [p for p in files if any(tok in str(p) for tok in include)]
+        files = {p for p in files if any(tok in str(p) for tok in include)}
     return sorted(files)
 
 

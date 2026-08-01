@@ -1,0 +1,18 @@
+# UNITS layout, threshold=2: isolate every run of length >= 2 onto its own
+# guard-banded wire, pool the length-1 runs densely with a phase-aware guard
+# cell inserted only at the ~67% of fragment junctions where it is needed to
+# keep the pool period-2 (never one guard per junction unconditionally).
+# Inherits the vgg7 w1a1 RTM base (weight_encoder already null).
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: vgg7_cifar10_units_t2
+
+storage:
+  layout: units
+  base_layout: row
+  units:
+    threshold: 2
+    max_period: 2
+    pool_guard: 1

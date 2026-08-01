@@ -152,12 +152,22 @@ def output_dir_from_cfg(cfg_path: Path) -> Path:
 
 
 def latest_summary(out_dir: Path, exp_name: str) -> Optional[Path]:
-    """Newest ``summary.json`` under ``<out_dir>/<exp_name>/`` or None."""
+    """Newest ``summary.json`` anywhere under ``<out_dir>/<exp_name>/`` or None.
+
+    Must recurse: ``run.py::_setup_run_dir`` nests
+    ``<name>/[<category>/[<subcategory>/]]<timestamp>``, so a single-level glob
+    finds nothing whenever --wandb-category/--wandb-subcategory are in play --
+    which silently produced an all-``status=missing`` summary CSV for a real
+    col_vs_block sweep whose runs had in fact succeeded. Selection is by mtime
+    because the nesting depth varies, so lexicographic order is not reliable.
+    """
     base = out_dir / exp_name
     if not base.exists():
         return None
-    candidates = sorted(base.glob("*/summary.json"))
-    return candidates[-1] if candidates else None
+    candidates = list(base.glob("**/summary.json"))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 def harvest_summary(summary_path: Optional[Path]) -> dict[str, Any]:
