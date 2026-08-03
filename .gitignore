@@ -23,6 +23,7 @@ weekend_*.log
 logs/
 
 nohup.out
+cluster-ids*
 
 Dockerfile
 .dockerignore
