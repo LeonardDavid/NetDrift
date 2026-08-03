@@ -183,7 +183,7 @@ class FaultCfg:
         edge_mode:             ``saturate`` (fixed access port, no random reads)
                                or ``random`` (legacy out-of-bounds ±1).
         ap_position:           Fixed access-port index for ``edge_mode=saturate``;
-                               ``None`` -> ``rt_size//2 - 1``.
+                               ``None`` -> ``0`` (low edge of the wire).
     """
 
     model: str = "rtm_misalignment"
@@ -213,8 +213,20 @@ class FaultCfg:
     — use ``"random"`` to obtain a non-trivial BLOCK robustness curve."""
     ap_position: Optional[int] = None
     """Fixed access-port index in ``[0, rt_size-1]`` for ``edge_mode="saturate"``.
-    ``None`` (default) resolves to ``rt_size//2 - 1`` (the first middle position).
-    Must be left unset for ``storage.layout=="block"``."""
+    ``None`` (default) resolves to ``0``: the port sits at the **low edge** of the
+    wire, all overflow capacity is on one side, and the offset window is
+    ``[-(rt_size-1), 0]``.
+
+    ⚠️ Changed default (was ``rt_size//2 - 1``, a mid-wire port with two symmetric
+    buffers). Under the old default a fault at offset 0 *always* moved the wire;
+    at ``ap_position=0`` half of those draws are no-ops, so racetracks leave the
+    aligned state at roughly half the rate. Saturate-mode runs from before this
+    change are NOT reproducible without passing ``ap_position=<rt_size//2 - 1>``
+    explicitly.
+
+    For ``storage.layout=="block"`` only ``None`` or ``0`` are accepted — a
+    nonzero index means a different position in each differently-padded bucket,
+    whereas ``0`` is the low edge of every bucket."""
 
     def __post_init__(self) -> None:
         for n in ("global_bitflip_budget", "local_bitflip_budget"):

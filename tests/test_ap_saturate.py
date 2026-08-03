@@ -64,9 +64,42 @@ def test_negative_ap_position_raises() -> None:
         RTMConfig(rt_size=64, ap_position=-1)
 
 
-def test_ap_position_with_block_raises() -> None:
+def test_nonzero_ap_position_with_block_raises() -> None:
     with pytest.raises(ValueError, match="BLOCK"):
         RTMConfig(rt_size=64, ap_position=8, block_mapping=True)
+
+
+def test_zero_ap_position_with_block_allowed() -> None:
+    """ap_position=0 is the low edge of EVERY bucket whatever its padded length P,
+    so unlike a nonzero index it carries identical geometry across buckets."""
+    cfg = RTMConfig(rt_size=64, ap_position=0, block_mapping=True)
+    assert cfg.ap_position == 0
+
+
+@pytest.mark.cuda
+def test_default_ap_position_resolves_to_low_edge() -> None:
+    """The unset default must resolve to the low edge (0), not mid-wire.
+
+    Observed through real behaviour rather than by re-deriving the formula: with
+    ap=0 the window is [-(rt_size-1), 0], so a saturating walk can only ever go
+    NEGATIVE. Under the old mid-wire default (ap=rt_size//2-1=3 at rt_size=8) the
+    offset would reach +3, so this pins the new geometry.
+    """
+    rt_size, n = 8, 256
+    fault = RTMMisalignmentFault(RTMConfig(rt_size=rt_size, rt_error=1.0))
+    offsets = fault._run_rtm_kernels(
+        weight_2d=torch.ones(n, rt_size),
+        index_offset=np.zeros((n, 1), dtype=np.int32),
+        ap_reads=rt_size * rt_size,
+        nr_run=1,
+    )[1]
+    assert offsets.max() == 0, (
+        f"offset went positive (max={offsets.max()}) — access port is not at the "
+        f"low edge; a mid-wire default would allow up to +{rt_size // 2 - 1}"
+    )
+    assert offsets.min() == -(rt_size - 1), (
+        f"low bound -{rt_size - 1} never reached (min={offsets.min()})"
+    )
 
 
 # ---------------------------------------------------------------------------

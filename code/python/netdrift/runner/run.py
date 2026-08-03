@@ -523,6 +523,15 @@ def _wandb_config(cfg: ExperimentConfig, model: torch.nn.Module) -> dict:
         "protection_policy": cfg.fault.protection.policy,
         "protected_layers": protected,
         "unprotected_layers": unprotected,
+        # Racetrack edge model. ``ap_position`` is logged RESOLVED (never None) so
+        # the runs table groups directly by the geometry that was simulated: the
+        # default is the low edge (0), and BLOCK resolves the same 0 per bucket.
+        # ``ap_position_raw`` preserves whether it was set explicitly.
+        "edge_mode": cfg.fault.edge_mode,
+        "ap_position": (
+            0 if cfg.fault.ap_position is None else int(cfg.fault.ap_position)
+        ),
+        "ap_position_raw": cfg.fault.ap_position,
         # Loss criterion — flat keys so the W&B runs table is filterable by the
         # baseline-training loss and the fault-aware-training loss independently.
         "criterion": cfg.training.criterion,

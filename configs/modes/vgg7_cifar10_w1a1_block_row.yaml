@@ -32,7 +32,9 @@ fault:
   # and saturating reads can only ever return that sign, so accuracy stays clean
   # at any rt_error (a real property of the model, not a bug). For a NON-TRIVIAL
   # BLOCK robustness curve, use the legacy random-edge model. Flip to `saturate`
-  # only to demonstrate/measure that immunity. ap_position must stay null for block.
+  # only to demonstrate/measure that immunity. For block, ap_position accepts only
+  # null or 0 (0 = low edge of every bucket, whatever its padded length P; a nonzero
+  # index would mean a different position per bucket and is rejected).
   edge_mode: random             # random | saturate  (see warning above)
   ap_position: null
 

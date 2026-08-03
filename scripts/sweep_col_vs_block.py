@@ -87,10 +87,33 @@ _PROTECTIONS = [
 ]
 
 
-def _build_cells() -> list[dict]:
-    """Return the ordered list of cell descriptors (layout × protection)."""
+def ap_token(ap_position: Optional[int]) -> str:
+    """Artifact/subcategory token for the access-port position.
+
+    ``None`` (the config/code default) contributes NO token, so the canonical
+    subcategory names stay exactly as they were. An explicit value appends
+    ``_ap<N>`` so an AP-geometry arm never collides with the default arm in W&B
+    or in the runner's summary paths.
+    """
+    return "" if ap_position is None else f"_ap{int(ap_position)}"
+
+
+def _build_cells(
+    ap_position: Optional[int] = None,
+    layout_keys: Optional[list[str]] = None,
+) -> list[dict]:
+    """Return the ordered list of cell descriptors (layout × protection).
+
+    ``layout_keys`` restricts which layout arms are built (default: all three).
+    Useful for skipping the BLOCK arms, which are fault-immune under
+    ``edge_mode=saturate`` and so cannot respond to an ``ap_position`` change.
+    """
+    ap_tok = ap_token(ap_position)
+    layouts = _LAYOUTS if not layout_keys else [
+        l for l in _LAYOUTS if l["key"] in layout_keys
+    ]
     cells: list[dict] = []
-    for lay in _LAYOUTS:
+    for lay in layouts:
         for prot in _PROTECTIONS:
             cells.append({
                 "layout": lay["layout"],
@@ -99,8 +122,9 @@ def _build_cells() -> list[dict]:
                 "policy": prot["policy"],
                 "layers": prot["layers"],
                 "prot_tag": prot["tag"],
+                "ap_position": ap_position,
                 # subcategory groups every rt_error of this arm together in W&B.
-                "subcategory": f"{lay['tag']}_{prot['tag']}",
+                "subcategory": f"{lay['tag']}_{prot['tag']}{ap_tok}",
             })
     return cells
 
@@ -145,6 +169,12 @@ def _cell_argv(
         "--override", f"fault.edge_mode={edge_mode}",
         "--override", f"experiment.seed={seed}",
     ]
+
+    # Access-port geometry. Emitted only when explicitly requested so the default
+    # arm keeps using the code default. ap_position=0 is the one value BLOCK
+    # accepts (low edge of every bucket, whatever its padded length P).
+    if cell["ap_position"] is not None:
+        argv += ["--override", f"fault.ap_position={int(cell['ap_position'])}"]
 
     # Experiment identity (unique per cell so summaries don't collide).
     exp_name = f"{base_stem}__{cell['subcategory']}"
@@ -206,6 +236,20 @@ def main(argv: list[str] | None = None) -> int:
                    help="Racetrack edge model, applied to EVERY cell so layout is "
                         "the only varied axis. NB saturate → BLOCK is fault-immune. "
                         "Default: saturate")
+    p.add_argument("--layouts", nargs="+", default=None,
+                   choices=[l["key"] for l in _LAYOUTS], metavar="KEY",
+                   help="Restrict the layout arms (default: all three — "
+                        f"{', '.join(l['key'] for l in _LAYOUTS)}). Pass 'col' to skip "
+                        "the BLOCK arms, which are fault-immune under "
+                        "edge_mode=saturate and cannot respond to --ap-position.")
+    p.add_argument("--ap-position", type=int, default=None, metavar="N",
+                   help="Fixed access-port index for edge_mode=saturate, applied to "
+                        "EVERY cell. Omit to use the code default (0 = low edge of "
+                        "the wire). Only 0 is valid for the BLOCK cells; a nonzero "
+                        "value means a different position in each differently-padded "
+                        "bucket and the fault model rejects it. When set, '_ap<N>' is "
+                        "appended to every subcategory + experiment name so the arm "
+                        "does not collide with the default arm in W&B.")
     p.add_argument("--wandb-project", default=DEFAULT_WANDB_PROJECT,
                    help=f"W&B project (all runs logged together). "
                         f"Default: {DEFAULT_WANDB_PROJECT}. Pass '' to disable W&B.")
@@ -233,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     curve = [float(x) for x in args.rt_curve]
     base_stem = cfg_path.stem
     wandb_project = args.wandb_project or None
-    cells = _build_cells()
+    cells = _build_cells(args.ap_position, args.layouts)
     total = len(cells)
     n_wandb_runs = total * len(curve)
 
@@ -242,16 +286,21 @@ def main(argv: list[str] | None = None) -> int:
     print("COL-vs-BLOCK layout comparison (edge_mode study)")
     print("=" * 72)
     print(f"  base config        : {cfg_path}")
-    print(f"  layouts            : col, block(base=row), block(base=col)")
+    print(f"  layouts            : "
+          + ", ".join(c["layout_tag"] for c in cells[::len(_PROTECTIONS)]))
     print(f"  protection arms    : all (1-8), custom (2-7)")
     print(f"  rt_error curve     : {curve}")
     print(f"  loops              : {args.loops}")
     print(f"  seed               : {args.seed}")
     print(f"  edge_mode          : {args.edge_mode}"
           + ("  (BLOCK fault-immune!)" if args.edge_mode == "saturate" else ""))
+    print(f"  ap_position        : "
+          + ("default (0 = low edge)" if args.ap_position is None
+             else f"{args.ap_position}  (tag: _ap{args.ap_position})"))
     print(f"  mitigations        : none (weight_encoder=null, mitigations=[])")
     print(f"  wandb_project      : {wandb_project or 'DISABLED'}")
-    print(f"  runner invocations : {total}  (3 layouts × 2 protection)")
+    print(f"  runner invocations : {total}  "
+          f"({total // len(_PROTECTIONS)} layouts × {len(_PROTECTIONS)} protection)")
     print(f"  W&B runs           : {n_wandb_runs}  ({total} cells × {len(curve)} rt_error)")
     print(f"  inference passes   : {n_wandb_runs * args.loops}  "
           f"({n_wandb_runs} runs × {args.loops} loops)")
@@ -383,6 +432,7 @@ def main(argv: list[str] | None = None) -> int:
             "config": str(cfg_path),
             "seed": args.seed,
             "edge_mode": args.edge_mode,
+            "ap_position": args.ap_position,
             "rt_curve": curve,
             "loops": args.loops,
             "wandb_project": wandb_project,

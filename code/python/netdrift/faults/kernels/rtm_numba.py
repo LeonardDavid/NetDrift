@@ -78,7 +78,12 @@ def calc_index_offset_kernel(rng_states, index_offset, misalign_faults, rt_size,
         ap_reads:        Number of access-port reads simulated (``rt_size`` for COL mapping, ``rt_size**2`` for ROW).
         rt_error:        Per-read fault probability in ``[0, 1]``.
         ap_position:     Fixed access-port index in ``[0, rt_size-1]``. Only
-                         used when ``edge_mode == 1``.
+                         used when ``edge_mode == 1``. The caller's default is
+                         ``0`` (low edge), which makes ``hi == 0``: from the
+                         aligned state only a negative draw can move the wire, so
+                         half of all fault draws at offset 0 are no-ops and
+                         racetracks leave alignment at roughly half the rate of a
+                         mid-wire port.
         edge_mode:       ``0`` random/legacy, ``1`` saturate/fixed-AP.
 
     Notes:

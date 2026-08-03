@@ -99,9 +99,14 @@ class RTMConfig:
     reads return a random ±1 (kept for A/B comparison)."""
     ap_position: Optional[int] = None
     """Fixed access-port index in ``[0, rt_size-1]`` for ``edge_mode="saturate"``.
-    ``None`` resolves per (effective) racetrack length to ``rt_size//2 - 1`` (the
-    first middle position). Must be ``None`` for BLOCK mapping, where each bucket
-    has its own padded length ``P`` and the port is resolved per bucket."""
+    ``None`` (default) resolves to ``0`` — the port sits at the **low edge** of
+    the wire, so all overflow is on one side and the offset window is
+    ``[-(rt_size-1), 0]``.
+
+    BLOCK mapping accepts only ``None`` or ``0``: a single absolute index is
+    meaningless across heterogeneous per-bucket padded lengths ``P``, but ``0``
+    is the low edge of *every* bucket regardless of ``P``, so it carries the
+    same geometry everywhere."""
 
     def __post_init__(self) -> None:
         if self.weight_encoder_mode not in ("once", "per_forward"):
@@ -118,13 +123,18 @@ class RTMConfig:
                 raise ValueError(
                     f"ap_position must be >= 0, got {self.ap_position}"
                 )
-            if self.block_mapping:
-                # A single absolute AP index is meaningless across heterogeneous
-                # per-bucket racetrack lengths; BLOCK resolves the AP per bucket.
+            if self.block_mapping and int(self.ap_position) != 0:
+                # A nonzero absolute AP index is meaningless across heterogeneous
+                # per-bucket racetrack lengths (index 8 is the right edge of a P=8
+                # bucket but near the left edge of a P=64 one). ``0`` is exempt:
+                # it is the low edge of every bucket whatever its P, so the
+                # geometry is identical across buckets.
                 raise ValueError(
-                    "ap_position is not supported with BLOCK mapping (each bucket "
-                    "has its own padded length P; the access port is resolved per "
-                    "bucket as P//2 - 1). Leave ap_position unset for BLOCK."
+                    f"ap_position={self.ap_position} is not supported with BLOCK "
+                    "mapping (each bucket has its own padded length P, so a "
+                    "nonzero absolute index means a different position per "
+                    "bucket). Use ap_position=0 (low edge of every bucket) or "
+                    "leave it unset."
                 )
         if self.weight_encoder is not None and self.rt_size > 64:
             # The endlen kernel uses a hardcoded 64-element local buffer.
@@ -379,11 +389,13 @@ class RTMMisalignmentFault(FaultModel):
         rt_size = self.cfg.rt_size if rt_size is None else rt_size
 
         # Resolve the edge model and fixed access-port position for this launch.
-        # ``ap`` is resolved against the *effective* rt_size (which is the
-        # per-bucket padded length ``P`` on the BLOCK path), so a P=1 bucket
-        # yields ap=0 (lo==hi==0 -> offset frozen -> length-1 blocks are safe).
+        # The default is ``0`` — the port sits at the low edge of the wire, so all
+        # overflow capacity is on one side and the offset window is
+        # ``[-(rt_size-1), 0]``. This is length-independent, so it also holds for
+        # the per-bucket padded length ``P`` on the BLOCK path (a P=1 bucket still
+        # yields lo==hi==0 -> offset frozen -> length-1 blocks are safe).
         edge_mode = 1 if self.cfg.edge_mode == "saturate" else 0
-        ap = self.cfg.ap_position if self.cfg.ap_position is not None else rt_size // 2 - 1
+        ap = self.cfg.ap_position if self.cfg.ap_position is not None else 0
         if ap < 0:
             ap = 0
         if ap > rt_size - 1:

@@ -57,7 +57,9 @@ fault:
                                 #   random: legacy — a read shifted off the racetrack returns random ±1.
                                 #   NB: storage.layout=block under saturate is fault-immune.
   ap_position: null             # fixed access-port index in [0, rt_size-1] (saturate only);
-                                #   null → rt_size//2 - 1 (first middle position). Leave null for block.
+                                #   null → 0 (LOW EDGE of the wire: window [-(rt_size-1), 0], all
+                                #   overflow on one side). Changed default — was rt_size//2 - 1
+                                #   (mid-wire). For block, only null or 0 are valid.
 
 training:
   mode: test
