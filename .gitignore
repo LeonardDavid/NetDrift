@@ -12,8 +12,18 @@ CLAUDE.md
 
 RTM_results/
 experiments/
-data/
-models/
+# ANCHORED (fixed 2026-08-01) -- these two MUST keep their leading slash.
+# An unanchored `data/` / `models/` matches a directory NAME AT ANY DEPTH, so it
+# also excluded the SOURCE packages code/python/netdrift/{data,models}/. Those
+# were therefore never committed, and a fresh clone of this repo cannot import
+# netdrift.runner.run at all ("No module named 'netdrift.data'") -- which is
+# exactly how it failed on the Lamarr cluster. The leading slash restricts each
+# pattern to the repo root, which is what was intended: the root-level
+# checkpoint tree and dataset tree.
+# Same trap as the mutagen ignore rules (see mutagen_netdrift.sh) -- this repo
+# has source packages named after its data directories.
+/data/
+/models/
 results_comb/
 runs*/
 wandb/

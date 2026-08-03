@@ -34,4 +34,15 @@ data:
   # 5 rt_error x 79 cells), so dataset I/O is on the hot path -- this is exactly
   # what /raid is for. rsync it from /home before the run; if the node purges
   # it, re-copy rather than repointing at /home.
-  data_dir: /raid/bereholschi/datasets/cifar10
+  #
+  # THIS IS THE torchvision ROOT, NOT THE DATA DIRECTORY ITSELF.
+  # `build_datasets` passes it to `datasets.CIFAR10(root=...)`, which appends
+  # `cifar-10-batches-py` itself. So this value must be the PARENT:
+  #     data_dir: /raid/bereholschi/datasets
+  #   -> reads   /raid/bereholschi/datasets/cifar-10-batches-py/
+  # Pointing this at `.../datasets/cifar10` would make torchvision look for
+  # `.../datasets/cifar10/cifar-10-batches-py/` and either fail or silently
+  # re-download. Matches cluster_setup.md's layout, which shows
+  # `cifar-10-batches-py/` sitting directly inside `datasets/`.
+  # Verify with scripts/check_cluster_paths.py before launching.
+  data_dir: /raid/bereholschi/datasets
