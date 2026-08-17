@@ -101,20 +101,32 @@ def ap_token(ap_position: Optional[int]) -> str:
 def _build_cells(
     ap_position: Optional[int] = None,
     layout_keys: Optional[list[str]] = None,
+    protection_keys: Optional[list[str]] = None,
+    name_suffix: Optional[str] = None,
 ) -> list[dict]:
     """Return the ordered list of cell descriptors (layout × protection).
 
-    ``layout_keys`` restricts which layout arms are built (default: all three).
-    Useful for skipping the BLOCK arms, which are fault-immune under
-    ``edge_mode=saturate`` and so cannot respond to an ``ap_position`` change.
+    ``layout_keys`` / ``protection_keys`` restrict which arms are built (default:
+    all of each). Restricting lets one process own a single arm so several arms
+    can run concurrently on different GPUs.
+
+    ``name_suffix`` is appended to every subcategory (e.g. ``"seed707"``). The
+    driver takes a single ``--seed``, so a caller sweeping seeds MUST pass a
+    distinct suffix per seed — otherwise every seed writes to the same
+    ``experiment.name`` and each run's ``summary.json`` overwrites the previous
+    seed's in the same run directory.
     """
     ap_tok = ap_token(ap_position)
+    sfx = f"_{name_suffix}" if name_suffix else ""
     layouts = _LAYOUTS if not layout_keys else [
         l for l in _LAYOUTS if l["key"] in layout_keys
     ]
+    prots = _PROTECTIONS if not protection_keys else [
+        p for p in _PROTECTIONS if p["key"] in protection_keys
+    ]
     cells: list[dict] = []
     for lay in layouts:
-        for prot in _PROTECTIONS:
+        for prot in prots:
             cells.append({
                 "layout": lay["layout"],
                 "base_layout": lay["base_layout"],
@@ -124,7 +136,7 @@ def _build_cells(
                 "prot_tag": prot["tag"],
                 "ap_position": ap_position,
                 # subcategory groups every rt_error of this arm together in W&B.
-                "subcategory": f"{lay['tag']}_{prot['tag']}{ap_tok}",
+                "subcategory": f"{lay['tag']}_{prot['tag']}{ap_tok}{sfx}",
             })
     return cells
 
@@ -242,6 +254,18 @@ def main(argv: list[str] | None = None) -> int:
                         f"{', '.join(l['key'] for l in _LAYOUTS)}). Pass 'col' to skip "
                         "the BLOCK arms, which are fault-immune under "
                         "edge_mode=saturate and cannot respond to --ap-position.")
+    p.add_argument("--protections", nargs="+", default=None,
+                   choices=[p_["key"] for p_ in _PROTECTIONS], metavar="KEY",
+                   help="Restrict the protection arms (default: both — "
+                        f"{', '.join(p_['key'] for p_ in _PROTECTIONS)}). Combine with "
+                        "--layouts to run exactly one cell per process.")
+    p.add_argument("--name-suffix", default=None, metavar="TOK",
+                   help="Token appended to every subcategory AND experiment.name "
+                        "(e.g. 'seed707'). REQUIRED when sweeping seeds across "
+                        "several invocations: this driver takes a single --seed, so "
+                        "without a distinct suffix each seed reuses the same "
+                        "experiment.name and its summary.json overwrites the previous "
+                        "seed's.")
     p.add_argument("--ap-position", type=int, default=None, metavar="N",
                    help="Fixed access-port index for edge_mode=saturate, applied to "
                         "EVERY cell. Omit to use the code default (0 = low edge of "
@@ -277,7 +301,9 @@ def main(argv: list[str] | None = None) -> int:
     curve = [float(x) for x in args.rt_curve]
     base_stem = cfg_path.stem
     wandb_project = args.wandb_project or None
-    cells = _build_cells(args.ap_position, args.layouts)
+    cells = _build_cells(
+        args.ap_position, args.layouts, args.protections, args.name_suffix,
+    )
     total = len(cells)
     n_wandb_runs = total * len(curve)
 
@@ -288,10 +314,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  base config        : {cfg_path}")
     print(f"  layouts            : "
           + ", ".join(c["layout_tag"] for c in cells[::len(_PROTECTIONS)]))
-    print(f"  protection arms    : all (1-8), custom (2-7)")
+    print(f"  protection arms    : "
+          + ", ".join(dict.fromkeys(c["prot_tag"] for c in cells)))
     print(f"  rt_error curve     : {curve}")
     print(f"  loops              : {args.loops}")
-    print(f"  seed               : {args.seed}")
+    print(f"  seed               : {args.seed}"
+          + (f"  (name suffix: _{args.name_suffix})" if args.name_suffix else ""))
     print(f"  edge_mode          : {args.edge_mode}"
           + ("  (BLOCK fault-immune!)" if args.edge_mode == "saturate" else ""))
     print(f"  ap_position        : "
@@ -299,8 +327,11 @@ def main(argv: list[str] | None = None) -> int:
              else f"{args.ap_position}  (tag: _ap{args.ap_position})"))
     print(f"  mitigations        : none (weight_encoder=null, mitigations=[])")
     print(f"  wandb_project      : {wandb_project or 'DISABLED'}")
+    n_lay = len({c["layout_tag"] for c in cells})
+    n_prot = len({c["prot_tag"] for c in cells})
     print(f"  runner invocations : {total}  "
-          f"({total // len(_PROTECTIONS)} layouts × {len(_PROTECTIONS)} protection)")
+          f"({n_lay} layout{'s' if n_lay != 1 else ''} × "
+          f"{n_prot} protection{'s' if n_prot != 1 else ''})")
     print(f"  W&B runs           : {n_wandb_runs}  ({total} cells × {len(curve)} rt_error)")
     print(f"  inference passes   : {n_wandb_runs * args.loops}  "
           f"({n_wandb_runs} runs × {args.loops} loops)")
