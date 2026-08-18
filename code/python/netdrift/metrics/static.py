@@ -234,6 +234,7 @@ def compute_static_metrics(
     *,
     base_layout: Optional[str] = None,
     units_params: Optional[tuple[int, int, int]] = None,
+    polarity_params: Optional[tuple[int, bool]] = None,
     per_channel_scale=None,
     want_raw: bool = False,
 ) -> StaticLayerMetrics:
@@ -243,21 +244,25 @@ def compute_static_metrics(
     binarization discards magnitude. Block/run/transition metrics use the
     laid-out, binarized racetrack view.
 
-    For ``rt_mapping in ("BLOCK", "UNITS")`` the metrics are computed on that
-    mapping's underlying base segmentation (``base_layout``, ROW or COL) —
-    BLOCK's blocks / UNITS's wires are extracted from that view, so the
-    block/run/size metrics must match it.
+    For ``rt_mapping in ("BLOCK", "UNITS", "POLARITY")`` the metrics are
+    computed on that mapping's underlying base segmentation (``base_layout``,
+    ROW or COL) — BLOCK's blocks / UNITS's wires / POLARITY's sorted wires are
+    extracted from that view, so the block/run/size metrics must match it.
 
     ``units_params`` is ``(threshold, max_period, pool_guard)`` and is required
     (non-``None``) when ``rt_mapping == "UNITS"``, to pack wires via
     ``build_unit_buckets`` for the racetrack count. It has no effect for any
     other mapping. See ``n_racetracks`` below for what happens when it is
     missing.
+
+    ``polarity_params`` is ``(window, pad)`` and is likewise required when
+    ``rt_mapping == "POLARITY"``, to count wires via
+    ``count_polarity_racetracks``.
     """
-    # BLOCK/UNITS have no rectangular layout of their own; segment on the base
-    # layout instead (both are data-dependent packings on top of ROW/COL).
+    # BLOCK/UNITS/POLARITY have no rectangular layout of their own; segment on
+    # the base layout instead (all are data-dependent packings on ROW/COL).
     layout_mapping = rt_mapping
-    if rt_mapping in ("BLOCK", "UNITS"):
+    if rt_mapping in ("BLOCK", "UNITS", "POLARITY"):
         layout_mapping = (base_layout or "ROW").upper()
     w_2d, _ = _layout_weight_for_racetrack(weight, layout_mapping, kernel_mapping)
     pos, neg, transitions, runlen, alt_hist = _block_runlength_for_rows(w_2d, rt_size)
@@ -329,6 +334,25 @@ def compute_static_metrics(
         )
         n_wires = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
         n_rt = (n_wires, 1)
+    elif rt_mapping == "POLARITY":
+        # PPM's wires are all exactly rt_size, but the COUNT is data-dependent:
+        # padding each sign group to a wire boundary adds up to one wire per
+        # window. Same loud-failure rule as UNITS -- falling through to
+        # compute_index_offset_shape would report a dense count, which is wrong
+        # data rather than missing data (and it raises for POLARITY anyway).
+        if polarity_params is None:
+            raise ValueError(
+                "compute_static_metrics: rt_mapping='POLARITY' requires "
+                "polarity_params=(window, pad) to count racetracks (padded "
+                "wires), but none were supplied. Pass polarity_params "
+                "explicitly, or ensure the layer's fault_model (RTMConfig) is "
+                "attached first so the caller can read "
+                "mod.fault_model.cfg.polarity_window/polarity_pad."
+            )
+        from netdrift.faults.partitioning import count_polarity_racetracks
+        window, pad = polarity_params
+        n_rt = (count_polarity_racetracks(w_2d, rt_size, window=int(window),
+                                          pad=bool(pad)), 1)
     else:
         n_rt = compute_index_offset_shape(
             tuple(weight.shape), rt_size=rt_size, rt_mapping=rt_mapping, kernel_size=None

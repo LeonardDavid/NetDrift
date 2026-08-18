@@ -116,9 +116,12 @@ def _rt_mapping_fn_for_layout(layout: str):
         return lambda _layer: "BLOCK"
     if norm == "units":
         return lambda _layer: "UNITS"
+    if norm == "polarity":
+        return lambda _layer: "POLARITY"
     raise NotImplementedError(
         f"storage.layout={layout!r} is not wired into the fault model yet; "
-        f"supported: row, col, block, units. (mix/interleaved are schema placeholders.)"
+        f"supported: row, col, block, units, polarity. "
+        f"(mix/interleaved are schema placeholders.)"
     )
 
 
@@ -133,18 +136,18 @@ def _validate_block_layout_combo(cfg: ExperimentConfig) -> None:
     training / encoding.
     """
     layout = (cfg.storage.layout or "").lower()
-    if layout not in ("block", "units"):
+    if layout not in ("block", "units", "polarity"):
         return
     if cfg.fault.weight_encoder is not None:
         raise ValueError(
             f"storage.layout={layout!r} is not supported with a weight encoder "
             f"(fault.weight_encoder={cfg.fault.weight_encoder!r}); the endlen "
-            "encoder has no BLOCK/UNITS layout. Set fault.weight_encoder: null."
+            "encoder has no BLOCK/UNITS/POLARITY layout. Set fault.weight_encoder: null."
         )
     if (cfg.training.fault_aware or "none") != "none":
         # No fault-aware training mode is designed/tested for BLOCK/UNITS. The
-        # regularizer has no BLOCK/UNITS layout; ste_inject/kd mutate weight
-        # signs across batches while _run_block_path/_run_units_path cache the
+        # regularizer has no BLOCK/UNITS/POLARITY layout; ste_inject/kd mutate weight
+        # signs across batches while the block/units/polarity paths cache the
         # block/unit structure + guard bands from the first forward (in
         # fault_state_mode='accumulate' the cache is never rebuilt), so the
         # simulation would go silently stale — the same staleness RTMConfig
@@ -223,6 +226,9 @@ def _build_fault_model(
             weight_encoder=weight_encoder,
             weight_encoder_mode=weight_encoder_mode,
             block_mapping=(cfg.storage.layout == "block"),
+            polarity_mapping=(cfg.storage.layout == "polarity"),
+            polarity_window=int(cfg.storage.partition.window),
+            polarity_pad=bool(cfg.storage.partition.pad),
             units_mapping=(cfg.storage.layout == "units"),
             units_threshold=cfg.storage.units.threshold,
             units_max_period=cfg.storage.units.max_period,
@@ -652,6 +658,21 @@ def _total_racetracks(cfg: ExperimentConfig, model: torch.nn.Module) -> int:
                 pool_guard=cfg.storage.units.pool_guard,
             )
             total += int(sum(b.weight_grid.shape[0] for b in buckets.values()))
+        elif mapping == "POLARITY":
+            # PPM's grid is rectangular (every wire is rt_size) but the wire
+            # COUNT is data-dependent: padding each sign group to a wire
+            # boundary adds at most one wire per window. Count via the plan so
+            # ragged rows and sign-pure windows are exact, not estimated.
+            from netdrift.faults.layout import _layout_weight_for_racetrack
+            from netdrift.faults.partitioning import count_polarity_racetracks
+            w_2d, _ = _layout_weight_for_racetrack(
+                mod.weight, rt_mapping=base_mapping, kernel_mapping=km,
+            )
+            total += count_polarity_racetracks(
+                w_2d, cfg.storage.rt_size,
+                window=cfg.storage.partition.window,
+                pad=cfg.storage.partition.pad,
+            )
         else:
             ks = mod._kernel_size_for_state()
             n_rt = compute_index_offset_shape(
@@ -733,6 +754,20 @@ def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
             )
             n_wires = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
             n_rt = (n_wires, 1)
+        elif mapping == "POLARITY":
+            # Like BLOCK/UNITS the count is data-dependent (padding per window),
+            # so report it as (n_wires, 1) to keep the meta geometry a 2-tuple.
+            from netdrift.faults.layout import _layout_weight_for_racetrack
+            from netdrift.faults.partitioning import count_polarity_racetracks
+            base_mapping = (mod.base_layout or "ROW")
+            w_2d, _ = _layout_weight_for_racetrack(
+                mod.weight, rt_mapping=base_mapping, kernel_mapping=mod.kernel_mapping,
+            )
+            n_rt = (count_polarity_racetracks(
+                w_2d, cfg.storage.rt_size,
+                window=cfg.storage.partition.window,
+                pad=cfg.storage.partition.pad,
+            ), 1)
         else:
             n_rt = compute_index_offset_shape(
                 shape, rt_size=cfg.storage.rt_size,
@@ -947,7 +982,7 @@ def main(argv: list[str] | None = None) -> int:
             rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
             kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
             base_layout=(cfg.storage.base_layout.upper()
-                         if cfg.storage.layout in ("block", "units") else None),
+                         if cfg.storage.layout in ("block", "units", "polarity") else None),
         )
 
     # n_racetracks (the design-space sweep's cost x-axis) is computed ONCE
@@ -1067,7 +1102,7 @@ def main(argv: list[str] | None = None) -> int:
                 rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                 kernel_mapping=kernel_mapping_str,
                 base_layout=(cfg.storage.base_layout.upper()
-                             if cfg.storage.layout in ("block", "units") else None),
+                             if cfg.storage.layout in ("block", "units", "polarity") else None),
             )
             print(f"  ⇒ baseline_clean_accuracy = {baseline_clean_acc:.2f}%")
 
@@ -1210,7 +1245,7 @@ def main(argv: list[str] | None = None) -> int:
                     rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                     kernel_mapping=kernel_mapping_str,
                     base_layout=(cfg.storage.base_layout.upper()
-                                 if cfg.storage.layout in ("block", "units") else None),
+                                 if cfg.storage.layout in ("block", "units", "polarity") else None),
                 )
                 print(f"  ⇒ baseline_endlen_accuracy = {baseline_endlen_acc:.2f}%")
                 print(
@@ -1287,7 +1322,7 @@ def main(argv: list[str] | None = None) -> int:
                         rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
                         kernel_mapping=kernel_mapping_str,
                         base_layout=(cfg.storage.base_layout.upper()
-                                     if cfg.storage.layout in ("block", "units") else None),
+                                     if cfg.storage.layout in ("block", "units", "polarity") else None),
                     )
                 print(
                     f"  ⇒ baseline_endlen_recal_accuracy = "

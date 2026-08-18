@@ -94,6 +94,15 @@ class RTMConfig:
     per_forward encoder combination at config-construction time."""
     units_mapping: bool = False
     """Set True when storage.layout == 'units'. Selects the bucketed units path."""
+    polarity_mapping: bool = False
+    """Set True when storage.layout == 'polarity'. Selects the PPM path."""
+    polarity_window: int = 0
+    """PPM sort window in racetracks; 0 = channel-aligned (one window per row
+    of the racetrack-aligned view). Trades interconnect locality against wire
+    count at CONSTANT immunity."""
+    polarity_pad: bool = True
+    """PPM: round each sign group up to a wire boundary so every wire is
+    sign-pure. This is the immunity mechanism; False is the ablation arm."""
     units_threshold: int = 4
     """Isolate runs of length >= this onto their own guard-banded wire; pool
     everything shorter. 1 isolates every run and reproduces BLOCK."""
@@ -132,11 +141,11 @@ class RTMConfig:
                 raise ValueError(
                     f"ap_position must be >= 0, got {self.ap_position}"
                 )
-            if self.block_mapping or self.units_mapping:
+            if self.block_mapping or self.units_mapping or self.polarity_mapping:
                 # A single absolute AP index is meaningless across heterogeneous
                 # per-bucket racetrack lengths; BLOCK/units resolve the AP per bucket.
                 raise ValueError(
-                    "ap_position is not supported with BLOCK or units mapping "
+                    "ap_position is not supported with BLOCK, units or polarity mapping "
                     "(each bucket has its own padded length P; the access port is "
                     "resolved per bucket as P//2 - 1). Leave ap_position unset for "
                     "BLOCK/units."
@@ -149,15 +158,27 @@ class RTMConfig:
                 f"weight_encoder requires rt_size <= 64 (legacy kernel "
                 f"uses a fixed-size local buffer); got rt_size={self.rt_size}"
             )
-        if (self.block_mapping or self.units_mapping) \
+        if (self.block_mapping or self.units_mapping or self.polarity_mapping) \
                 and self.weight_encoder_mode == "per_forward" \
                 and self.weight_encoder is not None:
             raise ValueError(
-                "BLOCK/units mapping is incompatible with weight_encoder_mode="
+                "BLOCK/units/polarity mapping is incompatible with weight_encoder_mode="
                 "'per_forward' (block/unit structure is derived from the "
                 "post-encoder sign pattern and would go stale). Use "
                 "weight_encoder_mode='once' or disable the encoder."
             )
+        if self.polarity_mapping:
+            if int(self.polarity_window) < 0:
+                raise ValueError(
+                    f"polarity_window must be >= 0 (0 = channel-aligned), "
+                    f"got {self.polarity_window}"
+                )
+            if self.block_mapping or self.units_mapping:
+                raise ValueError(
+                    "polarity_mapping is mutually exclusive with block_mapping and "
+                    "units_mapping -- each is a different packing of the same base "
+                    "ROW/COL view, so at most one may be active."
+                )
         if self.units_mapping:
             if int(self.units_threshold) < 1:
                 raise ValueError(
@@ -211,6 +232,12 @@ class RTMState(FaultState):
     unit_offsets: Optional[dict] = None
     """For UNITS: {P: np.ndarray (n_P, 1) int32} persistent misalignment state."""
 
+    polarity_buckets: Optional[dict] = None
+    """For POLARITY: cached {rt_size: BlockBucket} structure (single bucket)."""
+
+    polarity_offsets: Optional[dict] = None
+    """For POLARITY: {rt_size: np.ndarray (n, 1) int32} persistent state."""
+
     last_wrong_read: Optional[np.ndarray] = None
     """Most-recent per-racetrack wrong-read counts (2D int array) or ``None``.
     Populated only when ``track_wrong_reads`` is enabled; used for the .npz dump."""
@@ -259,6 +286,18 @@ class RTMMisalignmentFault(FaultModel):
                 base_mapping=base_mapping.upper(),
             )
 
+        if rt_mapping == "POLARITY":
+            base_mapping = ctx.extra.get("base_layout")
+            if base_mapping is None:
+                raise ValueError("POLARITY mapping requires ctx.extra['base_layout']")
+            # Structure is built lazily on first inject (needs the weight tensor).
+            return RTMState(
+                index_offset=np.zeros((1, 1), dtype=np.int32),  # unused for POLARITY
+                rt_mapping="POLARITY",
+                kernel_mapping=kernel_mapping,
+                base_mapping=base_mapping.upper(),
+            )
+
         shape = compute_index_offset_shape(
             weight_shape=weight_shape,
             rt_size=self.cfg.rt_size,
@@ -290,6 +329,9 @@ class RTMMisalignmentFault(FaultModel):
 
         if state.rt_mapping == "UNITS":
             return self._run_units_path(weight, state, ctx, pre_fault)
+
+        if state.rt_mapping == "POLARITY":
+            return self._run_polarity_path(weight, state, ctx, pre_fault)
 
         # 1+2) Reshape into the racetrack-aligned 2D view.
         w_2d, undo_layout = _layout_weight_for_racetrack(
@@ -491,6 +533,91 @@ class RTMMisalignmentFault(FaultModel):
             base_mapping=state.base_mapping,
             unit_buckets=buckets,
             unit_offsets=offsets,
+        )
+        return new_w, new_state, stats
+
+    def _run_polarity_path(self, weight, state, ctx, pre_fault):
+        """POLARITY (PPM) fault injection: run kernels per bucket, scatter back.
+
+        Identical in shape to :meth:`_run_units_path` -- deliberately duplicated
+        rather than factored out, keeping the GPU-verified BLOCK and UNITS paths
+        untouched (this repo's established "additive path" convention). The only
+        difference is the bucket builder: PPM sorts each window by sign and pads
+        each sign group to a wire boundary, yielding a SINGLE bucket in which
+        every wire is exactly ``rt_size`` long and (with pad=True) sign-pure.
+        """
+        from netdrift.faults.layout import _layout_weight_for_racetrack
+        from netdrift.faults.partitioning import build_polarity_buckets
+
+        # 1) base layout (ROW/COL), kernel-permuted for convs
+        w_2d, undo_base = _layout_weight_for_racetrack(
+            weight, rt_mapping=state.base_mapping,
+            kernel_mapping=state.kernel_mapping,
+        )
+        # 2) build (or reuse) the immutable polarity wire structure
+        buckets = state.polarity_buckets
+        if buckets is None:
+            buckets = build_polarity_buckets(
+                w_2d, self.cfg.rt_size,
+                window=int(self.cfg.polarity_window),
+                pad=bool(self.cfg.polarity_pad),
+            )
+            offsets = {p: np.zeros((b.weight_grid.shape[0], 1), dtype=np.int32)
+                       for p, b in buckets.items()}
+        else:
+            offsets = state.polarity_offsets
+
+        w_out_2d = w_2d.detach().cpu().float().numpy().copy()
+        w_host = w_2d.detach().cpu().float().numpy()
+
+        total_misalign = 0
+        total_wrong = 0
+        affected = 0
+        cuda.select_device(int(os.environ.get("NUMBA_CUDA_DEFAULT_DEVICE", "0")))
+
+        for p in sorted(buckets):
+            bucket = buckets[p]
+            off = offsets[p]
+            # Re-read current real-cell values (values change, positions do not).
+            # Filler slots keep their cached guard values.
+            grid = bucket.weight_grid.copy()
+            rmask = bucket.scatter_cols >= 0
+            gr = bucket.scatter_rows[rmask]
+            gc = bucket.scatter_cols[rmask]
+            grid[rmask] = w_host[gr, gc]
+
+            new_grid, new_off, tm, wrong = self._run_rtm_kernels(
+                torch.from_numpy(grid), off, ap_reads=p, nr_run=ctx.nr_run,
+                rt_size=p,
+            )
+            offsets[p] = new_off
+            total_misalign += int(tm)
+            total_wrong += int(wrong.sum())
+            affected += int(np.count_nonzero(new_off))
+
+            # scatter real cells back; discard fillers
+            w_out_2d[gr, gc] = new_grid[rmask]
+
+        new_w_2d = torch.from_numpy(w_out_2d).to(weight.device, dtype=weight.dtype)
+        new_w = undo_base(new_w_2d)
+
+        stats = FaultStats()
+        if self.cfg.track_misalign_faults:
+            stats.misalign_faults = total_misalign
+        if self.cfg.track_affected_units:
+            stats.affected_units = affected
+        if self.cfg.track_bitflips and pre_fault is not None:
+            stats.bitflips = int((pre_fault != new_w).sum().item())
+        if self.cfg.track_wrong_reads:
+            stats.extra["wrong_bits_read"] = total_wrong
+
+        new_state = RTMState(
+            index_offset=np.zeros((1, 1), dtype=np.int32),
+            rt_mapping="POLARITY",
+            kernel_mapping=state.kernel_mapping,
+            base_mapping=state.base_mapping,
+            polarity_buckets=buckets,
+            polarity_offsets=offsets,
         )
         return new_w, new_state, stats
 

@@ -130,6 +130,36 @@ class UnitsCfg:
 
 
 @dataclass
+class PartitionCfg:
+    """Parameters for ``storage.layout == "polarity"`` (PPM).
+
+    Attributes:
+        window: Racetracks per sort window. ``0`` (default) is CHANNEL-ALIGNED:
+                one window per row of the racetrack-aligned view, so a window
+                never spans an output channel -- the physically deployable
+                instance. ``K > 0`` sorts within groups of ``K`` wires
+                (``K * rt_size`` weights), bounding the interconnect span. Wire
+                count is roughly ``dense * (1 + 1/K)`` at constant immunity, so
+                this knob trades locality against area, NOT robustness.
+        pad:    Round each sign group up to a wire boundary so every wire is
+                sign-pure -- this is the immunity MECHANISM, not an
+                optimisation. ``False`` is the ablation arm: the wire straddling
+                the +/- boundary stays mixed, which is expected to reproduce the
+                units failure mode (see the design doc).
+    """
+
+    window: int = 0
+    pad: bool = True
+
+    def __post_init__(self) -> None:
+        if int(self.window) < 0:
+            raise ValueError(
+                f"storage.partition.window must be >= 0 (0 = channel-aligned), "
+                f"got {self.window}"
+            )
+
+
+@dataclass
 class StorageCfg:
     """Racetrack storage layout (Phase 1: row/col/mix only).
 
@@ -139,14 +169,18 @@ class StorageCfg:
                         ``ecc``, ``replicated``. ``block`` is the BLOCK
                         weight-storage mapping, segmented per ``base_layout``.
                         ``units`` is the bucketed racetrack-units mapping
-                        parameterised by ``units``.
+                        parameterised by ``units``. ``polarity`` is the
+                        polarity-partitioned mapping (PPM) parameterised by
+                        ``partition``, segmented per ``base_layout``.
         rt_size:        Bits per racetrack.
         kernel_mapping: Conv kernel layout: ``row`` / ``col`` / ``clw`` / ``acw``.
                         Ignored for linear layers.
-        base_layout:    For ``layout=="block"``: the ROW/COL base segmentation
-                        used underneath the BLOCK mapping. Ignored otherwise.
+        base_layout:    For ``layout=="block"``/``"units"``/``"polarity"``: the
+                        ROW/COL base segmentation used underneath. Ignored otherwise.
         units:          For ``layout=="units"``: threshold/max_period/pool_guard
                         parameters. Ignored otherwise.
+        partition:      For ``layout=="polarity"``: window/pad parameters.
+                        Ignored otherwise.
     """
 
     layout: str = "row"
@@ -154,6 +188,7 @@ class StorageCfg:
     kernel_mapping: str = "row"
     base_layout: str = "row"
     units: UnitsCfg = field(default_factory=UnitsCfg)
+    partition: PartitionCfg = field(default_factory=PartitionCfg)
 
     def __post_init__(self) -> None:
         if self.base_layout.lower() not in ("row", "col"):
@@ -167,6 +202,14 @@ class StorageCfg:
                 "produce buckets longer than the 64-cell cap that extract_blocks' "
                 "run chunking enforces for isolated wires."
             )
+        # NOTE: layout='polarity' is deliberately NOT bounded the same way, even
+        # though its wires are also exactly rt_size. The units cap traces to
+        # extract_blocks' 64-cell run chunking (and next_pow2 padding), which PPM
+        # bypasses entirely: it sorts by sign and emits fixed rt_size wires with
+        # no pow2 padding. The CUDA kernels take rt_size as a runtime argument
+        # and allocate no fixed-size local buffers, so PPM has no 64 limit. (The
+        # endlen encoder's separate rt_size<=64 buffer limit cannot apply either:
+        # polarity rejects weight encoders outright.)
 
 
 @dataclass

@@ -519,6 +519,86 @@ def mitigation_override(names: list[str]) -> str:
     return "[" + ",".join(f'"{n}"' for n in names) + "]"
 
 
+def _cell_ap(arm: Arm, ap_position: Optional[int]) -> Optional[int]:
+    """Resolve the access-port override for one arm, or ``None`` for "don't pin".
+
+    ``None`` (no ``--ap-position``) leaves every arm on the config default, so
+    names and behaviour are byte-identical to a pre-flag invocation.
+
+    Returns ``None`` for units/block arms even when ``ap_position`` is set:
+    those layouts pack heterogeneous per-bucket racetrack lengths ``P`` and
+    resolve the port per bucket as ``P//2 - 1``, so a single absolute index is
+    meaningless. The fault model rejects it outright
+    (code/python/netdrift/faults/rtm_misalignment.py: "ap_position is not
+    supported with BLOCK or units mapping"), so pinning them would kill 8 of
+    the 14 arms at config time. They stay on the per-bucket default and, being
+    unpinned, carry NO token -- each cell's name states exactly what it ran.
+    """
+    if ap_position is None or arm.layout in ("units", "block"):
+        return None
+    return int(ap_position)
+
+
+def ap_token(ap: Optional[int]) -> str:
+    """Name segment for a pinned access port: ``""`` when unpinned, else ``_ap<N>``.
+
+    Deliberately EMPTY by default. A token is only emitted for cells that
+    actually received a ``fault.ap_position`` override, so:
+
+    * default runs keep their canonical names and stay joinable with the
+      artifacts already on disk (``--collect-only`` reconstructs the same
+      strings -- see ``_exp_name``);
+    * a name never asserts an AP that the run did not pin. A default-valued
+      token (e.g. ``_apmid``) would go false the moment the resolution rule
+      changes underneath it, and a wrong token is worse than none: absence
+      makes a reader check, a confident-but-stale token stops them checking.
+
+    ⚠️ MERGE HAZARD, deliberately NOT papered over here. On this branch an
+    unset ``fault.ap_position`` resolves mid-wire (``rt_size//2 - 1``); on the
+    ap0 branch it resolves to ``0`` (low edge), which roughly halves the rate
+    at which racetracks leave the aligned state. Default-named artifacts from
+    the two branches are therefore NOT comparable despite identical names, and
+    ``comparison_common.latest_summary()`` picks by mtime. Before mixing eras,
+    re-tag or re-run -- do not rely on the name. The AP change is a measured
+    no-op for ``block`` (immune under saturate) but NOT for the units arms,
+    whose pooled mixed-sign wires are fully exposed to port position.
+    """
+    return "" if ap is None else f"_ap{ap}"
+
+
+def validate_ap_position(ap_position: Optional[int]) -> Optional[str]:
+    """Return an error string if ``ap_position`` cannot apply to the dense ladder.
+
+    The port index must lie in ``[0, rt_size-1]`` for EVERY dense arm, because
+    the main matrix always runs all of them (there is no arm filter). The fault
+    model would otherwise silently clamp (``if ap > rt_size - 1: ap = rt_size - 1``),
+    so ``--ap-position 31`` would run at 31 on dense-rt64 but at 1 on dense-rt4
+    while every cell carried an identical ``_ap31`` token -- a name asserting an
+    AP the run never used. Reject instead of clamping.
+    """
+    if ap_position is None:
+        return None
+    ap = int(ap_position)
+    if ap < 0:
+        return f"--ap-position must be >= 0; got {ap}"
+    offenders = [a for a in ARMS if a.layout not in ("units", "block") and ap > a.rt_size - 1]
+    if offenders:
+        worst = min(a.rt_size for a in offenders)
+        return (
+            f"--ap-position {ap} exceeds the racetrack length of "
+            f"{len(offenders)} dense arm(s): "
+            + ", ".join(f"{a.label} (max {a.rt_size - 1})" for a in offenders)
+            + f".\n  The main matrix runs the whole dense ladder, so a pinned index must be "
+              f"valid at the SHORTEST wire (rt_size={worst} => max index {worst - 1}). "
+              f"The fault model would clamp silently, making the _ap{ap} token lie on the "
+              f"short arms.\n  This is why the spec leaves ap_position unset: an absolute "
+              f"index is not meaningful across a ladder whose rt_size varies 64->2 (the "
+              f"default tracks mid-wire per arm). Use --ap-position 0 (the low edge, "
+              f"well-defined at every rt_size) or drop the flag."
+        )
+    return None
+
+
 def _fmt_argv(argv: list[str]) -> str:
     """Shell-quote an argv list for display/emission (see sweep_units.py::_fmt_argv).
 
@@ -543,13 +623,17 @@ def _exp_name(base_stem: str, cell: dict) -> str:
     return (
         f"{base_stem}__dspace-{cell['stage_tag']}__{arm.label}"
         f"__{cell['mit_key']}__{cell['prot_tag']}__seed{cell['seed']}"
+        f"{ap_token(cell.get('ap'))}"
     )
 
 
 def _subcategory(cell: dict) -> str:
     """W&B subcategory: fine-grained combo, mirrors sweep_units.py's convention."""
     arm: Arm = cell["arm"]
-    return f"{arm.label}_{cell['mit_key']}_{cell['prot_tag']}_seed{cell['seed']}"
+    return (
+        f"{arm.label}_{cell['mit_key']}_{cell['prot_tag']}_seed{cell['seed']}"
+        f"{ap_token(cell.get('ap'))}"
+    )
 
 
 def _cell_argv(
@@ -594,6 +678,12 @@ def _cell_argv(
         "--override", f"experiment.seed={cell['seed']}",
     ]
 
+    # Access port: only ever emitted for cells _cell_ap pinned (dense arms
+    # under --ap-position). Unpinned cells omit the override entirely, so the
+    # config default applies and no token is added -- see ap_token().
+    if cell.get("ap") is not None:
+        argv += ["--override", f"fault.ap_position={cell['ap']}"]
+
     # Metrics level: a direct runner CLI flag, fixed (see module docstring).
     argv += ["--metrics", DEFAULT_METRICS]
 
@@ -609,6 +699,7 @@ def _build_main_cells(
     mitigations: list[tuple[str, list[str]]],
     curve: list[float],
     loops: int,
+    ap_position: Optional[int] = None,
 ) -> tuple[list[dict], list[str]]:
     """Return (79-at-defaults cell descriptors, block-collapse log lines).
 
@@ -628,6 +719,7 @@ def _build_main_cells(
                 "arm": arm, "prot_tag": prot["tag"], "policy": prot["policy"],
                 "layers": prot["layers"], "mit_key": mit_key, "mit_list": mit_list,
                 "seed": seed, "curve": curve, "loops": loops, "stage_tag": "main",
+                "ap": _cell_ap(arm, ap_position),
             })
             n_would_be = len(PROTECTIONS) * len(seeds) * len(mitigations)
             collapse_log.append(
@@ -644,11 +736,12 @@ def _build_main_cells(
                         "arm": arm, "prot_tag": prot["tag"], "policy": prot["policy"],
                         "layers": prot["layers"], "mit_key": mit_key, "mit_list": mit_list,
                         "seed": seed, "curve": curve, "loops": loops, "stage_tag": "main",
+                        "ap": _cell_ap(arm, ap_position),
                     })
     return cells, collapse_log
 
 
-def _preflight_gate_cells() -> list[dict]:
+def _preflight_gate_cells(ap_position: Optional[int] = None) -> list[dict]:
     """14 cells: every main-matrix arm at rt_error=[0.0], loops=1, ONE fixed
     protection+seed, weight_encoder=null + mitigations=[] forced (see module
     docstring "PREFLIGHT'S EXACT-EQUALITY INVARIANT").
@@ -662,11 +755,12 @@ def _preflight_gate_cells() -> list[dict]:
             "layers": prot["layers"], "mit_key": "nomit", "mit_list": [],
             "seed": seed, "curve": PREFLIGHT_GATE_CURVE, "loops": PREFLIGHT_GATE_LOOPS,
             "stage_tag": "preflight-gate",
+            "ap": _cell_ap(arm, ap_position),
         })
     return cells
 
 
-def _preflight_equiv_cells() -> tuple[dict, dict]:
+def _preflight_equiv_cells(ap_position: Optional[int] = None) -> tuple[dict, dict]:
     """units-t1 vs block at rt_error=1e-5, loops=1, same fixed protection+seed.
 
     units-t1 ((1,1,0)) is NOT a main-matrix arm (spec section 2) -- it exists
@@ -682,10 +776,17 @@ def _preflight_equiv_cells() -> tuple[dict, dict]:
         "curve": PREFLIGHT_EQUIV_CURVE, "loops": PREFLIGHT_EQUIV_LOOPS,
         "stage_tag": "preflight-eq",
     }
-    return {**common, "arm": units_t1}, {**common, "arm": ARMS_BY_LABEL["block"]}
+    # Both arms are units/block, so _cell_ap pins neither (per-bucket port) --
+    # the equivalence check is unaffected by --ap-position by construction.
+    block_arm = ARMS_BY_LABEL["block"]
+    return (
+        {**common, "arm": units_t1, "ap": _cell_ap(units_t1, ap_position)},
+        {**common, "arm": block_arm, "ap": _cell_ap(block_arm, ap_position)},
+    )
 
 
-def _calibrate_cells(loops: int, tag_suffix: str) -> list[dict]:
+def _calibrate_cells(loops: int, tag_suffix: str,
+                     ap_position: Optional[int] = None) -> list[dict]:
     """14 cells: one per arm at rt_error=[1e-5], ONE fixed protection+seed, at
     the given ``loops`` count. Called twice (loops=1 and loops=3) so
     ``run_calibrate`` can separate fixed setup cost from marginal per-loop
@@ -704,6 +805,7 @@ def _calibrate_cells(loops: int, tag_suffix: str) -> list[dict]:
             "layers": prot["layers"], "mit_key": "nomit", "mit_list": [],
             "seed": seed, "curve": CALIBRATE_RT_CURVE, "loops": loops,
             "stage_tag": f"calibrate-{tag_suffix}",
+            "ap": _cell_ap(arm, ap_position),
         })
     return cells
 
@@ -720,7 +822,9 @@ def _print_header(
     seeds: list[int],
     mitigations: list[tuple[str, list[str]]],
 ) -> None:
-    main_cells, collapse_log = _build_main_cells(seeds, mitigations, curve, loops)
+    main_cells, collapse_log = _build_main_cells(
+        seeds, mitigations, curve, loops, getattr(args, "ap_position", None)
+    )
     n_main = len(main_cells)
     n_wandb_main = n_main * len(curve)
     n_passes_main = n_wandb_main * loops
@@ -733,6 +837,11 @@ def _print_header(
     print(f"  edge_mode            : {DEFAULT_EDGE_MODE}  (fixed constant, not a flag)")
     print(f"  base_layout          : {DEFAULT_BASE_LAYOUT}  (fixed constant, not a flag; block/units arms only)")
     print(f"  metrics              : {DEFAULT_METRICS}  (fixed constant, not a flag)")
+    if getattr(args, "ap_position", None) is None:
+        print(f"  ap_position          : unset  (config default per arm; NO name token)")
+    else:
+        print(f"  ap_position          : {args.ap_position}  -> token '{ap_token(args.ap_position)}' "
+              f"on DENSE arms only (units/block resolve per bucket, unpinned + untokened)")
     print(f"  wandb_project        : {args.wandb_project or 'DISABLED'}   category={WANDB_CATEGORY}")
     print()
     print(f"  {'arm':14s} {'layout':7s} {'units(t,mp,g)':14s} {'wires':>10s} {'cells':>11s} "
@@ -857,9 +966,10 @@ def run_preflight(
     wandb_project: Optional[str],
     wandb_entity: Optional[str],
     dry_run: bool,
+    ap_position: Optional[int] = None,
 ) -> int:
-    gate_cells = _preflight_gate_cells()
-    eq_t1, eq_block = _preflight_equiv_cells()
+    gate_cells = _preflight_gate_cells(ap_position)
+    eq_t1, eq_block = _preflight_equiv_cells(ap_position)
     all_cells = gate_cells + [eq_t1, eq_block]
 
     print("-" * 78)
@@ -981,6 +1091,7 @@ def run_calibrate(
     dry_run: bool,
     main_seeds: list[int],
     main_mitigations: list[tuple[str, list[str]]],
+    ap_position: Optional[int] = None,
 ) -> int:
     """Two-point timing probe: fixed setup cost vs marginal per-loop cost.
 
@@ -1019,8 +1130,8 @@ def run_calibrate(
     labelled a "lower bound" -- it is a two-point linear fit with one known,
     small, and explained blind spot, not a bound in either direction.
     """
-    cells_lo = _calibrate_cells(CALIBRATE_LOOPS, "l1")
-    cells_hi = _calibrate_cells(CALIBRATE_LOOPS_HI, "l3")
+    cells_lo = _calibrate_cells(CALIBRATE_LOOPS, "l1", ap_position)
+    cells_hi = _calibrate_cells(CALIBRATE_LOOPS_HI, "l3", ap_position)
     print("-" * 78)
     print(f"CALIBRATE: {len(cells_lo)} arms x 2 timing points each "
           f"(loops={CALIBRATE_LOOPS} and loops={CALIBRATE_LOOPS_HI}, rt_error="
@@ -1130,7 +1241,7 @@ def _write_main_table(out_dir: Path, results: list[dict], curve: list[float]) ->
     rt_cols = [f"rt_{rt:g}_mean" for rt in curve]
     fieldnames = (
         ["arm", "layout", "rt_size", "base_layout", "threshold", "max_period", "pool_guard",
-         "protection", "mitigation", "seed", "status", "elapsed_s",
+         "protection", "mitigation", "seed", "ap", "status", "elapsed_s",
          "baseline_clean_accuracy", "experiment_name", "wires", "cells", "bits_immune_pct"]
         + rt_cols
     )
@@ -1151,6 +1262,8 @@ def _write_main_table(out_dir: Path, results: list[dict], curve: list[float]) ->
                 "protection": r["prot_tag"],
                 "mitigation": r["mit_key"],
                 "seed": r["seed"],
+                # "" (not 0) when unpinned -- 0 is a REAL port index here.
+                "ap": "" if r.get("ap") is None else r["ap"],
                 "status": r["status"],
                 "elapsed_s": r.get("elapsed_s", ""),
                 "baseline_clean_accuracy": r.get("baseline_clean_accuracy"),
@@ -1171,8 +1284,9 @@ def _main_dry_run(
     seeds: list[int], mitigations: list[tuple[str, list[str]]], curve: list[float], loops: int,
     shards: int = 1, shard_index: Optional[int] = None,
     calibration_path: Optional[Path] = None,
+    ap_position: Optional[int] = None,
 ) -> int:
-    cells, collapse_log = _build_main_cells(seeds, mitigations, curve, loops)
+    cells, collapse_log = _build_main_cells(seeds, mitigations, curve, loops, ap_position)
     if shard_index is not None:
         calibration, missing = _load_calibration(calibration_path)
         if missing:
@@ -1208,8 +1322,9 @@ def _main_dry_run(
 def _main_collect_only(
     cfg_path: Path, base_stem: str, seeds: list[int],
     mitigations: list[tuple[str, list[str]]], curve: list[float], loops: int,
+    ap_position: Optional[int] = None,
 ) -> int:
-    cells, _ = _build_main_cells(seeds, mitigations, curve, loops)
+    cells, _ = _build_main_cells(seeds, mitigations, curve, loops, ap_position)
     runner_out_dir = output_dir_from_cfg(cfg_path)
     if not runner_out_dir.is_absolute():
         runner_out_dir = REPO_ROOT / runner_out_dir
@@ -1221,7 +1336,7 @@ def _main_collect_only(
         harvested = harvest_summary(summary_path)
         results.append({
             "arm": cell["arm"], "prot_tag": cell["prot_tag"], "mit_key": cell["mit_key"],
-            "seed": cell["seed"], "exp_name": exp_name,
+            "seed": cell["seed"], "ap": cell.get("ap"), "exp_name": exp_name,
             "status": "ok" if summary_path else "missing",
             "elapsed_s": "",
             "baseline_clean_accuracy": harvested["baseline_clean_accuracy"],
@@ -1245,8 +1360,9 @@ def _main_live(
     seeds: list[int], mitigations: list[tuple[str, list[str]]], curve: list[float], loops: int,
     shards: int = 1, shard_index: Optional[int] = None,
     calibration_path: Optional[Path] = None,
+    ap_position: Optional[int] = None,
 ) -> int:
-    cells, collapse_log = _build_main_cells(seeds, mitigations, curve, loops)
+    cells, collapse_log = _build_main_cells(seeds, mitigations, curve, loops, ap_position)
     out_dir_tag = "design_space"
     shard_arms_i: Optional[list[Arm]] = None
     if shard_index is not None:
@@ -1317,7 +1433,7 @@ def _main_live(
 
         results.append({
             "arm": arm, "prot_tag": cell["prot_tag"], "mit_key": cell["mit_key"],
-            "seed": cell["seed"], "exp_name": exp_name, "status": status, "error": err,
+            "seed": cell["seed"], "ap": cell.get("ap"), "exp_name": exp_name, "status": status, "error": err,
             "elapsed_s": round(elapsed, 1),
             "summary_path": str(summary_path) if summary_path else None,
             "baseline_clean_accuracy": harvested["baseline_clean_accuracy"],
@@ -1479,6 +1595,7 @@ def _emit_shard_commands(
     cfg_path: Path, base_stem: str, wandb_project: Optional[str], wandb_entity: Optional[str],
     curve: list[float], loops: int, seeds: list[int], mitigations: list[tuple[str, list[str]]],
     n_shards: int, calibration_path: Optional[Path],
+    ap_position: Optional[int] = None,
 ) -> None:
     calibration, missing = _load_calibration(calibration_path)
     if missing:
@@ -1491,7 +1608,7 @@ def _emit_shard_commands(
     weight_source = ("measured seconds from " + str(calibration_path)) if calibration_path else \
         "fallback proxy (cells+wires per arm x that arm's cell count) -- no --calibration given"
 
-    all_cells, _ = _build_main_cells(seeds, mitigations, curve, loops)
+    all_cells, _ = _build_main_cells(seeds, mitigations, curve, loops, ap_position)
 
     out_dir = new_sweep_out_dir("design_space_shards")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1695,7 +1812,23 @@ def main(argv: list[str] | None = None) -> int:
                          "waste GPU time. NOT the default, and NOT implied by --shard-index -- "
                          "must be requested explicitly. Prints a loud WARNING naming what was "
                          "skipped; never silent.")
+    p.add_argument("--ap-position", type=int, default=None, metavar="N",
+                    help="Pin the racetrack access port to absolute index N on the DENSE arms "
+                         "and append an '_ap<N>' token to their experiment.name and W&B "
+                         "subcategory. Omitted by default: every arm keeps the config's own "
+                         "resolution and NO token is added, so names stay identical to existing "
+                         "artifacts and --collect-only still finds them. units/block arms are "
+                         "never pinned (their port is resolved per bucket as P//2-1 and the "
+                         "fault model rejects an absolute index) -- they run unpinned and "
+                         "untokened even when this flag is set. N must be valid at the SHORTEST "
+                         "dense wire (rt_size=2 => N<=1), since the model would otherwise clamp "
+                         "silently and the token would lie; in practice use 0.")
     args = p.parse_args(argv)
+
+    ap_err = validate_ap_position(args.ap_position)
+    if ap_err:
+        print(f"ERROR: {ap_err}", file=sys.stderr)
+        return 2
 
     if args.shards < 1:
         print("ERROR: --shards must be >= 1", file=sys.stderr)
@@ -1745,20 +1878,24 @@ def main(argv: list[str] | None = None) -> int:
     _print_header(args, cfg_path, curve, args.loops, args.seeds, mitigations)
 
     if args.stage == "preflight":
-        return run_preflight(cfg_path, base_stem, wandb_project, args.wandb_entity, args.dry_run)
+        return run_preflight(cfg_path, base_stem, wandb_project, args.wandb_entity, args.dry_run,
+                             ap_position=args.ap_position)
 
     if args.stage == "calibrate":
         return run_calibrate(cfg_path, base_stem, wandb_project, args.wandb_entity,
-                              args.dry_run, args.seeds, mitigations)
+                              args.dry_run, args.seeds, mitigations,
+                              ap_position=args.ap_position)
 
     # stage == "main"
     if args.collect_only:
-        return _main_collect_only(cfg_path, base_stem, args.seeds, mitigations, curve, args.loops)
+        return _main_collect_only(cfg_path, base_stem, args.seeds, mitigations, curve, args.loops,
+                                  ap_position=args.ap_position)
 
     if args.print_commands:
         try:
             _emit_shard_commands(cfg_path, base_stem, wandb_project, args.wandb_entity, curve,
-                                  args.loops, args.seeds, mitigations, args.shards, args.calibration)
+                                  args.loops, args.seeds, mitigations, args.shards, args.calibration,
+                                  ap_position=args.ap_position)
         except ValueError as exc:
             # Raised by _arm_weight on a stale (pre-two-point-fit) scalar
             # calibration.json -- surface as a clean error, not a traceback.
@@ -1770,7 +1907,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_dry_run(cfg_path, base_stem, wandb_project, args.wandb_entity,
                               args.seeds, mitigations, curve, args.loops,
                               shards=args.shards, shard_index=args.shard_index,
-                              calibration_path=args.calibration)
+                              calibration_path=args.calibration,
+                              ap_position=args.ap_position)
 
     # Live execution: gate FIRST (spec section 4), in-process -- see module
     # docstring -- UNLESS --skip-preflight explicitly asserts it already
@@ -1784,7 +1922,8 @@ def main(argv: list[str] | None = None) -> int:
               "'--stage preflight' run). If it has not, every number this invocation produces "
               "may be garbage.", file=sys.stderr)
     else:
-        gate_rc = run_preflight(cfg_path, base_stem, wandb_project, args.wandb_entity, dry_run=False)
+        gate_rc = run_preflight(cfg_path, base_stem, wandb_project, args.wandb_entity, dry_run=False,
+                                ap_position=args.ap_position)
         if gate_rc != 0:
             print("\nABORT: preflight gate failed; the main matrix would produce garbage "
                   "(see PREFLIGHT FAIL rows above). Not running the 79-cell matrix.",
@@ -1793,7 +1932,8 @@ def main(argv: list[str] | None = None) -> int:
     return _main_live(cfg_path, base_stem, wandb_project, args.wandb_entity,
                        args.seeds, mitigations, curve, args.loops,
                        shards=args.shards, shard_index=args.shard_index,
-                       calibration_path=args.calibration)
+                       calibration_path=args.calibration,
+                       ap_position=args.ap_position)
 
 
 if __name__ == "__main__":

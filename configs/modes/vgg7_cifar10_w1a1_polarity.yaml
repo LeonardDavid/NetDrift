@@ -1,0 +1,54 @@
+# MODE: POLARITY mapping (PPM) — polarity-partitioned racetrack layout.
+#
+# Sorts each window of the (COL-segmented) weight matrix so all +1 weights
+# precede all -1 weights, then lays the sorted sequence out densely. Because a
+# wire is fault-immune under edge_mode=saturate exactly when all its cells share
+# a sign, and a sorted window has only ONE sign boundary, rounding each sign
+# group up to a wire boundary makes EVERY wire immune.
+#
+# Contrast with BLOCK, which isolates every maximal sign-run in place: a run is
+# maximal by definition, so in-place segmentation yields millions of groups and
+# pays table_bits_per_weight_bit = 1.000. PPM produces exactly TWO groups per
+# window, so it reaches the same immunity at roughly dense wire count.
+#
+# The permutation is admissible because weights are frozen at inference: it is
+# fixed interconnect, not a stored runtime table. See the design doc for the
+# limits of that assumption — in particular the static-weight BLOCK control,
+# which is required for the comparison to be defensible.
+#
+# storage.partition.window is the locality knob (racetracks per sort window):
+#   0 = channel-aligned (default) — one window per row, never spans an output
+#       channel; the physically deployable instance, and the cheapest.
+#   K > 0 — sort within K wires (K * rt_size weights); bounds interconnect span
+#       at roughly (1 + 1/K) x dense wire count. Immunity is CONSTANT in K;
+#       this knob trades locality against area, not robustness.
+#
+# storage.partition.pad MUST stay true for immunity — it is the mechanism, not
+# an optimisation. pad: false is the ablation arm and is expected to collapse
+# toward the units failure mode (1/K of wires mixed-sign and fully exposed).
+#
+# Layout-only diff of the col baseline: inherits the same RTM base and flips
+# storage.layout to `polarity` + adds storage.base_layout/partition. Keep it a
+# clean diff so the polarity-vs-col/block comparison stays valid.
+#
+# NOTE: PPM caches its wire structure from the first forward, so — like BLOCK
+# and units — it rejects weight_encoder_mode=per_forward and fault-aware
+# training. This config disables the encoder entirely for a pure comparison.
+#
+# Run: python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_polarity.yaml
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_polarity
+
+storage:
+  layout: polarity              # PPM (the change vs the col config)
+  base_layout: col              # ROW/COL view PPM sorts within
+  partition:
+    window: 0                   # channel-aligned; K>0 bounds interconnect span
+    pad: true                   # LOAD-BEARING: false is the ablation, not a tweak
+
+fault:
+  weight_encoder: null          # pure layout comparison, no endlen
+  edge_mode: saturate           # PPM's immunity argument assumes saturating reads

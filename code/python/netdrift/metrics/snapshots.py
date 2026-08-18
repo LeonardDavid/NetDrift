@@ -57,17 +57,26 @@ def capture_snapshot(
         fault_model = getattr(mod, "fault_model", None)
         fm_cfg = getattr(fault_model, "cfg", None) if fault_model is not None else None
         units_params = None
+        polarity_params = None
         if fm_cfg is not None:
             units_params = (
                 int(fm_cfg.units_threshold),
                 int(fm_cfg.units_max_period),
                 int(fm_cfg.units_pool_guard),
             )
+            # Same rationale as units_params: (window, pad) lives on the
+            # RTMConfig. getattr-with-default keeps a pre-PPM pickled/stubbed
+            # cfg from breaking the snapshot path.
+            polarity_params = (
+                int(getattr(fm_cfg, "polarity_window", 0)),
+                bool(getattr(fm_cfg, "polarity_pad", True)),
+            )
         m = compute_static_metrics(
             mod.weight, rt_mapping=mod.rt_mapping or "ROW",
             kernel_mapping=mod.kernel_mapping, rt_size=rt_size,
             base_layout=getattr(mod, "base_layout", None),
             units_params=units_params,
+            polarity_params=polarity_params,
             per_channel_scale=scale, want_raw=want_raw,
         )
         per_layer[name] = m
