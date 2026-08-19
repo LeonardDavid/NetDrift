@@ -35,7 +35,7 @@ DENSE_CFG=configs/modes/vgg7_cifar10_w1a1_baseline_col.yaml
 # NB stage 1's gate curves are separate literals ([0.0] and [1e-05]) and are
 # deliberately NOT driven by this variable.
 CURVE='[4.55e-05,1e-05,1e-06]'
-LOOPS=30
+LOOPS=100
 SEEDS=(707 808 909)
 WINDOWS=(0 2 8 32)          # 0 = channel-aligned
 
