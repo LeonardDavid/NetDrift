@@ -258,3 +258,67 @@ def test_total_racetracks_units_branch_uses_cfg_kernel_mapping():
 
     assert actual == expected_col
     assert actual != expected_row
+
+
+def test_wire_purity_keys_omitted_when_none_present_when_given():
+    """Wire purity rides the same omit-when-unsupplied contract as n_racetracks.
+
+    Both are computed once in ``main()`` (they cost a pass over every weight),
+    so the config builder must never recompute them — and must not log a stale
+    zero when the caller had nothing to pass.
+    """
+    from netdrift.faults.purity import WirePurity
+    from netdrift.quant.layers import QuantizedLinear
+    from netdrift.runner.run import _wandb_config, _wandb_config_with_category
+
+    cfg = _dense_col_cfg()
+    layer = QuantizedLinear(in_features=8, out_features=4, bias=False)
+    purity = WirePurity(pure=3, mixed=1, weights_pure=30, weights_mixed=10)
+
+    omitted = _wandb_config(cfg, layer)
+    for key in ("pure_wires", "mixed_wires", "mixed_wire_frac", "pure_wire_frac",
+                "weights_on_mixed_wires", "weights_mixed_frac"):
+        assert key not in omitted
+
+    present = _wandb_config(cfg, layer, wire_purity=purity)
+    assert present["pure_wires"] == 3
+    assert present["mixed_wires"] == 1
+    assert present["mixed_wire_frac"] == 0.25
+    assert present["pure_wire_frac"] == 0.75
+    assert present["weights_on_mixed_wires"] == 10
+    assert present["weights_mixed_frac"] == 0.25
+
+    # _wandb_config_with_category must thread the same param through.
+    assert "mixed_wires" not in _wandb_config_with_category(cfg, layer, None, None)
+    threaded = _wandb_config_with_category(cfg, layer, "cat", None, wire_purity=purity)
+    assert threaded["mixed_wires"] == 1
+
+
+def test_total_wire_purity_of_a_dense_layer_matches_the_metric():
+    """``_total_wire_purity`` must measure the cfg's layout, not the layer tags.
+
+    A col layout transposes the view before segmenting, so a wrong view here
+    would report a different mixed count for the same weights.
+    """
+    import torch
+
+    from netdrift.faults.layout import _layout_weight_for_racetrack
+    from netdrift.faults.purity import wire_purity
+    from netdrift.quant.layers import QuantizedLinear
+    from netdrift.runner.run import _total_wire_purity
+
+    cfg = _dense_col_cfg("storage.rt_size=4")
+    layer = QuantizedLinear(in_features=12, out_features=3, bias=False)
+    with torch.no_grad():
+        layer.weight.copy_(torch.tensor(
+            [[+1, +1, -1, +1, -1, -1, -1, -1, +1, -1, +1, +1],
+             [-1, +1, +1, +1, +1, -1, -1, +1, -1, -1, +1, -1],
+             [+1, +1, +1, +1, +1, +1, -1, -1, -1, +1, -1, -1]], dtype=torch.float32))
+
+    actual = _total_wire_purity(cfg, layer)
+
+    w_2d, _ = _layout_weight_for_racetrack(layer.weight, rt_mapping="COL",
+                                           kernel_mapping="ROW")
+    assert actual == wire_purity(w_2d, 4, "COL")
+    # ... and that is NOT the row-view answer, so the view really is honoured.
+    assert actual != wire_purity(layer.weight, 4, "ROW")

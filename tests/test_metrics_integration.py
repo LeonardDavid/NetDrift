@@ -93,3 +93,58 @@ def test_metrics_none_writes_no_artifacts(tmp_path):
     assert not list(Path(tmp_path).rglob("metrics_artifacts")), (
         "metrics_artifacts dir created at level none"
     )
+
+
+@pytest.mark.cuda
+def test_wire_purity_lands_in_summary_and_static_artifacts(tmp_path):
+    """End-to-end: the pure/mixed wire counts must reach BOTH JSON carriers.
+
+    ``summary.json`` gets the model total (beside ``n_racetracks``);
+    ``static.json`` gets it per layer in ``meta.layers`` and per snapshot in
+    ``snapshots[].total``/``per_layer``. Breaks if ``main()`` stops threading the
+    precomputed total through, or if a serializer forgets the new field —
+    neither of which the CPU wiring tests can see.
+    """
+    from netdrift.runner.run import main
+
+    rc = main([
+        "--config", "configs/vgg3_fmnist/vgg3_fmnist_w1a1_rtm.yaml",
+        "--metrics", "offline",
+        "--override", "fault.rt_error=[0.1]",
+        "--override", "training.loops=1",
+        "--override", f"experiment.output_dir={tmp_path}",
+    ])
+    assert rc == 0
+
+    summary = json.loads(next(Path(tmp_path).rglob("summary.json")).read_text())
+    wp = summary["wire_purity"]
+    assert wp["pure"] + wp["mixed"] == wp["total"] == summary["n_racetracks"]
+    assert wp["weights_pure"] + wp["weights_mixed"] > 0
+    assert 0.0 <= wp["mixed_frac"] <= 1.0
+    assert wp["mixed_frac"] + wp["pure_frac"] == pytest.approx(1.0)
+    # A dense run on a trained BNN has mixed wires; an all-pure dense layer
+    # would mean the sign pattern is degenerate, not that the metric works.
+    assert wp["mixed"] > 0
+
+    static = json.loads(next(Path(tmp_path).rglob("*__static.json")).read_text())
+    per_layer_meta = static["meta"]["layers"]
+    assert all("wire_purity" in l for l in per_layer_meta)
+    # Internal consistency within meta.layers: purity total == the racetrack
+    # count reported beside it, layer by layer. NOT cross-checked against
+    # summary.json's total on purpose — _metrics_meta reads the display-only
+    # mod.rt_mapping (which a protected layer may never have had written, see
+    # _total_racetracks' docstring) while _total_wire_purity derives the mapping
+    # from cfg, so the two can legitimately differ on a protected layer.
+    for l in per_layer_meta:
+        assert l["wire_purity"]["total"] == l["n_racetracks"][0] * l["n_racetracks"][1]
+        assert l["wire_purity"]["pure"] + l["wire_purity"]["mixed"] == l["wire_purity"]["total"]
+    # Snapshot totals/per-layer carry it too (this is the carrier that makes a
+    # purity change across encoder/recalibration boundaries observable).
+    snap = static["snapshots"][0]
+    snap_wp = snap["total"]["wire_purity"]
+    assert snap_wp["pure"] + snap_wp["mixed"] == snap_wp["total"]
+    assert snap_wp["total"] == sum(m["wire_purity"]["total"]
+                                   for m in snap["per_layer"].values())
+    assert all("wire_purity" in m for m in snap["per_layer"].values())
+    # storage block must identify the layout fully enough to join runs on it.
+    assert static["meta"]["storage"]["base_layout"] is not None

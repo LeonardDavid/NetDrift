@@ -19,6 +19,11 @@ from netdrift.faults.layout import (
     compute_index_offset_shape,
     next_pow2,
 )
+from netdrift.faults.purity import (
+    WirePurity,
+    wire_purity,
+    wire_purity_from_buckets,
+)
 
 
 def _count_alternating_sequences(seg_signs: list[int]) -> int:
@@ -224,6 +229,10 @@ class StaticLayerMetrics:
     block_racetrack_count: int = 0
     block_size_histogram: dict = field(default_factory=dict)
     block_padding_overhead: int = 0
+    # Pure vs mixed-sign wires (faults/purity.py). ``wire_purity.total`` is the
+    # same wire count as ``n_racetracks``; ``mixed == 0`` means the layer is
+    # fault-immune under edge_mode=saturate.
+    wire_purity: WirePurity = field(default_factory=WirePurity)
 
 
 def compute_static_metrics(
@@ -304,8 +313,13 @@ def compute_static_metrics(
     # kernel_size=None lets it derive from the 4D shape for conv (ignored for linear).
     # BLOCK has no rectangular grid; its racetrack count is the number of
     # sign-blocks, reported as (n_blocks, 1) to keep the 2-tuple contract.
+    purity: WirePurity
     if rt_mapping == "BLOCK":
         n_rt = (block_rt_count, 1)
+        # Purity measures the materialised grid (padding included), so build the
+        # buckets once here rather than letting wire_purity rebuild them.
+        from netdrift.faults.layout import build_block_buckets
+        purity = wire_purity_from_buckets(build_block_buckets(w_2d, rt_size))
     elif rt_mapping == "UNITS":
         # UNITS has no rectangular grid either; its racetrack count is the
         # number of packed wires (data-dependent — a wire can pool several
@@ -334,6 +348,7 @@ def compute_static_metrics(
         )
         n_wires = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
         n_rt = (n_wires, 1)
+        purity = wire_purity_from_buckets(buckets)
     elif rt_mapping == "POLARITY":
         # PPM's wires are all exactly rt_size, but the COUNT is data-dependent:
         # padding each sign group to a wire boundary adds up to one wire per
@@ -349,14 +364,18 @@ def compute_static_metrics(
                 "attached first so the caller can read "
                 "mod.fault_model.cfg.polarity_window/polarity_pad."
             )
-        from netdrift.faults.partitioning import count_polarity_racetracks
         window, pad = polarity_params
-        n_rt = (count_polarity_racetracks(w_2d, rt_size, window=int(window),
-                                          pad=bool(pad)), 1)
+        # wire_purity walks the same plan count_polarity_racetracks counts
+        # (which is literally ``len(polarity_wire_plan(...))``), so taking the
+        # count from it keeps one pass over the plan instead of two.
+        purity = wire_purity(w_2d, rt_size, "POLARITY",
+                             polarity_params=(int(window), bool(pad)))
+        n_rt = (purity.total, 1)
     else:
         n_rt = compute_index_offset_shape(
             tuple(weight.shape), rt_size=rt_size, rt_mapping=rt_mapping, kernel_size=None
         )
+        purity = wire_purity(w_2d, rt_size, layout_mapping)
     return StaticLayerMetrics(
         block_count={"pos": pos, "neg": neg, "total": pos + neg},
         sign_transitions=transitions,
@@ -370,4 +389,5 @@ def compute_static_metrics(
         block_racetrack_count=block_rt_count,
         block_size_histogram=size_hist,
         block_padding_overhead=padding_overhead,
+        wire_purity=purity,
     )

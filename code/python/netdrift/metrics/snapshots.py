@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from netdrift.faults.purity import WirePurity
 from netdrift.metrics.static import StaticLayerMetrics, compute_static_metrics
 
 
@@ -45,6 +46,7 @@ def capture_snapshot(
     tot_pos = tot_neg = tot_transitions = 0
     tot_runlen: Counter = Counter()
     tot_alt: Counter = Counter()
+    tot_purity = WirePurity()
     for name, mod in _quant_layers(model):
         scale = getattr(mod, "scale_per_channel", None)
         # units_params (threshold, max_period, pool_guard) lives on the
@@ -98,12 +100,17 @@ def capture_snapshot(
             tot_runlen[k] += v
         for k, v in m.alternating_seq_histogram.items():
             tot_alt[k] += v
+        tot_purity = tot_purity + m.wire_purity
     totals = {
         "block_count": {"pos": tot_pos, "neg": tot_neg, "total": tot_pos + tot_neg},
         "sign_transitions": tot_transitions,
         "run_length_histogram": dict(tot_runlen),
         "alternating_seq_histogram": dict(tot_alt),
         "total_alternating_sequences": int(sum(tot_alt.values())),
+        # Pure vs mixed-sign wires summed over layers. Per snapshot, so a
+        # weight-rewriting step (endlen, recalibration) shows up as a purity
+        # change rather than being invisible.
+        "wire_purity": tot_purity.as_dict(),
     }
     return Snapshot(label=label, per_layer=per_layer, totals=totals,
                     _signs=signs, _signed_dist=signed_dist)

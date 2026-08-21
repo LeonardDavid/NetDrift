@@ -34,6 +34,7 @@ from torch.utils.data import DataLoader
 from netdrift.config import ExperimentConfig, load as load_config, parse_overrides
 from netdrift.data import build_datasets
 from netdrift.faults.mitigations import get_mitigation
+from netdrift.faults.purity import WirePurity
 from netdrift.faults.rtm_misalignment import RTMConfig, RTMMisalignmentFault
 from netdrift.faults.weight_encoders import (
     apply_weight_encoder_to_model,
@@ -516,6 +517,7 @@ def _wandb_config(
     cfg: ExperimentConfig,
     model: torch.nn.Module,
     n_racetracks: int | None = None,
+    wire_purity: WirePurity | None = None,
 ) -> dict:
     """Assemble the wandb ``config`` dict: full resolved cfg + flat conveniences.
 
@@ -578,6 +580,17 @@ def _wandb_config(
     # it in; omit rather than log a stale/wrong 0 when it wasn't supplied.
     if n_racetracks is not None:
         out["n_racetracks"] = n_racetracks
+    # Wire purity (faults/purity.py): how many of those racetracks hold a single
+    # sign and therefore cannot bitflip under edge_mode=saturate. Flat keys so
+    # the runs table sorts/filters on them; same omit-when-unsupplied rule as
+    # n_racetracks, since both are computed once by the caller.
+    if wire_purity is not None:
+        out["pure_wires"] = int(wire_purity.pure)
+        out["mixed_wires"] = int(wire_purity.mixed)
+        out["mixed_wire_frac"] = round(wire_purity.mixed_frac, 6)
+        out["pure_wire_frac"] = round(wire_purity.pure_frac, 6)
+        out["weights_on_mixed_wires"] = int(wire_purity.weights_mixed)
+        out["weights_mixed_frac"] = round(wire_purity.weights_mixed_frac, 6)
     return out
 
 
@@ -587,6 +600,7 @@ def _wandb_config_with_category(
     category: str | None,
     subcategory: str | None = None,
     n_racetracks: int | None = None,
+    wire_purity: WirePurity | None = None,
 ) -> dict:
     """``_wandb_config`` plus ``category``/``subcategory`` keys when set.
 
@@ -595,7 +609,8 @@ def _wandb_config_with_category(
     post-hoc backfill. Keys are omitted entirely when unset so ad-hoc runs stay
     clean.
     """
-    base = _wandb_config(cfg, model, n_racetracks=n_racetracks)
+    base = _wandb_config(cfg, model, n_racetracks=n_racetracks,
+                         wire_purity=wire_purity)
     if category:
         base["category"] = category
     if subcategory:
@@ -695,6 +710,46 @@ def _total_racetracks(cfg: ExperimentConfig, model: torch.nn.Module) -> int:
     return total
 
 
+def _total_wire_purity(cfg: ExperimentConfig, model: torch.nn.Module) -> WirePurity:
+    """Pure vs mixed-sign wires over ALL quantized layers under ``cfg.storage``.
+
+    The robustness companion to :func:`_total_racetracks`: ``total`` is the same
+    wire count, and ``mixed == 0`` means no wire in the model can bitflip under
+    ``edge_mode=saturate`` (see ``faults/purity.py``).
+
+    Derives the mapping from ``cfg.storage`` for the same reason
+    ``_total_racetracks`` does — a *protected* layer may never get its
+    ``rt_mapping``/``base_layout`` attributes written, so reading them off the
+    layer would make the total depend on the protection policy. Purity is a
+    property of the storage layout, so it must be protection-invariant.
+    """
+    from netdrift.faults.layout import _layout_weight_for_racetrack
+    from netdrift.faults.purity import wire_purity
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+
+    mapping = _rt_mapping_fn_for_layout(cfg.storage.layout)(None)
+    base_mapping = cfg.storage.base_layout.upper()
+    km = cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW"
+    view_mapping = base_mapping if mapping in ("BLOCK", "UNITS", "POLARITY") else mapping
+
+    total = WirePurity()
+    for _name, mod in model.named_modules():
+        if not isinstance(mod, (QuantizedConv2d, QuantizedLinear)):
+            continue
+        w_2d, _ = _layout_weight_for_racetrack(
+            mod.weight, rt_mapping=view_mapping, kernel_mapping=km,
+        )
+        total = total + wire_purity(
+            w_2d, cfg.storage.rt_size, mapping,
+            units_params=(cfg.storage.units.threshold,
+                          cfg.storage.units.max_period,
+                          cfg.storage.units.pool_guard),
+            polarity_params=(cfg.storage.partition.window,
+                             cfg.storage.partition.pad),
+        )
+    return total
+
+
 _METRICS_ONLINE_KEYS = ("bitflips", "misalign_faults", "affected_units", "wrong_bits_read")
 
 
@@ -712,6 +767,7 @@ def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
     geometry list (shape, rt_mapping, racetrack count, total weights).
     """
     from netdrift.faults.layout import compute_index_offset_shape
+    from netdrift.faults.purity import wire_purity, wire_purity_from_buckets
     from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
 
     base = _wandb_config_with_category(cfg, model, category, subcategory)
@@ -736,6 +792,7 @@ def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
             buckets = build_block_buckets(w_2d, cfg.storage.rt_size)
             n_blocks = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
             n_rt = (n_blocks, 1)
+            purity = wire_purity_from_buckets(buckets)
         elif mapping == "UNITS":
             # Like BLOCK, units has no single rectangular racetrack shape: the
             # count is the number of packed wires (data-dependent). Report it as
@@ -754,25 +811,34 @@ def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
             )
             n_wires = int(sum(b.weight_grid.shape[0] for b in buckets.values()))
             n_rt = (n_wires, 1)
+            purity = wire_purity_from_buckets(buckets)
         elif mapping == "POLARITY":
             # Like BLOCK/UNITS the count is data-dependent (padding per window),
             # so report it as (n_wires, 1) to keep the meta geometry a 2-tuple.
+            # wire_purity walks the same plan count_polarity_racetracks counts
+            # (that helper IS ``len(polarity_wire_plan(...))``), so both numbers
+            # come from one pass.
             from netdrift.faults.layout import _layout_weight_for_racetrack
-            from netdrift.faults.partitioning import count_polarity_racetracks
             base_mapping = (mod.base_layout or "ROW")
             w_2d, _ = _layout_weight_for_racetrack(
                 mod.weight, rt_mapping=base_mapping, kernel_mapping=mod.kernel_mapping,
             )
-            n_rt = (count_polarity_racetracks(
-                w_2d, cfg.storage.rt_size,
-                window=cfg.storage.partition.window,
-                pad=cfg.storage.partition.pad,
-            ), 1)
+            purity = wire_purity(
+                w_2d, cfg.storage.rt_size, "POLARITY",
+                polarity_params=(cfg.storage.partition.window,
+                                 cfg.storage.partition.pad),
+            )
+            n_rt = (purity.total, 1)
         else:
             n_rt = compute_index_offset_shape(
                 shape, rt_size=cfg.storage.rt_size,
                 rt_mapping=mapping, kernel_size=ks,
             )
+            from netdrift.faults.layout import _layout_weight_for_racetrack
+            w_2d, _ = _layout_weight_for_racetrack(
+                mod.weight, rt_mapping=mapping, kernel_mapping=mod.kernel_mapping,
+            )
+            purity = wire_purity(w_2d, cfg.storage.rt_size, mapping)
         nweights = int(mod.weight.numel())
         is_protected = bool(getattr(mod, "protected", False))
         if is_protected:
@@ -785,17 +851,31 @@ def _metrics_meta(cfg, model, *, category, subcategory) -> dict:
             "weight_shape": list(shape),
             "rt_mapping": mod.rt_mapping or "ROW",
             "n_racetracks": list(n_rt),
+            # Pure vs mixed-sign wires for THIS layer's mapping. ``total`` is the
+            # same wire count as n_racetracks above; ``mixed == 0`` means the
+            # layer cannot bitflip under edge_mode=saturate.
+            "wire_purity": purity.as_dict(),
             "total_weights": nweights,
             "protected": is_protected,
         })
+    # base_layout is what BLOCK/UNITS/POLARITY segment on, and partition is the
+    # PPM window/pad pair: without them an aggregator joining on meta.storage
+    # cannot tell the window arms of one sweep apart. partition is omitted for
+    # other layouts, where the schema ignores it — logging its defaults would
+    # imply PPM is in play (same rule as the units_* W&B keys).
+    storage = {"rt_size": base["rt_size"], "layout": base["layout"],
+               "kernel_mapping": base["kernel_mapping"],
+               "base_layout": base["base_layout"]}
+    if (cfg.storage.layout or "").lower() == "polarity":
+        storage["partition"] = {"window": int(cfg.storage.partition.window),
+                                "pad": bool(cfg.storage.partition.pad)}
     return {
         "model": base["model"],
         "dataset": base["dataset"],
         "category": category,
         "subcategory": subcategory,
         "quant": {"scheme": base["quant_scheme"], "bits": cfg.quant.bits},
-        "storage": {"rt_size": base["rt_size"], "layout": base["layout"],
-                    "kernel_mapping": base["kernel_mapping"]},
+        "storage": storage,
         "seed": base["seed"], "loops": base["loops"],
         "weight_encoder": base["weight_encoder"],
         "weight_encoder_mode": base["weight_encoder_mode"],
@@ -1005,6 +1085,20 @@ def main(argv: list[str] | None = None) -> int:
             stacklevel=2,
         )
 
+    # Wire purity rides along for the same reasons: one pass over every layer's
+    # weight signs, reused by every W&B run of the sweep and by summary.json,
+    # and guarded so a packer regression can never take down an experiment over
+    # a reporting metric.
+    wire_purity_total: WirePurity | None = None
+    try:
+        wire_purity_total = _total_wire_purity(cfg, model)
+    except Exception as exc:  # noqa: BLE001 - reporting metric must never be fatal
+        warnings.warn(
+            f"_total_wire_purity failed ({exc!r}); omitting the wire-purity "
+            "keys from the W&B config for this run",
+            stacklevel=2,
+        )
+
     # 6) Train or test
     if cfg.training.mode == "train":
         if scheme is None:
@@ -1028,7 +1122,7 @@ def main(argv: list[str] | None = None) -> int:
             name=f"{cfg.experiment.name}-train",
             config=_wandb_config_with_category(
                 cfg, model, args.wandb_category, args.wandb_subcategory,
-                n_racetracks=n_racetracks,
+                n_racetracks=n_racetracks, wire_purity=wire_purity_total,
             ),
             tags=_wandb_tags(args.wandb_category, args.wandb_subcategory),
         )
@@ -1355,7 +1449,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             base_wandb_config = _wandb_config_with_category(
                 cfg, model, args.wandb_category, args.wandb_subcategory,
-                n_racetracks=n_racetracks,
+                n_racetracks=n_racetracks, wire_purity=wire_purity_total,
             )
             online = metrics_online
             all_results = []
@@ -1545,6 +1639,16 @@ def main(argv: list[str] | None = None) -> int:
                     # this against its ARMS wire counts. None if the
                     # computation was skipped or failed (never fatal).
                     "n_racetracks": n_racetracks,
+                    # Pure vs mixed-sign wires over the same layers
+                    # n_racetracks counts (``wire_purity.total`` == that count).
+                    # ``mixed == 0`` means no wire in the model can bitflip under
+                    # edge_mode=saturate, so this is the robustness companion to
+                    # the cost x-axis above — persisted rather than only logged
+                    # so offline harvesters can plot accuracy against exposure
+                    # without rebuilding the model. None if the computation was
+                    # skipped or failed (never fatal).
+                    "wire_purity": (wire_purity_total.as_dict()
+                                    if wire_purity_total is not None else None),
                     "rt_error_sweep": all_results,
                     # Raw per-forward metric dump, NESTED PER rt_error (each entry
                     # is one forward pass / batch). Within an rt_error the stock
@@ -1569,6 +1673,7 @@ def main(argv: list[str] | None = None) -> int:
                          "weight_magnitude": m.weight_magnitude,
                          "dist_to_threshold": m.dist_to_threshold,
                          "n_racetracks": list(m.n_racetracks),
+                         "wire_purity": m.wire_purity.as_dict(),
                      } for n, m in s.per_layer.items()}}
                     for s in _snap_objs
                 ]
