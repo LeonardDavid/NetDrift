@@ -320,6 +320,14 @@ def _print_config_summary(cfg: ExperimentConfig, run_dir: Path) -> None:
     lines.append(
         f"storage    : layout={cfg.storage.layout}  rt_size={cfg.storage.rt_size}  "
         f"kernel_mapping={cfg.storage.kernel_mapping}"
+        # PPM arms often differ ONLY in partition.pad/window, which would
+        # otherwise print an identical banner -- padded and unpadded runs must be
+        # tellable apart from the log alone. Omitted for other layouts, where the
+        # schema ignores storage.partition.
+        + (f"  base_layout={cfg.storage.base_layout}"
+           f"  window={cfg.storage.partition.window}"
+           f"  pad={cfg.storage.partition.pad}"
+           if (cfg.storage.layout or "").lower() == "polarity" else "")
     )
     fault_line = (
         f"fault      : model={cfg.fault.model}  rt_error={fmt(cfg.fault.rt_error)}  "
@@ -750,6 +758,79 @@ def _total_wire_purity(cfg: ExperimentConfig, model: torch.nn.Module) -> WirePur
     return total
 
 
+def _ppm_checkpoint_is_better(candidate, best) -> bool:
+    """Is ``candidate`` a better ``ppm_count`` checkpoint than ``best``?
+
+    Both are ``(nonconforming_windows, accuracy)``. Fewer non-conforming windows
+    wins; ties break on accuracy. This is a SEPARATE selection from the
+    accuracy-only ``model_best.pt``, because the two disagree: on a real
+    fine-tune, epoch 6 held 2,275 windows at 84.47% while epoch 9 held 2,881 at
+    86.70%, so accuracy selection discards the area-optimal model. Saving both
+    gives the two ends of the trade instead of one arbitrary point on it.
+    """
+    if best is None:
+        return True
+    cand_windows, cand_acc = candidate
+    best_windows, best_acc = best
+    if cand_windows != best_windows:
+        return cand_windows < best_windows
+    return cand_acc > best_acc
+
+
+def _ppm_objective_report(cfg_model, cfg) -> dict:
+    """Progress of the ``ppm_count`` training objective, for per-epoch logging.
+
+    Returns
+
+    * ``ppm_nonconforming_windows`` — sort windows whose positive count is not a
+      multiple of ``rt_size``, over the layers the penalty can actually move
+      (protected ones excluded, as in ``losses.ppm_count_penalty``). This is the
+      quantity being minimised: at 0, unpadded PPM is immune and padded PPM
+      carries no padding overhead.
+    * ``ppm_padded_wires`` / ``ppm_dense_wires`` / ``ppm_wire_ratio`` — the
+      DEPLOYMENT cost over every layer, protected included, because area is paid
+      regardless of protection.
+
+    Cheap enough to call once per epoch (segment sums over each layer; ~25 ms for
+    vgg7 on CPU). Reported for the layout named by ``reg.ppm_base_layout`` /
+    ``reg.ppm_window``, which is the deployment layout, not the training one.
+    """
+    import math
+
+    from netdrift.faults.layout import _layout_weight_for_racetrack
+    from netdrift.faults.purity import wire_purity
+    from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
+
+    reg = cfg.training.reg
+    rt_size = cfg.storage.rt_size
+    base_layout = str(reg.ppm_base_layout).upper()
+    window = int(reg.ppm_window)
+    km = (cfg.storage.kernel_mapping or "ROW").upper()
+
+    nonconforming = padded = dense = 0
+    for _name, mod in cfg_model.named_modules():
+        if not isinstance(mod, (QuantizedConv2d, QuantizedLinear)):
+            continue
+        w_2d, _ = _layout_weight_for_racetrack(
+            mod.weight.detach(), rt_mapping=base_layout,
+            kernel_mapping=(km if mod.weight.dim() == 4 else None),
+        )
+        nr, nc = w_2d.shape
+        dense += nr * math.ceil(nc / rt_size)
+        padded += wire_purity(w_2d, rt_size, "POLARITY",
+                              polarity_params=(window, True)).total
+        if not getattr(mod, "protected", False):
+            # mixed wires under pad=False == the non-conforming window count
+            nonconforming += wire_purity(w_2d, rt_size, "POLARITY",
+                                         polarity_params=(window, False)).mixed
+    return {
+        "ppm_nonconforming_windows": int(nonconforming),
+        "ppm_padded_wires": int(padded),
+        "ppm_dense_wires": int(dense),
+        "ppm_wire_ratio": (padded / dense) if dense else 0.0,
+    }
+
+
 _METRICS_ONLINE_KEYS = ("bitflips", "misalign_faults", "affected_units", "wrong_bits_read")
 
 
@@ -1134,6 +1215,7 @@ def main(argv: list[str] | None = None) -> int:
         from netdrift.training import train_one_epoch_fault_aware
         fault_aware = cfg.training.fault_aware
         best_acc = 0.0
+        best_ppm = None   # (nonconforming_windows, accuracy) of model_best_ppm.pt
         for epoch in range(1, cfg.training.epochs + 1):
             if scheme is not None and fault_aware != "none":
                 train_loss = train_one_epoch_fault_aware(
@@ -1152,21 +1234,49 @@ def main(argv: list[str] | None = None) -> int:
             if acc > best_acc:
                 best_acc = acc
                 torch.save(model.state_dict(), run_dir / "model_best.pt")
-            run.log(
-                {
-                    "epoch": epoch,
-                    "train_loss": train_loss,
-                    "test_accuracy": acc,
-                    "lr": scheduler.get_last_lr()[0],
-                },
-                step=epoch,
-            )
+            epoch_log = {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "test_accuracy": acc,
+                "lr": scheduler.get_last_lr()[0],
+            }
+            # With the PPM objective, accuracy alone does not say whether the run
+            # is succeeding: a model can be accurate and still non-conforming
+            # (no area/immunity win), so log the objective itself every epoch.
+            # NOTE checkpoint selection above is on accuracy ONLY -- a
+            # best-accuracy epoch is not necessarily a conforming one.
+            if (fault_aware == "regularization"
+                    and cfg.training.reg.objective == "ppm_count"):
+                ppm_report = _ppm_objective_report(model, cfg)
+                epoch_log.update(ppm_report)
+                # Separate checkpoint on the OBJECTIVE: the accuracy-selected
+                # model_best.pt is routinely not the area-optimal one (the task
+                # loss reclaims windows in late epochs while accuracy rises).
+                cand = (ppm_report["ppm_nonconforming_windows"], acc)
+                if _ppm_checkpoint_is_better(cand, best_ppm):
+                    best_ppm = cand
+                    torch.save(model.state_dict(), run_dir / "model_best_ppm.pt")
+                print(f"  ppm objective: "
+                      f"{ppm_report['ppm_nonconforming_windows']} non-conforming "
+                      f"windows, wires {ppm_report['ppm_padded_wires']} "
+                      f"({ppm_report['ppm_wire_ratio']:.4f}x dense)"
+                      + ("  [saved model_best_ppm.pt]" if best_ppm == cand else ""))
+            run.log(epoch_log, step=epoch)
             scheduler.step()
         run.set_summary({"best_accuracy": best_acc, "epochs": cfg.training.epochs})
         run.finish()
         torch.save(model.state_dict(), run_dir / "model.pt")
         with open(run_dir / "train_summary.json", "w") as f:
-            json.dump({"best_accuracy": best_acc, "epochs": cfg.training.epochs}, f, indent=2)
+            train_summary = {"best_accuracy": best_acc, "epochs": cfg.training.epochs}
+            if (fault_aware == "regularization"
+                    and cfg.training.reg.objective == "ppm_count"):
+                # Final-weights objective state (model.pt), not best_acc's.
+                train_summary.update(_ppm_objective_report(model, cfg))
+                if best_ppm is not None:
+                    # The other end of the trade: model_best_ppm.pt.
+                    train_summary["best_ppm_nonconforming_windows"] = best_ppm[0]
+                    train_summary["best_ppm_accuracy"] = best_ppm[1]
+            json.dump(train_summary, f, indent=2)
         if cfg.training.save_dir:
             import shutil
             sd = Path(cfg.training.save_dir)

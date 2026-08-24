@@ -391,22 +391,78 @@ class RegCfg:
 
     Attributes:
         lambda_:       Regularizer weight (YAML key ``lambda``). 0 ⇒ plain
-                       training (no run-length term).
-        beta:          tanh sharpness for the sign surrogate. Larger ⇒ sharper.
+                       training (no penalty term).
+        beta:          tanh sharpness for the ``run_length`` sign surrogate.
+                       Larger ⇒ sharper. Unused by ``ppm_count`` (which has its
+                       own ``ppm_beta``, since the two want different values).
         inject_faults: If True, also inject RTM faults in the forward pass via
                        the STE residual (task loss on faulted weights). Fault
                        persistence chosen by ``training.fault_state_mode``.
+        objective:     Which penalty ``lambda_`` scales.
+                       ``run_length`` (default, unchanged behaviour) lengthens
+                       same-sign runs along a racetrack.
+                       ``ppm_count`` drives each PPM sort window's positive
+                       count to a multiple of ``rt_size``, which removes PPM's
+                       padding overhead and — at zero — makes unpadded PPM
+                       fault-immune (``losses.ppm_count_penalty``).
+        ppm_window:    ``ppm_count`` only: racetracks per sort window, ``0`` =
+                       channel-aligned. NOTE odd windows are structurally
+                       expensive (the balanced sign-count mode sits rt_size/2
+                       from any multiple, ~45% of weights must flip); prefer 0
+                       or an even K.
+        ppm_base_layout: ``ppm_count`` only: the ROW/COL view PPM will sort
+                       within at DEPLOYMENT. Independent of the layout used
+                       during training — a model can be trained under
+                       ``storage.layout=col`` and evaluated under ``polarity``.
+        ppm_beta:      ``ppm_count`` only: sigmoid sharpness of the soft count.
+                       20 is where the surrogate converges to the minimal flip
+                       set; below ~10 it stalls with windows left
+                       non-conforming.
+        lambda_warmup_epochs: Ramp ``lambda_`` linearly from 0 to its full value
+                       over this many epochs (``0`` = no ramp, the previous
+                       behaviour). Matters when fine-tuning a CONVERGED model:
+                       applying full lambda at once asks it to migrate every
+                       non-conforming window's signs immediately, and doing that
+                       migration post-hoc was measured to take vgg7 from 88.19%
+                       to 10.00% (chance) with recalibration recovering nothing.
+                       A ramp lets the task loss compensate while the signs move.
     """
 
     lambda_: float = 0.0
     beta: float = 4.0
     inject_faults: bool = False
+    objective: str = "run_length"
+    ppm_window: int = 0
+    ppm_base_layout: str = "col"
+    ppm_beta: float = 20.0
+    lambda_warmup_epochs: int = 0
 
     def __post_init__(self) -> None:
         if self.lambda_ < 0:
             raise ValueError(f"reg.lambda must be >= 0; got {self.lambda_}")
         if self.beta <= 0:
             raise ValueError(f"reg.beta must be > 0; got {self.beta}")
+        if self.objective not in ("run_length", "ppm_count"):
+            raise ValueError(
+                "reg.objective must be run_length|ppm_count; "
+                f"got {self.objective!r}"
+            )
+        if int(self.ppm_window) < 0:
+            raise ValueError(
+                f"reg.ppm_window must be >= 0 (0 = channel-aligned); "
+                f"got {self.ppm_window}"
+            )
+        if str(self.ppm_base_layout).lower() not in ("row", "col"):
+            raise ValueError(
+                f"reg.ppm_base_layout must be row|col; got {self.ppm_base_layout!r}"
+            )
+        if self.ppm_beta <= 0:
+            raise ValueError(f"reg.ppm_beta must be > 0; got {self.ppm_beta}")
+        if int(self.lambda_warmup_epochs) < 0:
+            raise ValueError(
+                "reg.lambda_warmup_epochs must be >= 0 (0 = no ramp); "
+                f"got {self.lambda_warmup_epochs}"
+            )
 
 
 @dataclass

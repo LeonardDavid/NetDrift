@@ -1,0 +1,96 @@
+# MODE: PPM window-count regularizer — train a BNN whose sign counts suit PPM.
+#
+# A PPM sort window costs one extra padded wire (storage.partition.pad=true), or
+# leaves one mixed and fault-exposed wire (pad=false), exactly when its positive
+# count is not a multiple of rt_size. This trains toward counts that ARE
+# multiples, so that at evaluation time:
+#   pad=true  -> padding overhead goes to zero: PPM costs exactly dense wires
+#                (measured 224,019 -> 203,574 on vgg7/col, i.e. 1.100x -> 1.000x)
+#   pad=false -> every wire is sign-pure: immunity at dense wire count
+# Immunity is never at risk while pad stays true: the payoff is continuous in the
+# number of conforming windows, so partial success is still an area win.
+#
+# ── This is a TRAIN config; PPM is not active here ─────────────────────────
+# storage.layout stays `col`, NOT `polarity`: the packing paths cache their wire
+# structure from the first forward and cannot track sign-mutating training (see
+# runner/run.py::_validate_block_layout_combo). The penalty does not need PPM
+# active — it takes its view from training.reg.ppm_base_layout, which describes
+# the DEPLOYMENT layout. Evaluate the resulting checkpoint under
+# configs/modes/vgg7_cifar10_w1a1_polarity.yaml.
+#
+# ── Knob guidance (measured, see the feasibility probe) ────────────────────
+# ppm_beta: 20 is where the straight-through surrogate converges to the minimal
+#   flip set. Below ~10 it stalls with windows left non-conforming; 50 converges
+#   but overshoots the flip count.
+# ppm_window: 0 (channel-aligned) or an EVEN K. An odd K puts the balanced
+#   sign-count mode rt_size/2 away from any multiple, so ~45% of all weights
+#   would have to flip (versus 1.2-3.5% for channel-aligned).
+# lambda: START WITH A SWEEP — this is the accuracy-vs-area trade and the right
+#   value is exactly what the experiment is for. The 50 below is anchored on
+#   FROM-SCRATCH training: the penalty measures ~0.037 on RANDOM-INIT vgg7 shapes
+#   while the hinge task loss is O(1e-1..1), so 10..100 puts them in the same
+#   order of magnitude. ⚠️ That number does NOT transfer to fine-tuning from a
+#   trained checkpoint: a trained BNN's window counts already sit close to a
+#   multiple (on model_best.pt, 20,445 of 20,763 windows are non-conforming but
+#   each by only a few counts), so the penalty starts far smaller and lambda has
+#   to be re-measured the same way for that regime.
+#
+# ── Why training is the ONLY viable route (measured 2026-08-21) ────────────
+# The greedy post-hoc baseline (scripts/ppm_align_checkpoint.py) hits the same
+# objective OPTIMALLY — 20,445 -> 1,050 overhead wires, 1.1004x -> 1.0052x dense —
+# by flipping 2.384% of the weights (309,003), all from the low end of |w|
+# (per-layer mean percentile 2.2-11.5). Evaluating that checkpoint:
+#
+#     clean accuracy 88.19%  ->  10.00%   (chance)
+#     with BN/Scale recalibration       ->  10.00%   (recovers nothing)
+#
+# The transform is provably negation-only (elementwise |w| preserved, see
+# test_align_model_changes_signs_only_never_magnitudes_or_positions), so this is
+# a real sensitivity result, not a bug: a converged BNN cannot absorb having
+# 2.4% of its signs rewritten, however cheap those signs look individually, and
+# recalibration cannot help because the information is destroyed rather than
+# miscalibrated.
+#
+# That is the case FOR this regularizer: the constraint has to be present while
+# the network is still free to restructure around it. It also means the
+# comparison is no longer "regularizer vs greedy" — greedy scores chance. The
+# question is whether ANY conforming solution is also accurate.
+#
+# ── Two arms, and the warm-up ─────────────────────────────────────────────
+# FINE-TUNE (this config as written): the base config supplies
+# model.checkpoint, so training starts from the trained BNN. Cheap (hours), and
+# it asks the net to migrate the same 2.4% of signs GRADUALLY with the task loss
+# compensating. Use lambda_warmup_epochs > 0 — full lambda on epoch 1 is the
+# post-hoc shock above, just spread over one epoch. Consider a lower lr than the
+# from-scratch default.
+# FROM SCRATCH: add `--override model.checkpoint=null`. Expensive, but the
+# network never has to give up signs it already committed to.
+#
+# Run:
+#   python netdrift_run.py --config configs/modes/vgg7_cifar10_w1a1_ppmreg.yaml \
+#       --override training.reg.lambda=50
+defaults:
+  - ../vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml
+
+experiment:
+  name: mode_vgg7_w1a1_ppmreg
+
+storage:
+  layout: col                   # training layout; PPM is applied at eval
+  base_layout: col              # kept in sync with reg.ppm_base_layout below
+
+training:
+  mode: train
+  fault_aware: regularization   # dispatches to the penalty named below
+  reg:
+    objective: ppm_count        # the PPM window-count penalty
+    lambda: 50.0                # SWEEP THIS (see above)
+    ppm_base_layout: col        # deployment view PPM will sort within
+    ppm_window: 0               # channel-aligned; even K also fine, odd K is not
+    ppm_beta: 20.0              # surrogate sharpness (measured optimum)
+    lambda_warmup_epochs: 10    # ramp lambda in: see the note above
+    inject_faults: false        # no fault injection needed for this objective
+
+fault:
+  weight_encoder: null          # pure comparison, no endlen
+  edge_mode: saturate           # the immunity argument assumes saturating reads

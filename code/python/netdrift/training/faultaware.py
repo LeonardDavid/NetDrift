@@ -26,8 +26,9 @@ Fault-state modes (only relevant when faults are injected):
                    semantics. Faithful to one deployment scenario but risks
                    overfitting BN/weights to a single fault realization.
 
-``fault_aware`` dispatch: ``regularization`` adds ``lambda_ * run_length_penalty``
-to the task loss; ``ste_inject`` trains the task loss on faulted weights with no
+``fault_aware`` dispatch: ``regularization`` adds ``lambda_ *`` the penalty named
+by ``reg.objective`` (``run_length_penalty`` by default, ``ppm_count_penalty``
+for PPM window sign-counts) to the task loss; ``ste_inject`` trains the task loss on faulted weights with no
 run-length term; ``kd`` additionally distills from a clean teacher (deferred —
 raises NotImplementedError until implemented).
 """
@@ -40,7 +41,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from netdrift.quant.layers import QuantizedConv2d, QuantizedLinear
-from netdrift.training.losses import build_criterion, run_length_penalty
+from netdrift.training.losses import (
+    build_criterion,
+    ppm_count_penalty,
+    run_length_penalty,
+)
 
 try:
     from tqdm.auto import tqdm
@@ -50,6 +55,46 @@ except ImportError:  # pragma: no cover
 
     def tqdm(iterable, **kwargs):  # type: ignore[no-redef]
         return iterable
+
+
+def _effective_lambda(reg, epoch: int) -> float:
+    """``reg.lambda_``, linearly ramped over ``reg.lambda_warmup_epochs``.
+
+    ``epoch`` is 1-based (as in runner/run.py's loop), so a 4-epoch warm-up
+    applies 1/4, 2/4, 3/4 and then the full weight. With
+    ``lambda_warmup_epochs == 0`` this is the identity.
+
+    The ramp exists because a converged model cannot absorb its non-conforming
+    windows being fixed all at once: doing exactly that post-hoc took vgg7 from
+    88.19% to 10.00% (see faults/ppm_align.py).
+    """
+    warmup = int(getattr(reg, "lambda_warmup_epochs", 0) or 0)
+    if warmup <= 0:
+        return float(reg.lambda_)
+    return float(reg.lambda_) * min(1.0, epoch / warmup)
+
+
+def _reg_penalty(model, reg, *, rt_size: int, layout: str, kernel_mapping: str):
+    """The penalty ``reg.lambda_`` scales, selected by ``reg.objective``.
+
+    ``run_length`` (default) is the adjacent sign-agreement surrogate over the
+    training layout. ``ppm_count`` targets PPM's window sign-counts and takes its
+    view from ``reg.ppm_base_layout`` rather than the training ``layout``: the
+    objective describes the DEPLOYMENT layout, so a model trained under
+    ``storage.layout=col`` can be optimised for evaluation under ``polarity``
+    (which cannot itself be the training layout — the packing paths cache their
+    structure from the first forward, see ``_validate_block_layout_combo``).
+    """
+    if reg.objective == "ppm_count":
+        return ppm_count_penalty(
+            model, beta=reg.ppm_beta, rt_size=rt_size,
+            base_layout=reg.ppm_base_layout, window=reg.ppm_window,
+            kernel_mapping=kernel_mapping,
+        )
+    return run_length_penalty(
+        model, beta=reg.beta, rt_size=rt_size, layout=layout,
+        kernel_mapping=kernel_mapping,
+    )
 
 
 def _contributing_layers(model: nn.Module):
@@ -127,8 +172,8 @@ def train_one_epoch_fault_aware(
             out = model(data)
             loss = loss_fn(out, target).mean()
             if use_reg:
-                loss = loss + cfg.reg.lambda_ * run_length_penalty(
-                    model, beta=cfg.reg.beta, rt_size=rt_size,
+                loss = loss + _effective_lambda(cfg.reg, epoch) * _reg_penalty(
+                    model, cfg.reg, rt_size=rt_size,
                     layout=layout, kernel_mapping=kernel_mapping,
                 )
             loss.backward()
