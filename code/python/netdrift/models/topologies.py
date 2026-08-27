@@ -2,11 +2,15 @@
 
 Two families:
 
-1. **Custom topologies** (VGG3, VGG7) — ported from the legacy ``Models.py``
+1. **Custom topologies** (VGG3, VGG7, ResNet18) — ported from the legacy ``Models.py``
    with their original attribute layout (``conv1``, ``bn1``, ``qact1``, ...,
    ``scale``). Built initially as ``nn.Conv2d``/``nn.Linear`` so that
    ``replace_with_quantized`` can swap them, and the resulting state-dict
    keys match the existing HuggingFace checkpoints.
+
+   The ResNet18 variant is sized for 64x64 Imagenette and, like the VGGs,
+   carries ``Hardtanh`` + ``QuantizedActivation`` at every activation site —
+   the torchvision ResNets below cannot express w1a1 for want of both.
 
 2. **Torchvision wrappers** — ResNet/MobileNet/ViT in both ImageNet
    (224×224) and CIFAR (32×32) variants. The CIFAR variants patch the first
@@ -19,7 +23,7 @@ All builders return non-quantized models. The runner applies
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
@@ -206,6 +210,156 @@ def _vgg7_cifar10_fp() -> nn.Module:
 @register_model("vgg7_cifar100_fp")
 def _vgg7_cifar100_fp() -> nn.Module:
     return VGG7(num_classes=100, activation=nn.ReLU())
+
+
+# ---------------------------------------------------------------------------
+# ResNet18 (Imagenette, 64x64) — 21 quantized layers (20 conv + 1 linear)
+# ---------------------------------------------------------------------------
+
+
+class BasicBlock(nn.Module):
+    """Binary ResNet basic block, ported from the legacy ``Models.py`` ResNet.
+
+    Attribute names (``conv1``, ``bn1``, ``conv2``, ``bn2``, ``shortcut``) match
+    the legacy NetDrift ResNet, so legacy checkpoints keep loading and the
+    ``fc.`` → ``linear.`` remap in the checkpoint adapter still applies.
+
+    Activation placement is what makes this a BNN block rather than a
+    torchvision one: ``Hardtanh`` (not ReLU) clamps to ``[-1, 1]`` after ``bn1``
+    and after the residual add, and a :class:`QuantizedActivation` site sits at
+    each of those two points. The clamp is a hard requirement of
+    :class:`~netdrift.quant.uniform.IntUniformActScheme` (W1A2/W1A4), and the
+    qact sites are where ``attach_activation_scheme`` binds — a ReLU block has
+    neither, which is why the torchvision wrappers cannot express w1a1.
+
+    The 1x1 ``shortcut`` conv exists only where the stage changes stride or
+    width; elsewhere ``shortcut`` is an empty ``Sequential`` (identity).
+    """
+
+    expansion = 1
+
+    def __init__(
+        self,
+        in_planes: int,
+        planes: int,
+        stride: int = 1,
+        kernel_size: int = 3,
+        activation: Optional[Callable[[], nn.Module]] = None,
+    ) -> None:
+        super().__init__()
+        act = activation if activation is not None else _Htanh
+        self.htanh = act()
+        self.conv1 = nn.Conv2d(
+            in_planes, planes, kernel_size, stride=stride, padding=1, bias=False
+        )
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.qact1 = QuantizedActivation()
+        self.conv2 = nn.Conv2d(
+            planes, planes, kernel_size, stride=1, padding=1, bias=False
+        )
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expansion * planes:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(
+                    in_planes, self.expansion * planes, 1, stride=stride, bias=False
+                ),
+                nn.BatchNorm2d(self.expansion * planes),
+            )
+        self.qact2 = QuantizedActivation()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.qact1(self.htanh(self.bn1(self.conv1(x))))
+        out = self.bn2(self.conv2(out))
+        out = out + self.shortcut(x)
+        return self.qact2(self.htanh(out))
+
+
+class ResNet(nn.Module):
+    """ResNet18 sized for 64x64 Imagenette. Attribute layout matches legacy ``Models.py``.
+
+    Geometry (64x64 in): stem keeps resolution (3x3 stride 1, no ImageNet
+    maxpool), stages 2-4 halve it, an extra ``max_pool2d(2)`` sits between
+    stage 3 and stage 4, and the head pools whatever is left to 1x1:
+    64 → 64 → 32 → 16 → 8 → 4 → 1, so ``linear`` sees 512 features. The legacy
+    forward hard-coded ``max_pool2d(·, 4)`` for that last step, which is exactly
+    ``adaptive_max_pool2d(·, 1)`` at 64px but also survives other input sizes.
+
+    ``activation`` is a *factory* (each site needs its own module instance):
+    ``_Htanh`` for the BNN, ``nn.ReLU`` for the full-precision warm-start twin.
+    Activation modules carry no parameters, so both variants produce identical
+    state-dict keys and ``fp32_warmstart`` is a pure load.
+
+    Layer numbering, for ``fault.protection.layers``: ``replace_with_quantized``
+    enumerates the root's own children before descending, so the ids are
+    ``1 = conv1``, ``2 = linear``, then ``3..21`` walking the stages
+    (``conv1``, ``conv2``, ``shortcut.0`` within each block). Note that
+    ``model.skip_last_quant`` therefore skips ``layer4.1.conv2``, NOT the
+    classifier — keep the first conv and the classifier out of the fault
+    simulation with ``fault.protection`` instead.
+    """
+
+    def __init__(
+        self,
+        num_blocks: tuple[int, int, int, int] = (2, 2, 2, 2),
+        num_classes: int = 10,
+        kernel_size: int = 3,
+        activation: Optional[Callable[[], nn.Module]] = None,
+    ) -> None:
+        super().__init__()
+        act = activation if activation is not None else _Htanh
+        self._act = act
+        self._kernel_size = kernel_size
+        self.in_planes = 64
+
+        self.htanh = act()
+        self.conv1 = nn.Conv2d(3, 64, kernel_size, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.qact1 = QuantizedActivation()
+
+        self.layer1 = self._make_layer(64, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(128, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(256, num_blocks[2], stride=2)
+        self.layer4 = self._make_layer(512, num_blocks[3], stride=2)
+
+        self.linear = nn.Linear(512 * BasicBlock.expansion, num_classes, bias=False)
+        self.scale = Scale(init_value=1e-3)
+
+    def _make_layer(self, planes: int, num_blocks: int, stride: int) -> nn.Sequential:
+        strides = [stride] + [1] * (num_blocks - 1)
+        blocks = []
+        for s in strides:
+            blocks.append(
+                BasicBlock(
+                    self.in_planes, planes, stride=s,
+                    kernel_size=self._kernel_size, activation=self._act,
+                )
+            )
+            self.in_planes = planes * BasicBlock.expansion
+        return nn.Sequential(*blocks)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.qact1(self.htanh(self.bn1(self.conv1(x))))
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = F.max_pool2d(out, 2)
+        out = self.layer4(out)
+        out = F.adaptive_max_pool2d(out, 1)
+        out = torch.flatten(out, 1)
+        out = self.linear(out)
+        out = self.scale(out)
+        return out
+
+
+@register_model("resnet18_imagenette")
+def _resnet18_imagenette() -> nn.Module:
+    return ResNet(num_classes=10)
+
+
+@register_model("resnet18_imagenette_fp")
+def _resnet18_imagenette_fp() -> nn.Module:
+    return ResNet(num_classes=10, activation=nn.ReLU)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,72 @@
+# Stage 1: Full-precision ResNet18 training on Imagenette (64x64).
+#
+# Trains the ReLU twin of the BNN topology from random init. quant.scheme=none
+# skips replace_with_quantized and the fault model entirely. The resulting
+# checkpoint feeds Stage 2 via checkpoint_mode=fp32_warmstart — the two
+# variants share their state-dict keys exactly (activation modules carry no
+# parameters), so that load is a pure transfer, not a partial one.
+#
+# Imagenette must be present at data/imagenette2/{train,val} — the loader does
+# NOT download it. On the GPU host:
+#   wget https://s3.amazonaws.com/fast-ai-imageclas/imagenette2.tgz -P data/
+#   cd data && tar xzf imagenette2.tgz
+#
+# 9,469 train / 3,925 val images ⇒ ~74 iterations per epoch at batch_size 128.
+# Run: python netdrift_run.py --config configs/resnet18_imagenette/resnet18_imagenette_fp_train.yaml
+
+experiment:
+  name: resnet18_imagenette_fp
+  output_dir: runs/
+  seed: 707
+
+model:
+  name: resnet18_imagenette_fp   # ResNet(activation=nn.ReLU) — see models/topologies.py
+  checkpoint: null
+  checkpoint_mode: strict
+  kernel_size: 3
+  # NB: skip_last_quant does NOT spare the classifier on this topology — the
+  # root's children are traversed first, so the last swapped layer is
+  # layer4.1.conv2. Keep both false and use fault.protection instead.
+  skip_first_quant: false
+  skip_last_quant: false
+
+data:
+  name: imagenette          # ImageFolder over data/imagenette2, resized to 64x64
+  batch_size: 128
+  test_batch_size: 128
+  num_workers: 4
+  data_dir: data
+
+quant:
+  scheme: none              # full precision; no quantized layers, no fault model
+
+storage:
+  layout: row
+  base_layout: row
+  rt_size: 64
+  kernel_mapping: row
+
+fault:
+  model: rtm_misalignment
+  rt_error: 0.0
+  mitigations: []
+  protection:
+    policy: all
+
+training:
+  mode: train
+  fault_aware: none
+  epochs: 80                # small dataset, cheap epochs; watch for overfitting
+  lr: 0.05                  # SGD + momentum 0.9 + wd 1e-4 (set by the runner for FP)
+  gamma: 0.1
+  step_size: 30             # decays at ep 30 and 60
+  save_dir: models/fp/resnet18_imagenette
+
+metrics:
+  online: []
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0
