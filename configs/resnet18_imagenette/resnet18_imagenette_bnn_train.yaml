@@ -1,0 +1,78 @@
+# Stage 2: Binary (w1a1) ResNet18 training on Imagenette, warm-started from Stage 1.
+#
+# fp32_warmstart transfers the FP weights into the binarized model; the latent
+# FP weights keep training under BinaryHingeLoss + Clippy (Adam + [-1,1] clamp),
+# the standard NetDrift BNN recipe.
+#
+# No faults are injected here: with fault_aware=none the runner deliberately
+# leaves the fault model unbound, because inject() detaches the weight gradient
+# and would freeze every binary weight while BN/Scale kept training. Set
+# training.fault_aware to ste_inject/regularization for fault-aware variants.
+#
+# Run Stage 1 first, then:
+#   python netdrift_run.py --config configs/resnet18_imagenette/resnet18_imagenette_bnn_train.yaml
+
+experiment:
+  name: resnet18_imagenette_bnn
+  output_dir: runs/
+  seed: 707
+
+model:
+  name: resnet18_imagenette      # ResNet(activation=Hardtanh) + qact sites
+  checkpoint: models/fp/resnet18_imagenette/model_best.pt   # produced by Stage 1
+  checkpoint_mode: fp32_warmstart
+  kernel_size: 3
+  skip_first_quant: false        # see the note in the Stage 1 config
+  skip_last_quant: false
+
+data:
+  name: imagenette
+  batch_size: 128
+  test_batch_size: 128
+  num_workers: 4
+  data_dir: data
+
+quant:
+  scheme: binary
+  scale_init: max_abs
+  # activation_scheme stays "none": the qact sites pass through and activations
+  # are Hardtanh-clamped, matching the w1a1 configs of the other models. Set
+  # activation_scheme=int_uniform + activation_bits=2/4 for W1A2/W1A4.
+
+storage:
+  layout: row                    # racetrack mapping used by the regularizer/metrics
+  base_layout: row
+  rt_size: 64
+  kernel_mapping: row            # row|col only — clw/acw need 3x3 kernels and this
+                                 # topology has 1x1 shortcut convs
+fault:
+  model: rtm_misalignment
+  rt_error: 0.0                  # not injected in this mode (see header)
+  mitigations: []
+  protection:
+    policy: all
+
+training:
+  mode: train
+  fault_aware: none
+  epochs: 150                    # BNNs need more epochs than the FP stage
+  lr: 0.001                      # Clippy (Adam); bump to 3e-3 if loss stagnates early
+  gamma: 0.1
+  step_size: 50                  # decays at ep 50 (1e-4) and ep 100 (1e-5)
+  save_dir: models/w1a1/resnet18_imagenette/
+  fault_state_mode: fresh
+  criterion: hinge               # modified hinge loss (MHL); cross_entropy also valid
+  hinge_b: 128.0
+  recalibrate:
+    enabled: false
+  reg:
+    lambda: 0.0
+
+metrics:
+  online: []
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0

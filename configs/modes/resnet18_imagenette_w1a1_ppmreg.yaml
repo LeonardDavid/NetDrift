@@ -1,0 +1,77 @@
+# MODE: PPM window-count regularizer for ResNet18 / Imagenette.
+#
+# ResNet18 twin of configs/modes/vgg7_cifar10_w1a1_ppmreg.yaml — read that file
+# for the mechanism, the lambda guidance, and why the post-hoc greedy route is
+# dead. Only the model-specific notes are repeated here.
+#
+# ── storage.layout stays `col` (a TRAIN config; PPM is not active) ─────────
+# The packing paths cache their wire structure from the first forward and
+# cannot track sign-mutating training (runner/run.py::_validate_block_layout_combo).
+# The penalty does not need PPM active — it takes its view from
+# training.reg.ppm_base_layout, which describes the DEPLOYMENT layout. Train one
+# checkpoint PER VIEW and evaluate each under storage.layout=polarity with the
+# matching storage.base_layout.
+#
+# ── ⚠️ WINDOW-WIDTH PARITY ON THIS TOPOLOGY ───────────────────────────────
+# Channel-aligned (window=0) puts one sort window per row of the base 2D view,
+# so the window width W is `in_ch*k*k` at base_layout=row and `out_ch` at
+# base_layout=col. The per-window flip budget is the distance from W/2 to the
+# nearest multiple of rt_size — zero only when W % (2*rt_size) == 0, and worst
+# (W/2, i.e. ~50% of the window) when W == rt_size. For ResNet18 at rt_size=64:
+#
+#   base_layout=col  W = out_ch: layer1's four convs have out_ch=64 == rt_size
+#                    => the 50% case, but only 147,456 of ~11.16M weights.
+#                    Every other layer (128/256/512) has W/2 exactly on a
+#                    multiple of 64 => ~0 flips.
+#   base_layout=row  W = in_ch*k*k: layer2.0.shortcut.0 is 1x1 with in_ch=64,
+#                    so W = 64 == rt_size => the 50% case (8,192 weights). The
+#                    five 576-wide layers cost ~5.6% each; the rest ~0.
+#
+# Both views therefore look CHEAPER than vgg7's measured 2.384% model-wide.
+# That is an architectural prediction, not a measurement — confirm it on the
+# real checkpoint before committing GPU time:
+#
+#   python scripts/ppm_align_checkpoint.py \
+#       --config configs/resnet18_imagenette/resnet18_imagenette_w1a1_rtm.yaml \
+#       --base-layout col --window 0 --dry-run
+#
+# It prints per-layer flip cost, the before/after wire table, and explicit
+# width-parity warnings, and writes nothing.
+#
+# Run (one per deployment view):
+#   python netdrift_run.py --config configs/modes/resnet18_imagenette_w1a1_ppmreg.yaml \
+#       --override training.reg.ppm_base_layout=col \
+#       --override storage.base_layout=col \
+#       --override training.save_dir=models/w1a1/resnet18_imagenette/ppmreg_col
+defaults:
+  - ../resnet18_imagenette/resnet18_imagenette_w1a1_rtm.yaml
+
+experiment:
+  name: resnet18_imagenette_w1a1_ppmreg
+
+storage:
+  layout: col                   # training layout; PPM is applied at eval
+  base_layout: col              # kept in sync with reg.ppm_base_layout below
+  kernel_mapping: row           # ROW-ONLY topology: the three 1x1 shortcut convs
+                                # make every other mapping raise NotImplementedError
+
+training:
+  mode: train
+  fault_aware: regularization   # dispatches to the penalty named below
+  reg:
+    objective: ppm_count        # the PPM window-count penalty
+    lambda: 50.0                # anchored on vgg7; re-measure if the objective stalls
+    ppm_base_layout: col        # deployment view PPM will sort within
+    ppm_window: 0               # channel-aligned; even K also fine, odd K is not
+    ppm_beta: 20.0              # surrogate sharpness (measured optimum)
+    lambda_warmup_epochs: 5     # ramp lambda in — full lambda on epoch 1 is a shock
+    inject_faults: false        # no fault injection needed for this objective
+  # Fine-tune schedule that won on vgg7 (88.04% at 1.0064x dense wires).
+  epochs: 30
+  lr: 0.0001
+  gamma: 0.05
+  step_size: 10
+
+fault:
+  weight_encoder: null          # pure comparison, no endlen
+  edge_mode: saturate           # the immunity argument assumes saturating reads

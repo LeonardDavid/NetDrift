@@ -241,6 +241,29 @@ def _build_fault_model(
     raise NotImplementedError(f"fault model {cfg.fault.model!r} not yet implemented")
 
 
+def _fault_model_for_mode(cfg: ExperimentConfig, fault_model):
+    """Return the fault model to bind to the layers, or ``None`` to leave them clean.
+
+    ``inject()`` returns a tensor rebuilt from NumPy, which severs the autograd
+    graph between a layer's output and its latent weight — only the fault-aware
+    loops repair that, via ``fault_grad_passthrough``. So in ``mode=train`` with
+    ``fault_aware=none`` a bound fault model cannot contribute anything: it
+    would freeze every binary weight at its warm-started value while BatchNorm
+    and Scale carried on training, at any ``rt_error`` including ``0.0``.
+    Injection is skipped there so plain BNN training actually trains weights.
+
+    Test mode and every fault-aware training mode bind it unchanged. Side note:
+    ``fault.weight_encoder_mode=per_forward`` fires inside ``inject``, so it
+    becomes a no-op in plain training — it was already useless there (the same
+    detach froze the weights it re-encoded), but the symptom changes from
+    "weights never move" to "no per-forward encoding". ``mode=once`` runs
+    outside ``inject`` and is unaffected.
+    """
+    if cfg.training.mode == "train" and cfg.training.fault_aware == "none":
+        return None
+    return fault_model
+
+
 def _sanitize_path_segment(s: str) -> str:
     """Make a label safe to use as a single path segment.
 
@@ -1138,8 +1161,16 @@ def main(argv: list[str] | None = None) -> int:
             layers=cfg.fault.protection.layers,
             indiv_layer=cfg.fault.protection.indiv_layer,
         )
+        bound_fault_model = _fault_model_for_mode(cfg, fault_model)
+        if bound_fault_model is None and fault_model is not None:
+            print(
+                "note: mode=train with fault_aware=none — fault model built but NOT "
+                "bound to the layers (injection would detach the weight gradient and "
+                "freeze every binary weight). Set training.fault_aware to inject "
+                "during training."
+            )
         attach_fault_model(
-            model, fault_model,
+            model, bound_fault_model,
             rt_mapping_fn=_rt_mapping_fn_for_layout(cfg.storage.layout),
             kernel_mapping=cfg.storage.kernel_mapping.upper() if cfg.storage.kernel_mapping else "ROW",
             base_layout=(cfg.storage.base_layout.upper()

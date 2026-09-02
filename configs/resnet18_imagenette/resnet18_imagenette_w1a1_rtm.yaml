@@ -1,0 +1,89 @@
+# Stage 3: RTM misalignment fault sweep over the binary ResNet18 / Imagenette model.
+#
+# Loads the Stage 2 checkpoint strict and evaluates once per rt_error, `loops`
+# times each (fault state accumulates across loops, resets between rt_errors).
+#
+# Run: python netdrift_run.py --config configs/resnet18_imagenette/resnet18_imagenette_w1a1_rtm.yaml
+
+experiment:
+  name: resnet18_imagenette_rtm_baseline
+  output_dir: runs/
+  seed: 707
+
+model:
+  name: resnet18_imagenette
+  checkpoint: models/w1a1/resnet18_imagenette/model_best.pt
+  checkpoint_mode: strict
+  kernel_size: 3
+  skip_first_quant: false
+  skip_last_quant: false
+
+data:
+  name: imagenette
+  batch_size: 128
+  test_batch_size: 128
+  num_workers: 1
+  data_dir: data
+
+quant:
+  scheme: binary
+  scale_init: max_abs
+
+storage:
+  layout: row                   # row | col | block | units | polarity
+  base_layout: row              # base segmentation for block/units/polarity
+  rt_size: 64
+  kernel_mapping: row           # row | col only here: clw/acw are 3x3-only and the
+                                # 1x1 shortcut convs would raise NotImplementedError
+
+fault:
+  model: rtm_misalignment
+  rt_error: [0.000001, 0.00001, 0.0001]
+  global_bitflip_budget: 1.0
+  local_bitflip_budget: 1.0
+  local_budget_scope: layer
+  budget_selection: greedy
+  mitigations: []
+  protection:
+    policy: custom
+    # `layers` lists the 1-based layer_ids left UNPROTECTED (exposed to faults).
+    # This topology has 21 quantized layers, and replace_with_quantized walks the
+    # root's own children before descending, so the numbering is:
+    #    1 conv1                 8 layer2.0.conv2       15 layer3.1.conv1
+    #    2 linear                9 layer2.0.shortcut.0  16 layer3.1.conv2
+    #    3 layer1.0.conv1       10 layer2.1.conv1       17 layer4.0.conv1
+    #    4 layer1.0.conv2       11 layer2.1.conv2       18 layer4.0.conv2
+    #    5 layer1.1.conv1       12 layer3.0.conv1       19 layer4.0.shortcut.0
+    #    6 layer1.1.conv2       13 layer3.0.conv2       20 layer4.1.conv1
+    #    7 layer2.0.conv1       14 layer3.0.shortcut.0  21 layer4.1.conv2
+    # Listing 3..21 leaves the stem conv (1) and the classifier (2) protected —
+    # the same recipe as VGG7's [2,3,4,5,6,7].
+    layers: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+  weight_encoder: null
+  weight_encoder_mode: once
+  encoded_checkpoint_save: null
+  edge_mode: saturate
+  ap_position: null
+
+training:
+  mode: test
+  fault_aware: none
+  loops: 10
+  fault_state_mode: fresh
+  criterion: hinge
+  hinge_b: 128.0
+  fault_aware_criterion: hinge
+  fault_aware_hinge_b: 128.0
+  recalibrate:
+    enabled: false
+  reg:
+    lambda: 0.0
+
+metrics:
+  online: []
+  offline: []
+  sinks:
+    - type: stdout
+    - type: jsonl
+
+gpu_num: 0
