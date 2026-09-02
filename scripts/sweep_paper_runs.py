@@ -103,24 +103,71 @@ from comparison_common import (  # noqa: E402
     write_manifest,
 )
 
-DEFAULT_CONFIG = "configs/vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml"
 DEFAULT_RT_CURVE = [4.55e-05, 1e-05, 1e-06]
 DEFAULT_SEEDS = [707, 808, 909]
 DEFAULT_IMMUNE_SEEDS = [707]
 DEFAULT_LOOPS = 100
 DEFAULT_AP_POSITION = 0
 DEFAULT_OUTPUT_DIR = "runs/paper-runs/"
-DEFAULT_EXPERIMENT_NAME = "paper_vgg7_w1a1"
 DEFAULT_WANDB_PROJECT = "netdrift-paper-runs"
-DEFAULT_BASE_CKPT = "models/w1a1/vgg7_cifar10/model_best.pt"
-# cat6's INPUT is the cat5 (run-length regularizer, lambda=0.05) checkpoint —
-# cat6 = those weights + the BN/Scale re-fit this driver performs per cell.
-DEFAULT_CAT6_CKPT = "models/w1a1/vgg7_cifar10/cat5/model.pt"
-DEFAULT_CAT8_CKPT = "models/w1a1/vgg7_cifar10/cat8/model.pt"
-# One ppm_count fine-tune per deployment view: ppm_base_layout is baked into
-# the weights, so the row arm cannot reuse the col checkpoint.
-DEFAULT_PPMREG_CKPT = "models/w1a1/vgg7_cifar10/ppmreg_{base_layout}/model.pt"
-UNPROTECTED_CUSTOM = [2, 3, 4, 5, 6, 7]
+
+# Per-model constants. Everything model-specific lives HERE so adding a topology
+# is one entry, not a scatter of overrides.
+#
+#   unprotected_custom  1-based layer ids left exposed under policy=custom. The
+#                       recipe is always "all but the stem conv and the
+#                       classifier" — but the ids differ per topology because
+#                       replace_with_quantized enumerates the root's own
+#                       children BEFORE descending (so ResNet's classifier is
+#                       id 2, not id 21).
+#   kernel_mappings     which storage.kernel_mapping values this topology can
+#                       take. Non-ROW mappings permute a 3x3 kernel index list
+#                       (faults/layout.py::_rearrange_kernel) and raise
+#                       NotImplementedError on any other kernel size — so a
+#                       topology with 1x1 convs is ROW-only.
+#   ckpt_root           <root>/model_best.pt, <root>/cat5/model.pt,
+#                       <root>/cat8/model.pt, <root>/ppmreg_{base_layout}/model.pt
+MODELS: dict[str, dict[str, Any]] = {
+    "vgg7_cifar10": {
+        "config": "configs/vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml",
+        "experiment_name": "paper_vgg7_w1a1",
+        "n_layers": 8,
+        "unprotected_custom": [2, 3, 4, 5, 6, 7],
+        "kernel_mappings": ["row", "col", "clw", "acw"],
+        "ckpt_root": "models/w1a1/vgg7_cifar10",
+    },
+    "resnet18_imagenette": {
+        "config": "configs/resnet18_imagenette/resnet18_imagenette_w1a1_rtm.yaml",
+        "experiment_name": "paper_resnet18_imagenette_w1a1",
+        "n_layers": 21,
+        # 1 = conv1 (stem), 2 = linear (classifier) stay protected; 3..21 are
+        # the stage convs + the three 1x1 shortcut convs.
+        "unprotected_custom": list(range(3, 22)),
+        # ROW ONLY: the three 1x1 shortcut convs make every non-ROW kernel
+        # mapping raise. (The topology's own RTM config says "row|col only" —
+        # that comment is wrong, COL is a 3x3 permutation too.)
+        "kernel_mappings": ["row"],
+        "ckpt_root": "models/w1a1/resnet18_imagenette",
+    },
+}
+DEFAULT_MODEL = "vgg7_cifar10"
+
+
+def ckpt_defaults(model: str) -> dict[str, str]:
+    """Conventional checkpoint paths for one model.
+
+    cat6's INPUT is the cat5 (run-length regularizer) checkpoint — cat6 = those
+    weights + the BN/Scale re-fit this driver performs per cell. ppmreg needs
+    ONE fine-tune per deployment view: ppm_base_layout is baked into the
+    weights, so the row arm cannot reuse the col checkpoint.
+    """
+    root = MODELS[model]["ckpt_root"]
+    return {
+        "base": f"{root}/model_best.pt",
+        "cat6": f"{root}/cat5/model.pt",
+        "cat8": f"{root}/cat8/model.pt",
+        "ppmreg": root + "/ppmreg_{base_layout}/model.pt",
+    }
 
 # arm -> (storage.layout, permutes base_layout?, permutes pad?, variants)
 ARMS: dict[str, dict[str, Any]] = {
@@ -149,9 +196,17 @@ ARM_TOKEN = {
 }
 
 
-def prot_token(policy: str) -> str:
-    """``all`` -> ``prot-1to8``; ``custom`` -> ``prot-2to7`` (VGG7 has 8 layers)."""
-    return "prot-1to8" if policy == "all" else "prot-2to7"
+def prot_token(policy: str, model: str) -> str:
+    """Protection tag naming the exposed layer range, e.g. ``prot-1to8``.
+
+    Model-dependent because the layer count and the custom range both are:
+    VGG7 -> prot-1to8 / prot-2to7, ResNet18 -> prot-1to21 / prot-3to21.
+    """
+    spec = MODELS[model]
+    if policy == "all":
+        return f"prot-1to{spec['n_layers']}"
+    layers = spec["unprotected_custom"]
+    return f"prot-{layers[0]}to{layers[-1]}"
 
 
 def is_immune(arm: str, pad: Optional[bool], edge_mode: str) -> bool:
@@ -235,7 +290,7 @@ def build_cells(args: argparse.Namespace) -> list[dict[str, Any]]:
                 for policy in policies:
                     for seed in seeds:
                         parts = [f"var-{variant}", f"base-{base_layout}",
-                                 prot_token(policy)]
+                                 prot_token(policy, args.model)]
                         if pad is not None:
                             parts.append("pad-t" if pad else "pad-f")
                         parts.append(f"seed{seed}")
@@ -289,8 +344,13 @@ def cell_overrides(cell: dict[str, Any], args: argparse.Namespace) -> list[str]:
         # --print-config both go through cell_overrides, and a printed command
         # missing its device pin is exactly the one that gets pasted into tmux.
         ov.append(f"gpu_num={args.gpu_num}")
+    # Passthrough LAST so it can override anything above (e.g. data.num_workers,
+    # data.test_batch_size — throughput levers that differ per dataset).
+    ov += list(args.override)
     if cell["policy"] == "custom":
-        ov.append(f"fault.protection.layers={json_list(UNPROTECTED_CUSTOM)}")
+        ov.append(
+            f"fault.protection.layers="
+            f"{json_list(MODELS[args.model]['unprotected_custom'])}")
     if cell["pad"] is not None:
         ov.append(f"storage.partition.pad={'true' if cell['pad'] else 'false'}")
         ov.append(f"storage.partition.window={args.window}")
@@ -483,11 +543,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     p.add_argument("--layout", required=True, choices=sorted(ARMS),
                    help="Which layout arm to run. One arm per tmux session.")
-    p.add_argument("--config", default=DEFAULT_CONFIG,
-                   help=f"Base YAML for every cell. Default: {DEFAULT_CONFIG}")
-    p.add_argument("--experiment-name", default=DEFAULT_EXPERIMENT_NAME,
-                   help=f"experiment.name (shared by all arms; the arm and cell "
-                        f"become path segments under it). Default: {DEFAULT_EXPERIMENT_NAME}")
+    p.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(MODELS),
+                   help="Topology/dataset. Selects the base YAML, the "
+                        "experiment name, the protection layer ids, the legal "
+                        "kernel mappings and the checkpoint root. "
+                        f"Default: {DEFAULT_MODEL}")
+    p.add_argument("--config", default=None,
+                   help="Base YAML for every cell. Default: the --model entry's.")
+    p.add_argument("--experiment-name", default=None,
+                   help="experiment.name (shared by all arms of one model; the "
+                        "arm and cell become path segments under it). Default: "
+                        "the --model entry's.")
     p.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR,
                    help=f"experiment.output_dir. Default: {DEFAULT_OUTPUT_DIR}")
     p.add_argument("--rt-curve", nargs="+", type=float, default=DEFAULT_RT_CURVE,
@@ -517,8 +583,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                    help="Subset of base_layout values. Default: the arm's own set "
                         "(row/col arms: just themselves — base_layout is inert there).")
     p.add_argument("--protection", nargs="+", default=None, choices=["all", "custom"],
-                   help="Protection policies. all = layers 1-8 unprotected; "
-                        f"custom = {UNPROTECTED_CUSTOM}. Default: both.")
+                   help="Protection policies. all = every quantized layer "
+                        "unprotected; custom = the --model entry's "
+                        "unprotected_custom (all but stem conv + classifier). "
+                        "Default: both.")
     p.add_argument("--edge-mode", default="saturate", choices=["saturate", "random"],
                    help="Racetrack edge model, applied to every cell. NB saturate "
                         "makes block / polarity(pad=true) fault-immune — which is "
@@ -528,26 +596,33 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "(0 = channel-aligned). Default: 0")
     p.add_argument("--rt-size", type=int, default=64, help="storage.rt_size. Default: 64")
     p.add_argument("--kernel-mapping", default="row", choices=["row", "col", "clw", "acw"],
-                   help="storage.kernel_mapping. Default: row")
+                   help="storage.kernel_mapping. Validated against the model's "
+                        "legal set (topologies with non-3x3 convs are ROW-only). "
+                        "Default: row")
     p.add_argument("--metrics", default="all", choices=["none", "offline", "online", "all"],
                    help="Runner --metrics level. Default: all")
+    p.add_argument("--override", action="append", default=[], metavar="KEY=VALUE",
+                   help="Extra runner override applied to EVERY cell, after all "
+                        "driver-managed ones (so it wins). Repeatable. E.g. "
+                        "--override data.num_workers=8")
     p.add_argument("--gpu-num", type=int, default=None,
                    help="Pin this arm to one CUDA device (sets gpu_num). Give each "
                         "tmux session its own device; five arms on one GPU thrash.")
 
     ck = p.add_argument_group("checkpoints (accept {seed} and {base_layout} placeholders)")
-    ck.add_argument("--ckpt-base", default=DEFAULT_BASE_CKPT,
-                    help=f"base w1a1 checkpoint. Default: {DEFAULT_BASE_CKPT}")
-    ck.add_argument("--ckpt-cat6", default=DEFAULT_CAT6_CKPT,
-                    help="cat5 (run-length regularizer, lambda=0.05) checkpoint that "
-                         f"cat6 recalibrates. Default: {DEFAULT_CAT6_CKPT}")
-    ck.add_argument("--ckpt-cat8", default=DEFAULT_CAT8_CKPT,
-                    help=f"STE-injection-trained checkpoint. Default: {DEFAULT_CAT8_CKPT}")
-    ck.add_argument("--ckpt-ppmreg", default=DEFAULT_PPMREG_CKPT,
-                    help="ppm_count-regularized (lambda=50) fine-tune OF the base "
-                         "model, for --layout polarity-reg. Its ppm_base_layout is "
-                         "baked into the weights, so use {base_layout} if you "
-                         f"trained one per view. Default (unconfirmed): {DEFAULT_PPMREG_CKPT}")
+    ck.add_argument("--ckpt-base", default=None,
+                    help="base w1a1 checkpoint. Default: <ckpt_root>/model_best.pt")
+    ck.add_argument("--ckpt-cat6", default=None,
+                    help="cat5 (run-length regularizer) checkpoint that cat6 "
+                         "recalibrates. Default: <ckpt_root>/cat5/model.pt")
+    ck.add_argument("--ckpt-cat8", default=None,
+                    help="STE-injection-trained checkpoint. "
+                         "Default: <ckpt_root>/cat8/model.pt")
+    ck.add_argument("--ckpt-ppmreg", default=None,
+                    help="ppm_count-regularized fine-tune OF the base model, for "
+                         "--layout polarity-reg. Its ppm_base_layout is baked into "
+                         "the weights, so one per view. Default: "
+                         "<ckpt_root>/ppmreg_{base_layout}/model.pt")
     ck.add_argument("--no-check-checkpoints", dest="check_checkpoints",
                     action="store_false",
                     help="Skip the pre-launch existence check on every resolved "
@@ -591,6 +666,21 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="Run only the first N cells (smoke test).")
 
     args = p.parse_args(argv)
+    spec = MODELS[args.model]
+    if args.config is None:
+        args.config = spec["config"]
+    if args.experiment_name is None:
+        args.experiment_name = spec["experiment_name"]
+    if args.kernel_mapping not in spec["kernel_mappings"]:
+        p.error(f"--kernel-mapping {args.kernel_mapping!r} is not legal for "
+                f"{args.model!r} (legal: {spec['kernel_mappings']}). Non-ROW "
+                "mappings permute a 3x3 kernel index list and raise on any "
+                "other kernel size.")
+    _ck = ckpt_defaults(args.model)
+    for variant, default in _ck.items():
+        flag = f"ckpt_{variant}"
+        if getattr(args, flag) is None:
+            setattr(args, flag, default)
     if args.ap_position is not None and args.ap_position < 0:
         args.ap_position = None  # sentinel: leave fault.ap_position unset
     cells = build_cells(args)
