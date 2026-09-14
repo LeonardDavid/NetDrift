@@ -1,0 +1,20 @@
+vgg7+cifar10
+
+python scripts/sweep_paper_sw.py --model vgg7_cifar10 --category baseline     
+python scripts/sweep_paper_sw.py --model vgg7_cifar10 --category endlen-recal 
+python scripts/sweep_paper_sw.py --model vgg7_cifar10 --category reg          
+python scripts/sweep_paper_sw.py --model vgg7_cifar10 --category reg-recal    
+python scripts/sweep_paper_sw.py --model vgg7_cifar10 --category ste          
+python scripts/sweep_paper_sw.py --model vgg7_cifar10 --category reg-ste-recal
+
+
+resnet18+imagenette
+
+python scripts/sweep_paper_sw.py --model resnet18_imagenette --category baseline     
+python scripts/sweep_paper_sw.py --model resnet18_imagenette --category endlen-recal 
+python scripts/sweep_paper_sw.py --model resnet18_imagenette --category reg          
+python scripts/sweep_paper_sw.py --model resnet18_imagenette --category reg-recal    
+python scripts/sweep_paper_sw.py --model resnet18_imagenette --category ste          
+python scripts/sweep_paper_sw.py --model resnet18_imagenette --category reg-ste-recal
+
+fault.rt_error=[0.0001,4.55e-05,1e-05]

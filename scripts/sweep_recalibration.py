@@ -60,6 +60,7 @@ from comparison_common import (  # noqa: E402
     latest_summary,
     new_sweep_out_dir,
     output_dir_from_cfg,
+    prefer_best_checkpoint,
     run_cell,
     wandb_args,
     write_manifest,
@@ -118,8 +119,10 @@ def _discover_cat5_checkpoints(
 
     Returns ``{"config_key", "seed", "path", "crit_tok", "layout_tok"}`` per
     checkpoint (``crit_tok`` / ``layout_tok`` are ``None`` when that segment is
-    absent). cat8 (ste) checkpoints are skipped; missing model.pt (a failed /
-    partial cat5 cell) is skipped silently.
+    absent). ``path`` is the cell's ``model_best.pt`` when it exists, else its
+    ``model.pt`` — cat6 recalibrates the BEST cat5 weights, not the last epoch's.
+    cat8 (ste) checkpoints are skipped; a cell dir holding neither file (a failed
+    / partial cat5 cell) is skipped silently.
     """
     search_dir = reg_save_root / base_stem
     out: list[dict] = []
@@ -127,21 +130,29 @@ def _discover_cat5_checkpoints(
         return out
     seen: set[str] = set()
     # Glob 0, 1, and 2 path segments between <base_stem> and the cat5_* leaf.
+    # We glob the cell DIRECTORY rather than ``<dir>/model.pt`` so a cell whose
+    # model.pt was cleaned up but whose model_best.pt survives is still found;
+    # prefer_best_checkpoint then picks the file (best, else final).
     for pattern in (
-        "cat5_*/model.pt",
-        "*/cat5_*/model.pt",
-        "*/*/cat5_*/model.pt",
+        "cat5_*",
+        "*/cat5_*",
+        "*/*/cat5_*",
     ):
-        for ckpt in sorted(search_dir.glob(pattern)):
-            key = str(ckpt)
+        for cell_dir in sorted(search_dir.glob(pattern)):
+            if not cell_dir.is_dir():
+                continue
+            key = str(cell_dir)
             if key in seen:
                 continue
-            m = _CAT5_DIR_RE.match(ckpt.parent.name)
+            m = _CAT5_DIR_RE.match(cell_dir.name)
             if not m:
                 continue
+            ckpt = Path(prefer_best_checkpoint(cell_dir / "model.pt"))
+            if not ckpt.exists():
+                continue  # failed / partial cat5 cell — skip silently
             # Recover tokens by prefix from the segments ABOVE the cat5_* leaf
             # (between <base_stem> and the leaf), order-independent.
-            rel_parts = ckpt.parent.relative_to(search_dir).parts[:-1]
+            rel_parts = cell_dir.relative_to(search_dir).parts[:-1]
             crit_tok = next((p for p in rel_parts if p.startswith("crit-")), None)
             layout_tok = next((p for p in rel_parts if p.startswith("lay-")), None)
             # Scope to a single criterion / layout when requested.

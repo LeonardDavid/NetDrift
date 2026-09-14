@@ -79,6 +79,7 @@ from comparison_common import (  # noqa: E402
     layout_token,
     new_sweep_out_dir,
     output_dir_from_cfg,
+    prefer_best_checkpoint,
     run_cell,
     wandb_args,
     write_manifest,
@@ -318,13 +319,19 @@ def _test_argv(
 
     Mirrors the train phase's encoding: name prefix
     ``<layout_tok>__<crit_tok>__`` and the checkpoint loaded from the matching
-    path segments ``save_root/<layout_tok>/<crit_tok>/<tag>/model.pt`` — so the
-    test phase reads exactly the checkpoint its train phase wrote (the col test
-    loads the col-trained model, never the row one).
+    path segments ``save_root/<layout_tok>/<crit_tok>/<tag>/`` — so the test
+    phase reads exactly the checkpoint its train phase wrote (the col test loads
+    the col-trained model, never the row one).
+
+    Within that dir it takes ``model_best.pt`` when present, else ``model.pt``.
+    In the live run this is called AFTER the train phase, so the best checkpoint
+    is already on disk; under ``--dry-run`` nothing has been written yet and the
+    printed argv shows the ``model.pt`` fallback.
     """
     tag = cell["tag"]
     exp_name = f"{base_stem}__{layout_tok}__{crit_tok}__{tag}_test"
-    checkpoint = str(save_root / layout_tok / crit_tok / tag / "model.pt")
+    checkpoint = prefer_best_checkpoint(
+        save_root / layout_tok / crit_tok / tag / "model.pt")
 
     argv = [
         "--config", str(cfg_path),
@@ -701,8 +708,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         for i, cell in enumerate(cells, 1):
             tag = cell["tag"]
-            save_dir = str(save_root / layout_tok / crit_tok / tag)
-            checkpoint = str(save_root / layout_tok / crit_tok / tag / "model.pt")
+            # NB save_dir / checkpoint are NOT computed here: _train_argv and
+            # _test_argv each derive their own from (save_root, layout_tok,
+            # crit_tok, tag), and duplicating them invited drift.
             train_argv = _train_argv(
                 cfg_path=cfg_path, cell=cell, base_stem=base_stem,
                 save_root=save_root, epochs=args.epochs, train_lr=args.train_lr,

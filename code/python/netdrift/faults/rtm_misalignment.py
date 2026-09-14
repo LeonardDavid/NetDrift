@@ -124,7 +124,18 @@ class RTMConfig:
     ``None`` resolves per (effective) racetrack length to ``rt_size//2 - 1`` (the
     first middle position). Must be ``None`` for BLOCK or units mapping, where
     each bucket has its own padded length ``P`` and the port is resolved per
-    bucket."""
+    bucket.
+
+    POLARITY accepts it (2026-09-14). ``build_polarity_buckets`` returns a
+    SINGLE bucket whose wires are all exactly ``rt_size`` — the ragged tail is
+    filled with the wire's sign rather than shortened — so one absolute index is
+    as well defined there as on dense ROW/COL. Both kernels agree on that
+    window: ``calc_index_offset_kernel`` clamps the offset to
+    ``[-(rt_size-1-ap), ap]``, and ``simulate_racetrack_kernel`` derives
+    ``fill_len`` from the grid width (``rt_size`` for the single bucket), not
+    from a per-wire length, so the sign filler is read as real data at any
+    offset. Lifting this is what lets the polarity arms be access-port matched
+    to the dense arms."""
 
     def __post_init__(self) -> None:
         if self.weight_encoder_mode not in ("once", "per_forward"):
@@ -141,11 +152,14 @@ class RTMConfig:
                 raise ValueError(
                     f"ap_position must be >= 0, got {self.ap_position}"
                 )
-            if self.block_mapping or self.units_mapping or self.polarity_mapping:
+            if self.block_mapping or self.units_mapping:
                 # A single absolute AP index is meaningless across heterogeneous
-                # per-bucket racetrack lengths; BLOCK/units resolve the AP per bucket.
+                # per-bucket racetrack lengths; BLOCK/units resolve the AP per
+                # bucket. POLARITY is deliberately NOT in this list: it builds a
+                # single bucket of uniform rt_size wires (see ap_position's
+                # docstring), so an absolute index is well defined there.
                 raise ValueError(
-                    "ap_position is not supported with BLOCK, units or polarity mapping "
+                    "ap_position is not supported with BLOCK or units mapping "
                     "(each bucket has its own padded length P; the access port is "
                     "resolved per bucket as P//2 - 1). Leave ap_position unset for "
                     "BLOCK/units."

@@ -247,6 +247,61 @@ def base_overrides(
     return out
 
 
+BEST_CHECKPOINT_NAME = "model_best.pt"
+FINAL_CHECKPOINT_NAME = "model.pt"
+
+
+def prefer_best_checkpoint(path) -> str:
+    """Swap a ``model.pt`` path for the sibling ``model_best.pt`` when it exists.
+
+    ``training.save_dir`` receives BOTH files: ``model.pt`` is the weights at the
+    END of the last epoch, ``model_best.pt`` the best-clean-accuracy epoch
+    (``runner/run.py`` saves it inside the epoch loop and copies both out at the
+    end). Every stage that consumes a trained checkpoint as the INPUT to a later
+    stage wants the best one — a fault-aware fine-tune's last epoch is not
+    reliably its best, and the LR schedule's final step can leave it well below
+    the peak.
+
+    Conservative by construction:
+
+    * Only a path whose basename is exactly ``model.pt`` is a candidate, so a
+      deliberately-named artifact (``model_endlen.pt``, ``model_best_ppm.pt``, a
+      hand-picked epoch) is never silently replaced.
+    * When ``model_best.pt`` is absent the input is returned VERBATIM, so older
+      checkpoint trees keep working and a driver's missing-checkpoint check still
+      reports the path the user actually configured.
+    * The returned path keeps the FORM it was given. Driver checkpoint paths are
+      repo-root-relative and go straight into ``--override model.checkpoint=...``;
+      returning an absolute path here would bake the driver machine's layout into
+      the override.
+    * A relative path is judged against ONE root. The drivers' own existence
+      guards accept either the repo root or the CWD, but the two files must be
+      compared within the same tree: checking ``(REPO_ROOT / best) or best``
+      would let a ``model_best.pt`` under one root shadow the ``model.pt`` the
+      caller meant under the other, silently loading a different model's weights.
+      So we find the first root that holds either file and decide entirely there.
+
+    Note for ``--dry-run`` paths that build a test argv BEFORE the training phase
+    has run: nothing is on disk yet, so this resolves to ``model.pt``. The live
+    run resolves again after training and picks up ``model_best.pt`` then.
+    """
+    text = str(path)
+    p = Path(text)
+    if p.name != FINAL_CHECKPOINT_NAME:
+        return text
+    best = p.with_name(BEST_CHECKPOINT_NAME)
+    if p.is_absolute():
+        return str(best) if best.exists() else text
+    for root in (REPO_ROOT, Path.cwd()):
+        if (root / p).exists():
+            # This root owns the requested file — the sibling decision is its own.
+            return str(best) if (root / best).exists() else text
+        if (root / best).exists():
+            # model.pt cleaned up, best survives: still a usable checkpoint.
+            return str(best)
+    return text
+
+
 def json_list(xs: list[int]) -> str:
     return "[" + ",".join(str(int(x)) for x in xs) + "]"
 

@@ -97,6 +97,7 @@ from comparison_common import (  # noqa: E402
     import_runner_main,
     json_list,
     new_sweep_out_dir,
+    prefer_best_checkpoint,
     rt_error_list_override,
     run_cell,
     wandb_args,
@@ -125,8 +126,9 @@ DEFAULT_WANDB_PROJECT = "netdrift-paper-runs"
 #                       (faults/layout.py::_rearrange_kernel) and raise
 #                       NotImplementedError on any other kernel size — so a
 #                       topology with 1x1 convs is ROW-only.
-#   ckpt_root           <root>/model_best.pt, <root>/cat5/model.pt,
-#                       <root>/cat8/model.pt, <root>/ppmreg_{base_layout}/model.pt
+#   ckpt_root           <root>/model_best.pt, <root>/cat5_{base_layout}/model.pt,
+#                       <root>/cat8_{base_layout}/model.pt,
+#                       <root>/ppmreg_{base_layout}/model.pt
 MODELS: dict[str, dict[str, Any]] = {
     "vgg7_cifar10": {
         "config": "configs/vgg7_cifar10/vgg7_cifar10_w1a1_rtm.yaml",
@@ -157,15 +159,25 @@ def ckpt_defaults(model: str) -> dict[str, str]:
     """Conventional checkpoint paths for one model.
 
     cat6's INPUT is the cat5 (run-length regularizer) checkpoint — cat6 = those
-    weights + the BN/Scale re-fit this driver performs per cell. ppmreg needs
-    ONE fine-tune per deployment view: ppm_base_layout is baked into the
-    weights, so the row arm cannot reuse the col checkpoint.
+    weights + the BN/Scale re-fit this driver performs per cell.
+
+    EVERY fault-aware checkpoint is per deployment view, so all three carry a
+    ``{base_layout}`` placeholder:
+
+    * ``ppmreg`` — ``reg.ppm_base_layout`` is baked into the weights.
+    * ``cat5`` / ``cat8`` — ``run_length_penalty`` and the STE-injected forward
+      both read the racetrack-aligned view named by ``storage.layout``, and ROW
+      and COL are different adjacencies. A ROW-trained cat5 optimised neighbours
+      COL does not have, so reusing it under the col arm would confound the
+      software technique with a layout mismatch.
+
+    Only ``base`` is view-independent (no fault-aware training touched it).
     """
     root = MODELS[model]["ckpt_root"]
     return {
         "base": f"{root}/model_best.pt",
-        "cat6": f"{root}/cat5/model.pt",
-        "cat8": f"{root}/cat8/model.pt",
+        "cat6": root + "/cat5_{base_layout}/model.pt",
+        "cat8": root + "/cat8_{base_layout}/model.pt",
         "ppmreg": root + "/ppmreg_{base_layout}/model.pt",
     }
 
@@ -230,17 +242,18 @@ def is_immune(arm: str, pad: Optional[bool], edge_mode: str) -> bool:
 def ap_position_supported(layout: str) -> bool:
     """Whether the fault model accepts an absolute ``fault.ap_position``.
 
-    ``RTMConfig.__post_init__`` rejects it for block/units/polarity: those paths
-    resolve the access port per bucket as ``P//2 - 1``, and one absolute index
-    is meaningless across heterogeneous padded lengths. So an ``--ap-position``
-    request applies to the dense row/col arms only, and the others sit at
-    mid-wire. See the handoff notes — for POLARITY the restriction is arguably
-    too strong (``build_polarity_buckets`` returns a SINGLE bucket whose wires
-    are all exactly ``rt_size``, so an absolute index is well defined there),
-    but lifting it is a change to the GPU-verified fault model, not a sweep
-    setting, so this driver does not force it.
+    ``RTMConfig.__post_init__`` rejects it for block/units: those paths resolve
+    the access port per bucket as ``P//2 - 1``, and one absolute index is
+    meaningless across heterogeneous padded lengths.
+
+    POLARITY accepts it as of 2026-09-14. ``build_polarity_buckets`` returns a
+    SINGLE bucket whose wires are all exactly ``rt_size`` (the ragged tail is
+    sign-filled, not shortened), and both kernels treat that full window as real
+    data, so an absolute index means the same thing there as on dense ROW/COL.
+    Without this the polarity arms sat at mid-wire while row/col sat at ap0, and
+    any polarity-vs-dense gap carried an access-port term on top of the layout.
     """
-    return layout in ("row", "col")
+    return layout in ("row", "col", "polarity")
 
 
 def cell_loops(cell: dict[str, Any], args: argparse.Namespace) -> int:
@@ -256,20 +269,36 @@ def cell_loops(cell: dict[str, Any], args: argparse.Namespace) -> int:
 
 
 def resolve_ckpt(template: Optional[str], *, variant: str, seed: int,
-                 base_layout: str) -> str:
+                 base_layout: str, prefer_best: bool = True) -> str:
     """Fill ``{seed}`` / ``{base_layout}`` in a checkpoint path template.
 
     A template with no placeholder is used verbatim for every cell — fine when
     one checkpoint is shared across seeds, wrong when it silently hides that the
     per-seed checkpoints were never produced. ``--check-checkpoints`` (on by
     default for real runs) is the guard.
+
+    With ``prefer_best`` (the default, ``--checkpoint-select best``) a resolved
+    ``.../model.pt`` is upgraded to the sibling ``model_best.pt`` when one
+    exists: a fault-aware fine-tune's final epoch is not reliably its best.
+
+    ``--checkpoint-select final`` turns that off. It exists because the choice is
+    NOT neutral for ``ppmreg``: ``model_best.pt`` is selected on clean accuracy
+    ALONE, and a best-accuracy epoch is not necessarily a conforming one
+    (``runner/run.py``). The ppm objective numbers in ``train_summary.json``
+    describe the FINAL weights, so ``final`` is what reproduces a published
+    conformance / wire-ratio figure. For base/cat6/cat8 there is no such trade —
+    ``best`` is simply the better model.
+
+    Every variant funnels through here, so ``cell_overrides``,
+    ``check_checkpoints`` and ``collect`` all see the same resolved file.
     """
     if not template:
         raise SystemExit(
             f"variant {variant!r} needs a checkpoint: pass --ckpt-{variant} "
             f"(supports {{seed}} and {{base_layout}} placeholders)"
         )
-    return template.format(seed=seed, base_layout=base_layout)
+    resolved = template.format(seed=seed, base_layout=base_layout)
+    return prefer_best_checkpoint(resolved) if prefer_best else resolved
 
 
 def build_cells(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -278,7 +307,7 @@ def build_cells(args: argparse.Namespace) -> list[dict[str, Any]]:
     variants = args.variants or spec["variants"]
     policies = args.protection or ["all", "custom"]
     base_layouts = args.base_layouts or spec["base_layouts"]
-    pads = spec["pads"]
+    pads = spec["pads"] if args.pads is None else args.pads
     cells: list[dict[str, Any]] = []
 
     for variant in variants:
@@ -307,17 +336,34 @@ def build_cells(args: argparse.Namespace) -> list[dict[str, Any]]:
     return cells
 
 
-def cell_overrides(cell: dict[str, Any], args: argparse.Namespace) -> list[str]:
-    """The full ``--override`` list for one cell (config-order, deterministic)."""
-    spec = ARMS[cell["arm"]]
-    ckpt_template = {
+def cell_checkpoint(cell: dict[str, Any], args: argparse.Namespace) -> str:
+    """The checkpoint file this cell will actually load.
+
+    The single funnel for that question: ``cell_overrides`` (what the runner is
+    told), ``check_checkpoints`` (the pre-launch guard) and ``collect`` (the
+    recorded provenance) must never disagree about it.
+
+    Resolution is disk-dependent — ``resolve_ckpt`` upgrades ``model.pt`` to a
+    sibling ``model_best.pt`` when one exists — so a sweep launched while its
+    checkpoints are still training can resolve differently from cell to cell.
+    That is why ``collect`` records the answer per row instead of assuming the
+    pre-launch check still describes the run.
+    """
+    template = {
         "base": args.ckpt_base,
         "cat6": args.ckpt_cat6,
         "cat8": args.ckpt_cat8,
         "ppmreg": args.ckpt_ppmreg,
     }[cell["variant"]]
-    ckpt = resolve_ckpt(ckpt_template, variant=cell["variant"],
-                        seed=cell["seed"], base_layout=cell["base_layout"])
+    return resolve_ckpt(template, variant=cell["variant"],
+                        seed=cell["seed"], base_layout=cell["base_layout"],
+                        prefer_best=getattr(args, "checkpoint_select", "best") == "best")
+
+
+def cell_overrides(cell: dict[str, Any], args: argparse.Namespace) -> list[str]:
+    """The full ``--override`` list for one cell (config-order, deterministic)."""
+    spec = ARMS[cell["arm"]]
+    ckpt = cell_checkpoint(cell, args)
 
     ov = [
         f"experiment.name={args.experiment_name}",
@@ -419,12 +465,7 @@ def check_checkpoints(cells: list[dict[str, Any]], args: argparse.Namespace) -> 
     """Return the sorted list of missing checkpoint paths (empty == all present)."""
     missing: set[str] = set()
     for cell in cells:
-        ckpt_template = {
-            "base": args.ckpt_base, "cat6": args.ckpt_cat6,
-            "cat8": args.ckpt_cat8, "ppmreg": args.ckpt_ppmreg,
-        }[cell["variant"]]
-        p = resolve_ckpt(ckpt_template, variant=cell["variant"],
-                         seed=cell["seed"], base_layout=cell["base_layout"])
+        p = cell_checkpoint(cell, args)
         if not (REPO_ROOT / p).exists() and not Path(p).exists():
             missing.add(p)
     return sorted(missing)
@@ -460,11 +501,14 @@ def collect(cells: list[dict[str, Any]], args: argparse.Namespace, out_dir: Path
     violations: list[tuple[str, float]] = []
     with open(csv_path, "w", newline="") as f:
         w = csv.writer(f)
+        # ``checkpoint`` is appended LAST so every existing column keeps its
+        # index for downstream readers that go by position.
         w.writerow(["arm", "subcategory", "variant", "base_layout", "pad",
                     "policy", "seed", "immune", "curve_spread", "flat", "status",
                     "clean_accuracy"]
                    + [f"{c}_mean" for c in rt_cols]
-                   + [f"{c}_last" for c in rt_cols])
+                   + [f"{c}_last" for c in rt_cols]
+                   + ["checkpoint"])
         for cell in cells:
             s = latest_cell_summary(cell, args)
             h = harvest_summary(s)
@@ -484,6 +528,7 @@ def collect(cells: list[dict[str, Any]], args: argparse.Namespace, out_dir: Path
             for rt in args.rt_curve:
                 e = h["rt_curve"].get(float(rt))
                 row.append(round(e["last"], 4) if e else "")
+            row.append(cell_checkpoint(cell, args))
             w.writerow(row)
     if violations:
         print(f"\n!! {len(violations)} cell(s) were predicted fault-immune (so ran "
@@ -579,6 +624,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--variants", nargs="+", default=None,
                    choices=["base", "cat6", "cat8", "ppmreg"],
                    help="Subset of the arm's model bases. Default: all of them.")
+    p.add_argument("--pads", nargs="+", default=None, choices=["true", "false"],
+                   help="Subset of storage.partition.pad values, polarity arms "
+                        "only. Default: both. NB pad=true is the fault-immune "
+                        "half (every wire sign-pure by construction under "
+                        "edge_mode=saturate); dropping it leaves the arm as the "
+                        "pad=false ablation alone, which is NOT access-port "
+                        "matched to row/col — block/polarity reject an absolute "
+                        "fault.ap_position and resolve it per bucket.")
     p.add_argument("--base-layouts", nargs="+", default=None, choices=["row", "col"],
                    help="Subset of base_layout values. Default: the arm's own set "
                         "(row/col arms: just themselves — base_layout is inert there).")
@@ -614,15 +667,26 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="base w1a1 checkpoint. Default: <ckpt_root>/model_best.pt")
     ck.add_argument("--ckpt-cat6", default=None,
                     help="cat5 (run-length regularizer) checkpoint that cat6 "
-                         "recalibrates. Default: <ckpt_root>/cat5/model.pt")
+                         "recalibrates. Default: "
+                         "<ckpt_root>/cat5_{base_layout}/model.pt")
     ck.add_argument("--ckpt-cat8", default=None,
                     help="STE-injection-trained checkpoint. "
-                         "Default: <ckpt_root>/cat8/model.pt")
+                         "Default: <ckpt_root>/cat8_{base_layout}/model.pt")
     ck.add_argument("--ckpt-ppmreg", default=None,
                     help="ppm_count-regularized fine-tune OF the base model, for "
                          "--layout polarity-reg. Its ppm_base_layout is baked into "
                          "the weights, so one per view. Default: "
                          "<ckpt_root>/ppmreg_{base_layout}/model.pt")
+    ck.add_argument("--checkpoint-select", default="best", choices=["best", "final"],
+                    dest="checkpoint_select",
+                    help="Which file inside a checkpoint dir to load. 'best' "
+                         "(default) prefers model_best.pt over model.pt; 'final' "
+                         "takes model.pt as written. NOT neutral for ppmreg: "
+                         "model_best.pt is selected on clean accuracy alone and a "
+                         "best-accuracy epoch need not be a conforming one, while "
+                         "train_summary.json's ppm objective numbers describe the "
+                         "FINAL weights. Use 'final' to reproduce a published "
+                         "conformance / wire-ratio figure.")
     ck.add_argument("--no-check-checkpoints", dest="check_checkpoints",
                     action="store_false",
                     help="Skip the pre-launch existence check on every resolved "
@@ -683,6 +747,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             setattr(args, flag, default)
     if args.ap_position is not None and args.ap_position < 0:
         args.ap_position = None  # sentinel: leave fault.ap_position unset
+    if args.pads is not None:
+        if ARMS[args.layout]["pads"] == [None]:
+            p.error(f"--pads is not meaningful for --layout {args.layout!r}: that "
+                    "arm does not partition, so storage.partition.pad is never "
+                    "set. Drop the flag (it applies to the polarity arms only).")
+        args.pads = [v == "true" for v in args.pads]
     cells = build_cells(args)
     if args.limit is not None:
         cells = cells[: args.limit]
